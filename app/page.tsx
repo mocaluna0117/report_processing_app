@@ -31,6 +31,7 @@ export default function Home() {
   const [progress, setProgress] = useState<{ done: number; total: number; current: string }>();
   const [includeHeader, setIncludeHeader] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedRowId, setCopiedRowId] = useState<string | null>(null);
   const [zipping, setZipping] = useState(false);
   const [fallbackTsv, setFallbackTsv] = useState<string | null>(null);
   const fileMap = useRef(new Map<string, UploadedFile>());
@@ -150,6 +151,17 @@ export default function Home() {
     }
   };
 
+  // 1行だけコピー (ヘッダー行は付けない: 既存シートの行への貼り付け用)
+  const copyRow = async (row: ResultRow) => {
+    try {
+      await copyRowsForExcel([row.cells]);
+      setCopiedRowId(row.pairId);
+      setTimeout(() => setCopiedRowId((prev) => (prev === row.pairId ? null : prev)), 2500);
+    } catch {
+      setFallbackTsv(toTsv([row.cells]));
+    }
+  };
+
   const zipAll = async () => {
     setZipping(true);
     try {
@@ -262,6 +274,8 @@ export default function Home() {
             results={results}
             onCellChange={onCellChange}
             onDownloadRow={(row) => download(row.merged!, row.mergedName)}
+            onCopyRow={copyRow}
+            copiedRowId={copiedRowId}
           />
         </section>
       )}
