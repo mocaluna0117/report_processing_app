@@ -8,7 +8,7 @@ import { mapTextItems } from "./tokens";
 
 let pdfjsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
 
-async function loadPdfjs() {
+export async function loadPdfjs() {
   if (!pdfjsPromise) {
     pdfjsPromise = import("pdfjs-dist").then((pdfjs) => {
       pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";

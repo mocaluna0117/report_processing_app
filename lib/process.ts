@@ -1,18 +1,20 @@
 "use client";
 
-// 1ペア分の処理パイプライン (すべてブラウザ内。要約のテキストのみ /api/summarize へ送る)
+// 1ペア分の処理パイプライン (すべてブラウザ内。要約テキストと点検報告書の切り抜き画像のみ /api へ送る)
 import { formatLastUpdatedJst, formatRemarksJst } from "@/lib/jst-date";
 import { buildMergedPdfName } from "@/lib/naming";
-import { toDateNoPad, toHalfWidthAlnum } from "@/lib/text";
-import { COLUMNS } from "@/lib/tsv";
 import { extractTokens } from "@/lib/pdf/extract";
 import { mergeReports } from "@/lib/pdf/merge";
 import { parsePhotoReport } from "@/lib/pdf/parse-photo-report";
+import { renderInspectionPages } from "@/lib/pdf/render";
 import type {
   SummarizeRequest,
   SummarizeResponse,
 } from "@/lib/summarize/types";
-import type { Confidence } from "@/lib/types";
+import { toDateNoPad, toHalfWidthAlnum } from "@/lib/text";
+import { COLUMNS } from "@/lib/tsv";
+import type { Confidence, WorkCategoryEntry } from "@/lib/types";
+import type { WorkCategoriesResponse } from "@/lib/work-categories";
 
 export interface UploadedFile {
   id: string;
@@ -20,12 +22,16 @@ export interface UploadedFile {
   file: File;
 }
 
-/** 結果テーブルの1行 (8列 = PJ, 受付種別, 事業者, 物件名称, お客様氏名, 住所, 引渡日, アフター受付内容) */
+/** 結果テーブルの1報告書分 */
 export interface ResultRow {
   pairId: string;
   ownerDisplay: string;
+  /** 24列 (工事区分列は空欄のテンプレート。出力時に categories の数だけ行を展開する) */
   cells: string[];
   confidences: Confidence[];
+  /** 工事区分 (点検報告書で「有」に丸が付いた項目)。0件なら工事区分空欄の1行を出力 */
+  categories: WorkCategoryEntry[];
+  categoryEngine: "gemini" | "none";
   warnings: string[];
   engine: "gemini" | "rule" | null;
   merged: Blob | null;
@@ -44,6 +50,19 @@ async function requestSummary(req: SummarizeRequest): Promise<SummarizeResponse>
   if (!res.ok) throw new Error(`summarize API ${res.status}`);
   return (await res.json()) as SummarizeResponse;
 }
+
+async function requestWorkCategories(images: string[]): Promise<WorkCategoriesResponse> {
+  const res = await fetch("/api/work-categories", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ images }),
+    signal: AbortSignal.timeout(180_000),
+  });
+  if (!res.ok) throw new Error(`work-categories API ${res.status}`);
+  return (await res.json()) as WorkCategoriesResponse;
+}
+
+const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export async function processPair(
   pairId: string,
@@ -73,10 +92,13 @@ export async function processPair(
       fallbackOwner: ownerDisplay,
     });
 
+    const inspectionBytes = inspection
+      ? new Uint8Array(await inspection.file.arrayBuffer())
+      : null;
+
     // PDF結合 (写真報告書 → 点検報告書)。要約より先に行い、要約失敗の影響を受けないようにする
     let merged: Blob | null = null;
-    if (inspection) {
-      const inspectionBytes = new Uint8Array(await inspection.file.arrayBuffer());
+    if (inspectionBytes) {
       const mergeResult = await mergeReports(photoBytes, inspectionBytes);
       warnings.push(...mergeResult.warnings);
       merged = new Blob([mergeResult.bytes as unknown as BlobPart], {
@@ -111,9 +133,38 @@ export async function processPair(
       } catch (e) {
         summaryFailed = true;
         warnings.push(
-          `要約の取得に失敗しました (${e instanceof Error ? e.message : String(e)})。アフター受付内容は手動で入力してください`,
+          `要約の取得に失敗しました (${errorMessage(e)})。アフター受付内容は手動で入力してください`,
         );
       }
+    }
+
+    // 工事区分: 点検報告書 (手書きチェックシート) の「有」の丸を画像認識で判定。
+    // 個人情報 (署名・電話番号) は切り落とした画像だけを送る。失敗しても他の結果は残す
+    let categories: WorkCategoryEntry[] = [];
+    let categoryEngine: "gemini" | "none" = "none";
+    if (inspectionBytes) {
+      try {
+        const rendered = await renderInspectionPages(inspectionBytes.slice());
+        warnings.push(...rendered.warnings);
+        const res = await requestWorkCategories(rendered.images);
+        categoryEngine = res.engine;
+        categories = res.categories.map((c) => ({
+          value: c.category,
+          confidence: c.confidence === "low" ? "warn" : "ok",
+          item: c.item,
+        }));
+        if (res.engine === "none") {
+          warnings.push(
+            res.error
+              ? `工事区分の判定に失敗しました (${res.error})。手動で選択してください`
+              : "Gemini APIキー未設定のため工事区分は判定していません。手動で選択してください",
+          );
+        }
+      } catch (e) {
+        warnings.push(`工事区分の判定に失敗しました (${errorMessage(e)})。手動で選択してください`);
+      }
+    } else {
+      warnings.push("点検報告書が無いため工事区分を判定できません");
     }
 
     for (const f of [
@@ -159,7 +210,7 @@ export async function processPair(
       blank, // 対応予定日
       blank, // 完了日
       blank, // 完了報告書取得日
-      blank, // 工事区分
+      blank, // 工事区分 (出力時に categories の数だけ行展開して埋める)
       fixedWith(summary, summaryConfidence), // アフター受付内容
       blank, // 手配業者
       blank, // 処置
@@ -172,6 +223,8 @@ export async function processPair(
       ownerDisplay,
       cells: entries.map((e) => e.value),
       confidences: entries.map((e) => e.confidence),
+      categories,
+      categoryEngine,
       warnings,
       engine,
       merged,
@@ -184,11 +237,13 @@ export async function processPair(
       ownerDisplay,
       cells: Array(COLUMNS.length).fill(""),
       confidences: Array(COLUMNS.length).fill("fail") as Confidence[],
+      categories: [],
+      categoryEngine: "none",
       warnings,
       engine: null,
       merged: null,
       mergedName,
-      error: e instanceof Error ? e.message : String(e),
+      error: errorMessage(e),
     };
   }
 }

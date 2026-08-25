@@ -6,7 +6,9 @@ import { PairTable, type PairView } from "@/components/pair-table";
 import { ResultsTable } from "@/components/results-table";
 import { pairFiles, parseFileName } from "@/lib/pairing";
 import { processPair, type ResultRow, type UploadedFile } from "@/lib/process";
+import { expandRow } from "@/lib/rows";
 import { COLUMNS, copyRowsForExcel, toTsv } from "@/lib/tsv";
+import type { WorkCategoryEntry } from "@/lib/types";
 import { zipFiles } from "@/lib/zip";
 
 let nextId = 0;
@@ -125,6 +127,30 @@ export default function Home() {
     setProcessing(false);
   };
 
+  // 工事区分の手動編集 (画像認識の結果を修正・追加・削除)
+  const updateCategories = (
+    pairId: string,
+    fn: (cats: WorkCategoryEntry[]) => WorkCategoryEntry[],
+  ) => {
+    setResults((prev) =>
+      prev.map((r) => (r.pairId === pairId ? { ...r, categories: fn(r.categories) } : r)),
+    );
+  };
+  const onCategoryChange = (pairId: string, index: number, value: string) =>
+    updateCategories(pairId, (cats) => {
+      const next: WorkCategoryEntry[] =
+        cats.length > 0 ? [...cats] : [{ value: "", confidence: "ok" }];
+      next[index] = { value, confidence: "ok" };
+      return next;
+    });
+  const onCategoryAdd = (pairId: string) =>
+    updateCategories(pairId, (cats) => [
+      ...(cats.length > 0 ? cats : [{ value: "", confidence: "ok" as const }]),
+      { value: "", confidence: "ok" },
+    ]);
+  const onCategoryRemove = (pairId: string, index: number) =>
+    updateCategories(pairId, (cats) => cats.filter((_, i) => i !== index));
+
   const onCellChange = (pairId: string, col: number, value: string) => {
     setResults((prev) =>
       prev.map((r) =>
@@ -135,8 +161,12 @@ export default function Home() {
     );
   };
 
+  const rowsOf = (r: ResultRow) =>
+    expandRow(r.cells, r.categories.map((c) => c.value));
+
+  // 工事区分の数だけ行を展開した貼り付け用データ
   const dataRows = () => {
-    const rows = results.filter((r) => !r.error).map((r) => r.cells);
+    const rows = results.filter((r) => !r.error).flatMap(rowsOf);
     return includeHeader ? [[...COLUMNS], ...rows] : rows;
   };
 
@@ -154,11 +184,11 @@ export default function Home() {
   // 1行だけコピー (ヘッダー行は付けない: 既存シートの行への貼り付け用)
   const copyRow = async (row: ResultRow) => {
     try {
-      await copyRowsForExcel([row.cells]);
+      await copyRowsForExcel(rowsOf(row));
       setCopiedRowId(row.pairId);
       setTimeout(() => setCopiedRowId((prev) => (prev === row.pairId ? null : prev)), 2500);
     } catch {
-      setFallbackTsv(toTsv([row.cells]));
+      setFallbackTsv(toTsv(rowsOf(row)));
     }
   };
 
@@ -240,7 +270,7 @@ export default function Home() {
             <h2 className="text-lg font-semibold">
               抽出結果
               <span className="ml-2 text-sm font-normal text-slate-500">
-                セルは編集できます (黄=要確認 / 赤=抽出失敗)
+                セルは編集できます (黄=要確認 / 赤=抽出失敗)。工事区分の数だけ行が展開されます
               </span>
             </h2>
             <div className="flex items-center gap-3">
@@ -276,6 +306,9 @@ export default function Home() {
             onDownloadRow={(row) => download(row.merged!, row.mergedName)}
             onCopyRow={copyRow}
             copiedRowId={copiedRowId}
+            onCategoryChange={onCategoryChange}
+            onCategoryAdd={onCategoryAdd}
+            onCategoryRemove={onCategoryRemove}
           />
         </section>
       )}

@@ -18,7 +18,7 @@ export const COLUMNS = [
   "対応予定日", // 空白
   "完了日", // 空白
   "完了報告書取得日", // 空白
-  "工事区分", // 空白
+  "工事区分", // 点検報告書で「有」に丸が付いた項目 (1件=1行に展開)
   "アフター受付内容", // 不具合項目の状況からの要約
   "手配業者", // 空白
   "処置", // 空白
@@ -28,6 +28,9 @@ export const COLUMNS = [
 
 /** アフター受付内容の列番号 (UIで複数行セルにする) */
 export const SUMMARY_COL = COLUMNS.indexOf("アフター受付内容");
+
+/** 工事区分の列番号 (工事区分の数だけ行を展開する) */
+export const WORK_COL = COLUMNS.indexOf("工事区分");
 
 function escapeTsvCell(v: string): string {
   let s = v.replace(/\t/g, " ");

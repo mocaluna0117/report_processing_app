@@ -43,3 +43,11 @@ export interface TextToken {
   y: number;
   page: number; // 1始まり
 }
+
+/** 工事区分1件分 (点検報告書で「有」に丸が付いた項目)。confidence=warn は画像認識が自信なし */
+export interface WorkCategoryEntry {
+  value: string;
+  confidence: Confidence;
+  /** 画像認識が読み取った元の項目名 (参考) */
+  item?: string;
+}
