@@ -4,8 +4,8 @@ import { toHalfWidthAlnum } from "@/lib/text";
 
 describe("toHalfWidthAlnum", () => {
   it("全角英数字を半角に変換する", () => {
-    expect(toHalfWidthAlnum("ＳＥＣＵＲＥＡ文京 Ａ号棟 ３ヶ月 ０１２ａｂｃ")).toBe(
-      "SECUREA文京 A号棟 3ヶ月 012abc",
+    expect(toHalfWidthAlnum("ＳＥＣＵＲＥＡ架空町 Ａ号棟 ３ヶ月 ０１２ａｂｃ")).toBe(
+      "SECUREA架空町 A号棟 3ヶ月 012abc",
     );
   });
 
@@ -17,10 +17,10 @@ describe("toHalfWidthAlnum", () => {
 describe("mapTextItems", () => {
   it("PDFトークンの英数字が半角に正規化される", () => {
     const tokens = mapTextItems(
-      [{ str: "ＳＥＣＵＲＥＡ文京小日向３丁目Ａ号地", transform: [1, 0, 0, 1, 100, 700] }],
+      [{ str: "ＳＥＣＵＲＥＡ架空町３丁目Ａ号地", transform: [1, 0, 0, 1, 100, 700] }],
       842,
       1,
     );
-    expect(tokens[0].str).toBe("SECUREA文京小日向3丁目A号地");
+    expect(tokens[0].str).toBe("SECUREA架空町3丁目A号地");
   });
 });
