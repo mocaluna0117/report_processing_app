@@ -142,7 +142,7 @@ describe("resolveDeveloper: 事業者の判定ルール", () => {
   });
 
   it("ＳＥＣＵＲＥA (全角) を含む現場名は大和ハウス工業", () => {
-    const r = resolveDeveloper("4100000000", "ＳＥＣＵＲＥA文京タウン3丁目1号地");
+    const r = resolveDeveloper("4100000000", "ＳＥＣＵＲＥA架空タウン3丁目1号地");
     expect(r.value).toBe("大和ハウス工業");
     expect(r.confidence).toBe("ok");
   });
@@ -181,7 +181,7 @@ describe("resolveDeveloper: 事業者の判定ルール", () => {
   });
 
   it("契約番号が不明でも現場名だけで判定できる", () => {
-    expect(resolveDeveloper("", "ＳＥＣＵＲＥA文京タウン").value).toBe("大和ハウス工業");
+    expect(resolveDeveloper("", "ＳＥＣＵＲＥA架空タウン").value).toBe("大和ハウス工業");
     expect(resolveDeveloper("", "999.杉並区サンプル").value).toBe("タカマツハウス");
     expect(resolveDeveloper("", "本町アパート").value).toBe("賃貸住宅事業部");
     expect(resolveDeveloper("", "").confidence).toBe("warn");
