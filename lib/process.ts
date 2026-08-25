@@ -1,6 +1,7 @@
 "use client";
 
 // 1ペア分の処理パイプライン (すべてブラウザ内。要約のテキストのみ /api/summarize へ送る)
+import { buildMergedPdfName } from "@/lib/naming";
 import { extractTokens } from "@/lib/pdf/extract";
 import { mergeReports } from "@/lib/pdf/merge";
 import { parsePhotoReport } from "@/lib/pdf/parse-photo-report";
@@ -49,7 +50,8 @@ export async function processPair(
   inspection: UploadedFile | null,
 ): Promise<ResultRow> {
   const warnings: string[] = [];
-  const mergedName = `${date ?? "日付不明"}_${ownerDisplay.replace(/\s+/g, "") || "施主不明"}_報告書.pdf`.normalize("NFC");
+  // 抽出前のフォールバック名 (抽出成功後に「〇〇目点検報告書_施主名様／物件名.pdf」へ更新)
+  let mergedName = buildMergedPdfName({ fallbackOwner: ownerDisplay });
 
   try {
     // Fileから1回だけ読む。pdfjsはバッファをworkerへtransferしてdetachするため
@@ -58,6 +60,14 @@ export async function processPair(
     const { tokens, pageCount } = await extractTokens(photoBytes.slice());
     const data = parsePhotoReport(tokens, pageCount, {
       fileNameDate: date ?? undefined,
+    });
+
+    // 結合PDF名: 「〇〇目点検報告書_施主名様／物件名.pdf」 (施主名は姓と名の間に半角スペース)
+    mergedName = buildMergedPdfName({
+      timing: data.inspectionTiming.value,
+      ownerName: data.ownerName.value,
+      propertyName: data.propertyName.value,
+      fallbackOwner: ownerDisplay,
     });
 
     // PDF結合 (写真報告書 → 点検報告書)。要約より先に行い、要約失敗の影響を受けないようにする
