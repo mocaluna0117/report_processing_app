@@ -47,6 +47,10 @@ export function ResultsTable({
       <table className="w-full min-w-[2500px] text-sm">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
+            {/* 施主列は左端に固定し、横スクロールの対象外にする (コピー対象外のUI見出し) */}
+            <th className="sticky left-0 z-10 w-28 border-r border-slate-200 bg-slate-50 px-2 py-2">
+              施主
+            </th>
             {COLUMNS.map((c) => (
               <th key={c} className={`px-2 py-2 ${COL_WIDTH[c] ?? "w-20"}`}>
                 {c}
@@ -61,6 +65,11 @@ export function ResultsTable({
         <tbody>
           {results.map((row) => (
             <tr key={row.pairId} className="border-b border-slate-100 align-top last:border-0">
+              <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-2 py-2">
+                <p className="max-w-28 truncate text-sm font-medium" title={row.ownerDisplay}>
+                  {row.ownerDisplay || "－"}
+                </p>
+              </td>
               {row.error ? (
                 <td colSpan={COLUMNS.length} className="px-2 py-2">
                   <span className="text-red-600">
@@ -126,9 +135,6 @@ export function ResultsTable({
                   ) : (
                     <span className="text-xs text-slate-400">PDFなし</span>
                   )}
-                  <p className="max-w-28 truncate text-[10px] text-slate-400">
-                    {row.ownerDisplay}
-                  </p>
                 </div>
               </td>
             </tr>
