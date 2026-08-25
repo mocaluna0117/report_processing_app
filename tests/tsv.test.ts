@@ -1,5 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { toHtmlTable, toTsv } from "@/lib/tsv";
+import { COLUMNS, SUMMARY_COL, toHtmlTable, toTsv } from "@/lib/tsv";
+
+describe("COLUMNS", () => {
+  it("転記先Excelの24列構成と一致する", () => {
+    expect(COLUMNS).toEqual([
+      "物件数",
+      "PJ",
+      "受付種別",
+      "受付日",
+      "受付者",
+      "担当",
+      "事業者",
+      "物件名称",
+      "お客様氏名",
+      "住所",
+      "引渡日",
+      "監督",
+      "営業",
+      "初回訪問日",
+      "前回対応日",
+      "対応予定日",
+      "完了日",
+      "完了報告書取得日",
+      "工事区分",
+      "アフター受付内容",
+      "手配業者",
+      "処置",
+      "最終更新日",
+      "備考欄",
+    ]);
+    expect(SUMMARY_COL).toBe(19);
+  });
+});
 
 describe("toTsv", () => {
   it("通常セルはそのままタブ区切り", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mapTextItems } from "@/lib/pdf/tokens";
-import { toHalfWidthAlnum } from "@/lib/text";
+import { toDateNoPad, toHalfWidthAlnum } from "@/lib/text";
 
 describe("toHalfWidthAlnum", () => {
   it("全角英数字を半角に変換する", () => {
@@ -11,6 +11,18 @@ describe("toHalfWidthAlnum", () => {
 
   it("記号・カナ・漢字は変換しない (全角ハイフン・全角スラッシュ等は保持)", () => {
     expect(toHalfWidthAlnum("３－１５／様邸・アパート")).toBe("3－15／様邸・アパート");
+  });
+});
+
+describe("toDateNoPad", () => {
+  it("YYYY/MM/DD をゼロ埋めなしの yyyy/m/d にする", () => {
+    expect(toDateNoPad("2026/07/22")).toBe("2026/7/22");
+    expect(toDateNoPad("2026/11/05")).toBe("2026/11/5");
+  });
+
+  it("日付形式でなければそのまま返す", () => {
+    expect(toDateNoPad("")).toBe("");
+    expect(toDateNoPad("不明")).toBe("不明");
   });
 });
 

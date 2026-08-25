@@ -8,3 +8,10 @@ export function toHalfWidthAlnum(s: string): string {
     String.fromCharCode(c.charCodeAt(0) - 0xfee0),
   );
 }
+
+/** 「2026/07/22」→「2026/7/22」(ゼロ埋めなし表記)。日付形式でなければそのまま返す */
+export function toDateNoPad(s: string): string {
+  const m = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(s);
+  if (!m) return s;
+  return `${Number(m[1])}/${Number(m[2])}/${Number(m[3])}`;
+}

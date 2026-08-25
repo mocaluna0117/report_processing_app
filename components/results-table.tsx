@@ -1,7 +1,7 @@
 "use client";
 
 import type { ResultRow } from "@/lib/process";
-import { COLUMNS } from "@/lib/tsv";
+import { COLUMNS, SUMMARY_COL } from "@/lib/tsv";
 import type { Confidence } from "@/lib/types";
 
 function cellClass(c: Confidence): string {
@@ -9,6 +9,25 @@ function cellClass(c: Confidence): string {
   if (c === "warn") return "border-amber-300 bg-amber-50";
   return "border-slate-200 bg-white";
 }
+
+/** 列ごとの幅 (未指定の空白列などは w-20) */
+const COL_WIDTH: Record<string, string> = {
+  物件数: "w-16",
+  PJ: "w-32",
+  受付種別: "w-20",
+  受付日: "w-28",
+  受付者: "w-20",
+  担当: "w-16",
+  事業者: "w-36",
+  物件名称: "w-56",
+  お客様氏名: "w-28",
+  住所: "w-52",
+  引渡日: "w-28",
+  完了報告書取得日: "w-28",
+  アフター受付内容: "w-[24rem]",
+  最終更新日: "w-24",
+  備考欄: "w-44",
+};
 
 export function ResultsTable({
   results,
@@ -21,35 +40,38 @@ export function ResultsTable({
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-      <table className="w-full min-w-[1300px] text-sm">
+      <table className="w-full min-w-[2500px] text-sm">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
+            <th className="sticky left-0 z-10 w-28 bg-slate-50 px-2 py-2">結合PDF</th>
             {COLUMNS.map((c) => (
-              <th
-                key={c}
-                className={`px-2 py-2 ${
-                  c === "アフター受付内容"
-                    ? "w-[24rem]"
-                    : c === "PJ"
-                      ? "w-32"
-                      : c === "備考欄"
-                        ? "w-44"
-                        : c === "受付種別" || c === "引渡日" || c === "最終更新日"
-                          ? "w-24"
-                          : ""
-                }`}
-              >
+              <th key={c} className={`px-2 py-2 ${COL_WIDTH[c] ?? "w-20"}`}>
                 {c}
               </th>
             ))}
-            <th className="w-28 px-2 py-2">結合PDF</th>
           </tr>
         </thead>
         <tbody>
           {results.map((row) => (
             <tr key={row.pairId} className="border-b border-slate-100 align-top last:border-0">
+              <td className="sticky left-0 z-10 bg-white px-2 py-1.5">
+                {row.merged ? (
+                  <button
+                    type="button"
+                    onClick={() => onDownloadRow(row)}
+                    className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    ダウンロード
+                  </button>
+                ) : (
+                  <span className="text-xs text-slate-400">なし</span>
+                )}
+                <p className="mt-1 max-w-28 truncate text-[10px] text-slate-400">
+                  {row.ownerDisplay}
+                </p>
+              </td>
               {row.error ? (
-                <td colSpan={8} className="px-2 py-2">
+                <td colSpan={COLUMNS.length} className="px-2 py-2">
                   <span className="text-red-600">
                     {row.ownerDisplay}: 処理に失敗しました — {row.error}
                   </span>
@@ -57,7 +79,7 @@ export function ResultsTable({
               ) : (
                 row.cells.map((value, col) => (
                   <td key={COLUMNS[col]} className="px-1 py-1.5">
-                    {col === 7 ? (
+                    {col === SUMMARY_COL ? (
                       <div>
                         <textarea
                           value={value}
@@ -87,19 +109,6 @@ export function ResultsTable({
                   </td>
                 ))
               )}
-              <td className="px-2 py-1.5">
-                {row.merged ? (
-                  <button
-                    type="button"
-                    onClick={() => onDownloadRow(row)}
-                    className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    ダウンロード
-                  </button>
-                ) : (
-                  <span className="text-xs text-slate-400">なし</span>
-                )}
-              </td>
             </tr>
           ))}
         </tbody>

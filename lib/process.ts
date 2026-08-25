@@ -3,7 +3,8 @@
 // 1ペア分の処理パイプライン (すべてブラウザ内。要約のテキストのみ /api/summarize へ送る)
 import { formatLastUpdatedJst, formatRemarksJst } from "@/lib/jst-date";
 import { buildMergedPdfName } from "@/lib/naming";
-import { toHalfWidthAlnum } from "@/lib/text";
+import { toDateNoPad, toHalfWidthAlnum } from "@/lib/text";
+import { COLUMNS } from "@/lib/tsv";
 import { extractTokens } from "@/lib/pdf/extract";
 import { mergeReports } from "@/lib/pdf/merge";
 import { parsePhotoReport } from "@/lib/pdf/parse-photo-report";
@@ -115,39 +116,61 @@ export async function processPair(
       }
     }
 
-    const fields = [
+    for (const f of [
       data.pj,
       data.inspectionTiming,
+      data.inspectionDate,
       data.developer,
       data.propertyName,
       data.ownerName,
       data.address,
       data.handoverDate,
-    ];
-    for (const f of fields) warnings.push(...f.warnings);
-    warnings.push(...data.inspectionDate.warnings);
+    ]) {
+      warnings.push(...f.warnings);
+    }
 
     const summaryConfidence: Confidence =
       data.templateRecognized && !summaryFailed ? "ok" : "fail";
 
     // 最終更新日・備考欄は処理実行日 (日本時間) を自動入力
     const now = new Date();
+    const blank = { value: "", confidence: "ok" as Confidence };
+    const fixed = (value: string) => ({ value, confidence: "ok" as Confidence });
+    const fixedWith = (value: string, confidence: Confidence) => ({ value, confidence });
+
+    // 転記先Excelの列構成そのまま (lib/tsv.ts の COLUMNS と同順・同数)
+    const entries: { value: string; confidence: Confidence }[] = [
+      blank, // 物件数
+      data.pj, // PJ
+      data.inspectionTiming, // 受付種別
+      fixedWith(toDateNoPad(data.inspectionDate.value), data.inspectionDate.confidence), // 受付日 (点検日 yyyy/m/d)
+      fixed("木村"), // 受付者
+      blank, // 担当
+      data.developer, // 事業者
+      data.propertyName, // 物件名称
+      data.ownerName, // お客様氏名
+      data.address, // 住所
+      data.handoverDate, // 引渡日 (YYYY/MM/DD)
+      blank, // 監督
+      blank, // 営業
+      blank, // 初回訪問日
+      blank, // 前回対応日
+      blank, // 対応予定日
+      blank, // 完了日
+      blank, // 完了報告書取得日
+      blank, // 工事区分
+      fixedWith(summary, summaryConfidence), // アフター受付内容
+      blank, // 手配業者
+      blank, // 処置
+      fixed(formatLastUpdatedJst(now)), // 最終更新日
+      fixed(formatRemarksJst(now)), // 備考欄
+    ];
 
     return {
       pairId,
       ownerDisplay,
-      cells: [
-        ...fields.map((f) => f.value),
-        summary,
-        formatLastUpdatedJst(now),
-        formatRemarksJst(now),
-      ],
-      confidences: [
-        ...fields.map((f) => f.confidence),
-        summaryConfidence,
-        "ok",
-        "ok",
-      ],
+      cells: entries.map((e) => e.value),
+      confidences: entries.map((e) => e.confidence),
       warnings,
       engine,
       merged,
@@ -158,8 +181,8 @@ export async function processPair(
     return {
       pairId,
       ownerDisplay,
-      cells: Array(10).fill(""),
-      confidences: Array(10).fill("fail") as Confidence[],
+      cells: Array(COLUMNS.length).fill(""),
+      confidences: Array(COLUMNS.length).fill("fail") as Confidence[],
       warnings,
       engine: null,
       merged: null,
