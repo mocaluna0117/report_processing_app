@@ -2,6 +2,7 @@
 
 // 1ペア分の処理パイプライン (すべてブラウザ内。要約のテキストのみ /api/summarize へ送る)
 import { buildMergedPdfName } from "@/lib/naming";
+import { toHalfWidthAlnum } from "@/lib/text";
 import { extractTokens } from "@/lib/pdf/extract";
 import { mergeReports } from "@/lib/pdf/merge";
 import { parsePhotoReport } from "@/lib/pdf/parse-photo-report";
@@ -102,7 +103,7 @@ export async function processPair(
           specialNotes: data.specialNotes,
           noAbnormality: data.noAbnormalityOnPage1 && data.defects.length === 0,
         });
-        summary = res.summary;
+        summary = toHalfWidthAlnum(res.summary);
         engine = res.engine;
         if (res.error) warnings.push(`要約API: ${res.error}`);
       } catch (e) {

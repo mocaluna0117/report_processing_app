@@ -15,7 +15,7 @@ const t = (str: string, x: number, y: number, page = 1): TextToken => ({
 function headerTokens(overrides?: { siteName?: string }): TextToken[] {
   return [
     t("9900110101", 65.94, HEADER_ROWS.rowA),
-    t(overrides?.siteName ?? "【サンプルハウス】999.杉並区高円寺北1-2-4Ａ号棟", 242.79, HEADER_ROWS.rowA),
+    t(overrides?.siteName ?? "【サンプルハウス】999.杉並区高円寺北1-2-4A号棟", 242.79, HEADER_ROWS.rowA),
     t("2025", 451.86, HEADER_ROWS.rowA),
     t("9", 493.83, HEADER_ROWS.rowA),
     t("26", 519.68, HEADER_ROWS.rowA),
@@ -71,7 +71,7 @@ describe("parsePhotoReport: ヘッダ", () => {
     const r = parsePhotoReport(headerTokens(), 1);
     expect(r.pj.value).toBe("9900110101");
     expect(r.developer.value).toBe("サンプルハウス");
-    expect(r.propertyName.value).toBe("999.杉並区高円寺北1-2-4Ａ号棟");
+    expect(r.propertyName.value).toBe("999.杉並区高円寺北1-2-4A号棟");
     expect(r.handoverDate.value).toBe("2025/09/26"); // ゼロ埋め
     expect(r.inspectionDate.value).toBe("2026/07/22");
     expect(r.address.value).toBe("東京都杉並区高円寺北1-2-3");
@@ -107,7 +107,7 @@ describe("parsePhotoReport: ヘッダ", () => {
     tokens.push(t("2026 10 26", 451.86, HEADER_ROWS.rowA));
     const r = parsePhotoReport(tokens, 1);
     expect(r.handoverDate.value).toBe("2026/10/26");
-    expect(r.propertyName.value).toBe("999.杉並区高円寺北1-2-4Ａ号棟");
+    expect(r.propertyName.value).toBe("999.杉並区高円寺北1-2-4A号棟");
   });
 
   it("契約番号が既定位置に無ければページ内検索でwarn付き取得", () => {
@@ -141,8 +141,8 @@ describe("resolveDeveloper: 事業者の判定ルール", () => {
     expect(r.confidence).toBe("ok");
   });
 
-  it("ＳＥＣＵＲＥＡ (全角) を含む現場名は大和ハウス工業", () => {
-    const r = resolveDeveloper("4100000000", "ＳＥＣＵＲＥＡ文京タウン3丁目1号地");
+  it("ＳＥＣＵＲＥA (全角) を含む現場名は大和ハウス工業", () => {
+    const r = resolveDeveloper("4100000000", "ＳＥＣＵＲＥA文京タウン3丁目1号地");
     expect(r.value).toBe("大和ハウス工業");
     expect(r.confidence).toBe("ok");
   });
@@ -165,7 +165,7 @@ describe("resolveDeveloper: 事業者の判定ルール", () => {
     expect(resolveDeveloper("3100000000", "本町アパート").confidence).toBe("ok");
   });
 
-  it("契約番号41始まりは現場名から判定 (【】やＳＥＣＵＲＥＡ)、手掛かりが無ければ空欄+warn", () => {
+  it("契約番号41始まりは現場名から判定 (【】やＳＥＣＵＲＥA)、手掛かりが無ければ空欄+warn", () => {
     expect(resolveDeveloper("4100000000", "【小田急不動産】タウン1丁目").value).toBe(
       "小田急不動産",
     );
@@ -181,7 +181,7 @@ describe("resolveDeveloper: 事業者の判定ルール", () => {
   });
 
   it("契約番号が不明でも現場名だけで判定できる", () => {
-    expect(resolveDeveloper("", "ＳＥＣＵＲＥＡ文京タウン").value).toBe("大和ハウス工業");
+    expect(resolveDeveloper("", "ＳＥＣＵＲＥA文京タウン").value).toBe("大和ハウス工業");
     expect(resolveDeveloper("", "999.杉並区サンプル").value).toBe("タカマツハウス");
     expect(resolveDeveloper("", "本町アパート").value).toBe("賃貸住宅事業部");
     expect(resolveDeveloper("", "").confidence).toBe("warn");

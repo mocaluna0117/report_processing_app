@@ -7,9 +7,9 @@ describe("buildMergedPdfName", () => {
       buildMergedPdfName({
         timing: "1年",
         ownerName: "山田 太郎",
-        propertyName: "999.杉並区高円寺北1-2-4Ａ号棟",
+        propertyName: "999.杉並区高円寺北1-2-4A号棟",
       }),
-    ).toBe("1年目点検報告書_山田 太郎様／999.杉並区高円寺北1-2-4Ａ号棟.pdf");
+    ).toBe("1年目点検報告書_山田 太郎様／999.杉並区高円寺北1-2-4A号棟.pdf");
   });
 
   it("3ヶ月点検の場合", () => {

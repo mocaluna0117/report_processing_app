@@ -1,3 +1,4 @@
+import { toHalfWidthAlnum } from "@/lib/text";
 import type { TextToken } from "@/lib/types";
 
 interface TextItemLike {
@@ -26,7 +27,10 @@ export function mapTextItems(
   const out: TextToken[] = [];
   for (const it of items) {
     if (!isTextItem(it)) continue; // TextMarkedContent 等は無視
-    const str = it.str.normalize("NFC").replace(/�/g, "").trim();
+    // 英数字は全出力で半角に揃える (ここがPDF由来テキストの単一の入口)
+    const str = toHalfWidthAlnum(it.str.normalize("NFC"))
+      .replace(/�/g, "")
+      .trim();
     if (!str) continue;
     out.push({
       str,
