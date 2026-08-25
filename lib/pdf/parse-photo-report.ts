@@ -35,6 +35,57 @@ function failed(warning: string): FieldValue {
 
 const NO_ABNORMALITY = /異常(なし|無し|無)/;
 
+const TAKAMATSU = "タカマツハウス";
+const CHINTAI = "賃貸住宅事業部";
+const DAIWA = "大和ハウス工業";
+
+/**
+ * 事業者の判定ルール:
+ * - 現場名から: 【】内 > ＳＥＣＵＲＥＡ=大和ハウス工業 > 数字.=タカマツハウス > その他=賃貸住宅事業部
+ * - 契約番号から: 21始まり=必ずタカマツハウス / 31始まり=必ず賃貸住宅事業部 /
+ *   41始まり=その他 (大和ハウス工業・小田急不動産など。現場名からの推定を採用)
+ * - 両者が矛盾する場合は契約番号を優先しつつwarn。41始まりでタカマツ/賃貸と推定された場合は
+ *   矛盾のため空欄+warn (誤値を出すより手動確認が安全)
+ */
+export function resolveDeveloper(pj: string, siteName: string): FieldValue {
+  const nfkc = siteName.normalize("NFKC"); // 全角英数字 (ＳＥＣＵＲＥＡ等) を半角へ
+
+  // 1. 現場名からの候補
+  let candidate = "";
+  const bracket = /^【(.+?)】/.exec(siteName);
+  if (bracket) candidate = bracket[1].trim();
+  else if (/SECUREA/i.test(nfkc)) candidate = DAIWA;
+  else if (/^\d+\./.test(nfkc)) candidate = TAKAMATSU;
+  else if (siteName) candidate = CHINTAI;
+
+  // 2. 契約番号による確定ルール
+  const conflict = (forced: string): FieldValue =>
+    field(forced, "warn", [
+      `契約番号(${pj.slice(0, 2)}始まり)の規則では「${forced}」ですが、現場名からは「${candidate}」と推定されるため要確認です`,
+    ]);
+  if (pj.startsWith("21")) {
+    return candidate && candidate !== TAKAMATSU ? conflict(TAKAMATSU) : field(TAKAMATSU);
+  }
+  if (pj.startsWith("31")) {
+    return candidate && candidate !== CHINTAI ? conflict(CHINTAI) : field(CHINTAI);
+  }
+  if (pj.startsWith("41")) {
+    if (candidate === TAKAMATSU || candidate === CHINTAI) {
+      return field("", "warn", [
+        `契約番号が41始まり(その他事業者)ですが、現場名からは「${candidate}」と推定され矛盾するため、事業者を手動で入力してください`,
+      ]);
+    }
+    if (candidate) return field(candidate);
+    return field("", "warn", [
+      "契約番号が41始まり(その他事業者)ですが、現場名から事業者を特定できません。手動で入力してください",
+    ]);
+  }
+
+  // 3. 契約番号が無い/想定外の場合は現場名からの候補
+  if (candidate) return field(candidate);
+  return field("", "warn", ["事業者を判定できません。手動で入力してください"]);
+}
+
 function byXY(a: TextToken, b: TextToken): number {
   return a.y - b.y || a.x - b.x;
 }
@@ -249,25 +300,21 @@ export function parsePhotoReport(
     )
     .sort((a, b) => a.x - b.x);
   const siteName = siteTokens.map((t) => t.str).join("").trim();
-  let developer: FieldValue;
   let propertyName: FieldValue;
   if (!siteName) {
-    developer = failed("現場名が見つかりません");
     propertyName = failed("現場名が見つかりません");
   } else {
     const m = siteName.match(/^【(.+?)】(.*)$/s);
     if (m) {
-      developer = field(m[1].trim());
       propertyName = field(m[2].trim());
     } else if (siteName.startsWith("【")) {
-      developer = field("", "warn", ["現場名の【】が閉じていません"]);
       propertyName = field(siteName, "warn", ["現場名の【】が閉じていません"]);
     } else {
-      // 【】が無い現場名は正常ケース (事業者=空欄)
-      developer = field("");
       propertyName = field(siteName);
     }
   }
+  // 事業者は現場名と契約番号の業務ルールで判定する (resolveDeveloper参照)
+  const developer = resolveDeveloper(pj.value, siteName);
 
   // --- 引渡日 / 点検日 ---
   const dateTokens = (row: TextToken[]) =>

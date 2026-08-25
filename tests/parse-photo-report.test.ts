@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HEADER_ROWS, SLOT } from "@/lib/pdf/constants";
-import { parsePhotoReport } from "@/lib/pdf/parse-photo-report";
+import { parsePhotoReport, resolveDeveloper } from "@/lib/pdf/parse-photo-report";
 import type { TextToken } from "@/lib/types";
 
 // --- 合成トークンのヘルパー (実測座標に合わせる) ---
@@ -84,9 +84,9 @@ describe("parsePhotoReport: ヘッダ", () => {
     }
   });
 
-  it("【】の無い現場名は事業者=空欄・物件名称=全文 (confidence ok)", () => {
+  it("【】の無い現場名は物件名称=全文、事業者は業務ルールで判定 (その他=賃貸住宅事業部)", () => {
     const r = parsePhotoReport(headerTokens({ siteName: "本町・鈴木様アパート" }), 1);
-    expect(r.developer.value).toBe("");
+    expect(r.developer.value).toBe("賃貸住宅事業部");
     expect(r.developer.confidence).toBe("ok");
     expect(r.propertyName.value).toBe("本町・鈴木様アパート");
   });
@@ -131,6 +131,60 @@ describe("parsePhotoReport: ヘッダ", () => {
     expect(r.pj.confidence).toBe("fail");
     expect(r.ownerName.value).toBe("");
     expect(r.defects).toHaveLength(0);
+  });
+});
+
+describe("resolveDeveloper: 事業者の判定ルール", () => {
+  it("現場名の【】内を最優先で使う", () => {
+    const r = resolveDeveloper("9900000000", "【サンプルハウス】999.杉並");
+    expect(r.value).toBe("サンプルハウス");
+    expect(r.confidence).toBe("ok");
+  });
+
+  it("ＳＥＣＵＲＥＡ (全角) を含む現場名は大和ハウス工業", () => {
+    const r = resolveDeveloper("4100000000", "ＳＥＣＵＲＥＡ文京タウン3丁目1号地");
+    expect(r.value).toBe("大和ハウス工業");
+    expect(r.confidence).toBe("ok");
+  });
+
+  it("「数字.」で始まる現場名はタカマツハウス", () => {
+    const r = resolveDeveloper("2100000000", "558.新宿区サンプル3-45-4");
+    expect(r.value).toBe("タカマツハウス");
+    expect(r.confidence).toBe("ok");
+  });
+
+  it("契約番号21始まりは必ずタカマツハウス (現場名と矛盾すればwarn)", () => {
+    expect(resolveDeveloper("2100000000", "").value).toBe("タカマツハウス");
+    const conflict = resolveDeveloper("2100000000", "本町アパート");
+    expect(conflict.value).toBe("タカマツハウス");
+    expect(conflict.confidence).toBe("warn");
+  });
+
+  it("契約番号31始まりは必ず賃貸住宅事業部", () => {
+    expect(resolveDeveloper("3100000000", "本町アパート").value).toBe("賃貸住宅事業部");
+    expect(resolveDeveloper("3100000000", "本町アパート").confidence).toBe("ok");
+  });
+
+  it("契約番号41始まりは現場名から判定 (【】やＳＥＣＵＲＥＡ)、手掛かりが無ければ空欄+warn", () => {
+    expect(resolveDeveloper("4100000000", "【小田急不動産】タウン1丁目").value).toBe(
+      "小田急不動産",
+    );
+    const noClue = resolveDeveloper("4100000000", "本町アパート");
+    expect(noClue.value).toBe("");
+    expect(noClue.confidence).toBe("warn");
+  });
+
+  it("契約番号41始まりで現場名が「数字.」ならタカマツハウス規則と矛盾するため空欄+warn", () => {
+    const r = resolveDeveloper("4100000000", "558.新宿区サンプル3-45-4");
+    expect(r.value).toBe("");
+    expect(r.confidence).toBe("warn");
+  });
+
+  it("契約番号が不明でも現場名だけで判定できる", () => {
+    expect(resolveDeveloper("", "ＳＥＣＵＲＥＡ文京タウン").value).toBe("大和ハウス工業");
+    expect(resolveDeveloper("", "999.杉並区サンプル").value).toBe("タカマツハウス");
+    expect(resolveDeveloper("", "本町アパート").value).toBe("賃貸住宅事業部");
+    expect(resolveDeveloper("", "").confidence).toBe("warn");
   });
 });
 
