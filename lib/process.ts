@@ -150,7 +150,8 @@ export async function processPair(
       data.propertyName, // 物件名称
       data.ownerName, // お客様氏名
       data.address, // 住所
-      data.handoverDate, // 引渡日 (YYYY/MM/DD)
+      // 引渡日もゼロ埋めなし表記 (内部表現はYYYY/MM/DDで持ち、出力時に変換)
+      fixedWith(toDateNoPad(data.handoverDate.value), data.handoverDate.confidence),
       blank, // 監督
       blank, // 営業
       blank, // 初回訪問日
