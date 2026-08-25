@@ -1,0 +1,38 @@
+{
+  "name": "report-processing-app",
+  "version": "1.0.0",
+  "description": "写真報告書・点検報告書のPDF結合とExcel転記用テキスト抽出",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "postinstall": "node scripts/copy-pdf-worker.mjs",
+    "dump": "tsx scripts/dump-textcontent.mts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@google/genai": "^2.18.0",
+    "fflate": "^0.8.3",
+    "next": "^16.3.2",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "6.2.108",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.3.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  },
+  "private": true
+}

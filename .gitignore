@@ -1,0 +1,16 @@
+node_modules/
+.next/
+out/
+.env*
+!.env.example
+public/pdf.worker.min.mjs
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
+
+# 実在のお客様の個人情報を含むため絶対にコミットしない (ローカル専用)
+写真報告書_例/
+点検報告書_例/
+tests/fixtures/
+*.pdf
+*.PDF
