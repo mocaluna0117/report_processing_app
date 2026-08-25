@@ -78,6 +78,7 @@ npm run dev
   1. <https://aistudio.google.com/apikey> で無料のAPIキーを取得（クレジットカード不要）
   2. リポジトリ直下に `.env.local` を作成: `GEMINI_API_KEY=取得したキー`
   3. `npm run dev` を再起動
+  - 使用モデルは既定で `gemini-3.6-flash` です。「This model ... is no longer available」というエラーが出たら、`.env.local` に `GEMINI_MODEL=（新しいモデル名）` を追加して切り替えてください
 - キー未設定・API失敗時は自動で**ルールベースの定型要約**にフォールバックします（結果に「定型要約」バッジが付きます）。
 - Geminiへ送信されるのは**個人情報を伏字化した不具合テキストのみ**です（施主名・住所・契約番号・PDF本体は送信されません）。ただし無料枠の送信データはGoogleのサービス改善に利用され得る点にご留意ください。
 

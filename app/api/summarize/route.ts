@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
+import { GEMINI_MODEL } from "@/lib/gemini-model";
 import { redactPii } from "@/lib/summarize/redact";
 import { ruleBasedSummary } from "@/lib/summarize/rule-based";
 import type { SummarizeRequest, SummarizeResponse } from "@/lib/summarize/types";
@@ -85,7 +86,7 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
     if (delay > 0) await sleep(delay);
     try {
       const res = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: GEMINI_MODEL,
         contents: prompt,
         config: { temperature: 0.2 },
       });

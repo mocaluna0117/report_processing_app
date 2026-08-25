@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { NextResponse } from "next/server";
+import { GEMINI_MODEL } from "@/lib/gemini-model";
 import {
   WORK_CATEGORIES,
   normalizeHits,
@@ -69,7 +70,7 @@ async function callGemini(apiKey: string, images: string[]): Promise<WorkCategor
     if (delay > 0) await sleep(delay);
     try {
       const res = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: GEMINI_MODEL,
         contents: [
           {
             role: "user",
