@@ -10,6 +10,8 @@ import {
 } from "@/lib/work-categories";
 
 export const runtime = "nodejs";
+// Vercel等のサーバーレス環境での関数実行上限 (Geminiのリトライ込みで収まる長さ)
+export const maxDuration = 60;
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_CHARS = 6_000_000; // base64 で約4.5MB

@@ -6,6 +6,8 @@ import { ruleBasedSummary } from "@/lib/summarize/rule-based";
 import type { SummarizeRequest, SummarizeResponse } from "@/lib/summarize/types";
 
 export const runtime = "nodejs";
+// Vercel等のサーバーレス環境での関数実行上限 (Geminiのリトライ込みで収まる長さ)
+export const maxDuration = 60;
 
 /** 想定外のボディでも500にせず、安全な形に整形する (サイズ上限つき) */
 function sanitizeRequest(raw: unknown): SummarizeRequest {
