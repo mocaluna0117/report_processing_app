@@ -7,6 +7,8 @@ export const COLUMNS = [
   "住所",
   "引渡日",
   "アフター受付内容",
+  "最終更新日",
+  "備考欄",
 ] as const;
 
 function escapeTsvCell(v: string): string {

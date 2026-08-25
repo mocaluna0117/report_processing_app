@@ -1,6 +1,7 @@
 "use client";
 
 // 1ペア分の処理パイプライン (すべてブラウザ内。要約のテキストのみ /api/summarize へ送る)
+import { formatLastUpdatedJst, formatRemarksJst } from "@/lib/jst-date";
 import { buildMergedPdfName } from "@/lib/naming";
 import { toHalfWidthAlnum } from "@/lib/text";
 import { extractTokens } from "@/lib/pdf/extract";
@@ -129,11 +130,24 @@ export async function processPair(
     const summaryConfidence: Confidence =
       data.templateRecognized && !summaryFailed ? "ok" : "fail";
 
+    // 最終更新日・備考欄は処理実行日 (日本時間) を自動入力
+    const now = new Date();
+
     return {
       pairId,
       ownerDisplay,
-      cells: [...fields.map((f) => f.value), summary],
-      confidences: [...fields.map((f) => f.confidence), summaryConfidence],
+      cells: [
+        ...fields.map((f) => f.value),
+        summary,
+        formatLastUpdatedJst(now),
+        formatRemarksJst(now),
+      ],
+      confidences: [
+        ...fields.map((f) => f.confidence),
+        summaryConfidence,
+        "ok",
+        "ok",
+      ],
       warnings,
       engine,
       merged,
@@ -144,8 +158,8 @@ export async function processPair(
     return {
       pairId,
       ownerDisplay,
-      cells: Array(8).fill(""),
-      confidences: Array(8).fill("fail") as Confidence[],
+      cells: Array(10).fill(""),
+      confidences: Array(10).fill("fail") as Confidence[],
       warnings,
       engine: null,
       merged: null,

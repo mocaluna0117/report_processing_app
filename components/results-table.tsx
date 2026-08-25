@@ -21,7 +21,7 @@ export function ResultsTable({
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-      <table className="w-full min-w-[1100px] text-sm">
+      <table className="w-full min-w-[1300px] text-sm">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
             {COLUMNS.map((c) => (
@@ -29,12 +29,14 @@ export function ResultsTable({
                 key={c}
                 className={`px-2 py-2 ${
                   c === "アフター受付内容"
-                    ? "w-[26rem]"
+                    ? "w-[24rem]"
                     : c === "PJ"
                       ? "w-32"
-                      : c === "受付種別" || c === "引渡日"
-                        ? "w-24"
-                        : ""
+                      : c === "備考欄"
+                        ? "w-44"
+                        : c === "受付種別" || c === "引渡日" || c === "最終更新日"
+                          ? "w-24"
+                          : ""
                 }`}
               >
                 {c}
