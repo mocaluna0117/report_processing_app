@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { NextResponse } from "next/server";
-import { GEMINI_MODEL } from "@/lib/gemini-model";
+import { GEMINI_VISION_MODEL, callWithRetry } from "@/lib/gemini-model";
 import {
   WORK_CATEGORIES,
   normalizeHits,
@@ -10,8 +10,12 @@ import {
 } from "@/lib/work-categories";
 
 export const runtime = "nodejs";
-// Vercel等のサーバーレス環境での関数実行上限 (Geminiのリトライ込みで収まる長さ)
+// Vercel等のサーバーレス環境での関数実行上限
 export const maxDuration = 60;
+/** リトライ込みの総予算。maxDuration より短くして、必ずフォールバックを返せるようにする */
+const BUDGET_MS = 45_000;
+/** 1試行あたりのタイムアウト (予算内に2試行が収まる長さ) */
+const ATTEMPT_TIMEOUT_MS = 20_000;
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_CHARS = 6_000_000; // base64 で約4.5MB
@@ -28,19 +32,21 @@ function sanitizeImages(raw: unknown): string[] {
 
 const PROMPT = [
   "画像は住宅の定期点検で使う「点検チェックシート」を撮影したものです。",
-  "表の各行には「項目」(基礎・外壁・クロス など) があり、「不具合」列の「有・無」のどちらか一方に点検員が手書きで丸を付けています。",
+  "表には行が並び、各行の左に「項目」名(基礎・外壁・クロス など)、中央に「不具合」列の「有 ・ 無」の印字があり、点検員が手書きでどちらか一方に丸(円)を付けています。",
   "",
-  "あなたの仕事: 「有」に丸が付いている行だけを抜き出し、その行の「項目」名を次の工事区分一覧のいずれかに対応付けて返してください。",
+  "あなたの仕事: **その画像の表に実際に印字されている行だけ**を上から順に1行ずつ調べ、「有」の側に丸が付いている行を抜き出し、その行の項目名を工事区分一覧に対応付けて返してください。",
   `工事区分一覧: ${WORK_CATEGORIES.join(" / ")}`,
   "",
-  "ルール:",
-  "- 「無」に丸が付いている行、どちらにも丸が無い行は含めない",
-  '- 「有」と「無」の両方に丸がある、丸がどちらに掛かっているか曖昧、かすれて判読しづらい場合は含めた上で confidence を "low" にする',
-  '- 項目名が一覧に無い場合 (例: 外部塗装、内部塗装) は最も近いものを選び、無理なら "その他" にして confidence を "low" にする',
-  "- 「外部建具(サッシ)」は サッシ、「外部天井(軒天)」は 軒天 として扱う",
-  "- 同じ項目 (例: 基礎が2行) に複数の丸があっても1件にまとめる",
-  "- 手書きメモ欄の内容や顧客情報は読み取らず、出力に含めない",
-  "- 該当が1件も無ければ空配列を返す",
+  "厳守すべきルール:",
+  "1. 画像の表に印字されていない項目は絶対に出力しない。シートの種類によって行構成は異なり(戸建て版は内外装すべて、賃貸・共同住宅版は外部項目のみ など)、存在しない行を推測で足すのは誤りである。",
+  "2. 判定の主たる根拠は丸の位置。「無」の側に丸がある行は出力しない。丸が無い行も出力しない。",
+  "3. 補強証拠: 「有」の行は通常、右側の「場所・部位・詳細状況・対応内容」列に手書きメモがあり、「対応」列(完了/別日対応/見積)にも丸が付く。右側が完全に空欄の行は「無」の可能性が非常に高い。丸の位置が曖昧なときはこの証拠を重視する。",
+  "4. 迷った場合は出力しない方を選ぶ。誤って多く出すより確実なものだけを出す方が良い。ただし「有」に丸があると判断でき、かつ判別に不安が残る行は confidence を \"low\" にして含める。",
+  "5. 「外部建具(サッシ)」は サッシ、「外部天井(軒天)」は 軒天、「外部塗装」「内部塗装」は その他 として扱う。",
+  "6. 同じ項目名の行が複数(例: 基礎が2行)あり複数に丸があっても1件にまとめる。",
+  "7. 表の下部にある「上記以外の報告事項」「御見積り詳細」「その他」欄の手書きメモは項目行ではないので出力に含めない。",
+  "8. 「有」に丸がある行が1件も無ければ空配列を返す(空配列は正常な回答である)。",
+  "9. 手書きメモの文面や顧客情報(氏名・電話番号・契約番号)は読み取らず、出力に含めない。",
 ].join("\n");
 
 const RESPONSE_SCHEMA = {
@@ -62,17 +68,17 @@ const RESPONSE_SCHEMA = {
   required: ["flagged"],
 };
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 async function callGemini(apiKey: string, images: string[]): Promise<WorkCategoryHit[]> {
-  const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: 60_000 } });
-  const delays = [0, 2000, 8000]; // 無料枠のレート制限(429)向け指数バックオフ
-  let lastError: unknown;
-  for (const delay of delays) {
-    if (delay > 0) await sleep(delay);
-    try {
+  const ai = new GoogleGenAI({ apiKey });
+  return await callWithRetry(
+    {
+      model: GEMINI_VISION_MODEL,
+      budgetMs: BUDGET_MS,
+      attemptTimeoutMs: ATTEMPT_TIMEOUT_MS,
+    },
+    async ({ thinkingConfig, timeoutMs }) => {
       const res = await ai.models.generateContent({
-        model: GEMINI_MODEL,
+        model: GEMINI_VISION_MODEL,
         contents: [
           {
             role: "user",
@@ -86,22 +92,16 @@ async function callGemini(apiKey: string, images: string[]): Promise<WorkCategor
           temperature: 0,
           responseMimeType: "application/json",
           responseSchema: RESPONSE_SCHEMA,
+          httpOptions: { timeout: timeoutMs },
+          ...(thinkingConfig ? { thinkingConfig } : {}),
         },
       });
       const text = res.text?.trim();
-      if (!text) {
-        lastError = new Error("Geminiが空の応答を返しました");
-        continue;
-      }
+      if (!text) throw new Error("Geminiが空の応答を返しました");
       const parsed = JSON.parse(text) as { flagged?: unknown };
       return normalizeHits(Array.isArray(parsed.flagged) ? (parsed.flagged as FlaggedItem[]) : []);
-    } catch (e) {
-      lastError = e;
-      const msg = String(e);
-      if (/\b4\d{2}\b/.test(msg) && !/429/.test(msg)) throw e;
-    }
-  }
-  throw lastError;
+    },
+  );
 }
 
 export async function POST(request: Request): Promise<NextResponse<WorkCategoriesResponse>> {

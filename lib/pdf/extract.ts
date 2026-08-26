@@ -10,9 +10,14 @@ let pdfjsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
 
 export async function loadPdfjs() {
   if (!pdfjsPromise) {
-    pdfjsPromise = import("pdfjs-dist").then((pdfjs) => {
+    const p = import("pdfjs-dist").then((pdfjs) => {
       pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
       return pdfjs;
+    });
+    // 失敗はキャッシュしない (一時的な読み込み失敗でセッション中ずっと使えなくなるのを防ぐ)
+    pdfjsPromise = p.catch((e) => {
+      if (pdfjsPromise === p) pdfjsPromise = null;
+      throw e;
     });
   }
   return pdfjsPromise;
@@ -42,4 +47,15 @@ export async function extractTokens(
   } finally {
     await loadingTask.destroy();
   }
+}
+
+/**
+ * pdfjs と worker を先読みする。初回処理時の worker 起動待ち (数百ms〜) を
+ * ページ表示中に済ませておくため、UIのマウント時に呼ぶ。
+ */
+export function warmUpPdfjs(): void {
+  void loadPdfjs().catch(() => {
+    // 先読みの失敗は無視してよい。loadPdfjs は失敗をキャッシュしないので、
+    // 実処理時に再度読み込まれ、そこで初めてエラーとして扱われる
+  });
 }

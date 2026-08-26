@@ -1,13 +1,17 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
-import { GEMINI_MODEL } from "@/lib/gemini-model";
+import { GEMINI_SUMMARY_MODEL, callWithRetry } from "@/lib/gemini-model";
 import { redactPii } from "@/lib/summarize/redact";
 import { ruleBasedSummary } from "@/lib/summarize/rule-based";
 import type { SummarizeRequest, SummarizeResponse } from "@/lib/summarize/types";
 
 export const runtime = "nodejs";
-// Vercel等のサーバーレス環境での関数実行上限 (Geminiのリトライ込みで収まる長さ)
+// Vercel等のサーバーレス環境での関数実行上限
 export const maxDuration = 60;
+/** リトライ込みの総予算。maxDuration より短くして、必ずフォールバックを返せるようにする */
+const BUDGET_MS = 30_000;
+/** 1試行あたりのタイムアウト (予算内に2試行が収まる長さ) */
+const ATTEMPT_TIMEOUT_MS = 12_000;
 
 /** 想定外のボディでも500にせず、安全な形に整形する (サイズ上限つき) */
 function sanitizeRequest(raw: unknown): SummarizeRequest {
@@ -77,32 +81,29 @@ function buildPrompt(req: SummarizeRequest): string {
   return lines.join("\n");
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 async function callGemini(apiKey: string, prompt: string): Promise<string> {
-  // 無応答時に逐次バッチ全体がハングしないようタイムアウトを設定
-  const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: 30_000 } });
-  const delays = [0, 2000, 8000]; // 無料枠のレート制限(429)向け指数バックオフ
-  let lastError: unknown;
-  for (const delay of delays) {
-    if (delay > 0) await sleep(delay);
-    try {
+  const ai = new GoogleGenAI({ apiKey });
+  return await callWithRetry(
+    {
+      model: GEMINI_SUMMARY_MODEL,
+      budgetMs: BUDGET_MS,
+      attemptTimeoutMs: ATTEMPT_TIMEOUT_MS,
+    },
+    async ({ thinkingConfig, timeoutMs }) => {
       const res = await ai.models.generateContent({
-        model: GEMINI_MODEL,
+        model: GEMINI_SUMMARY_MODEL,
         contents: prompt,
-        config: { temperature: 0.2 },
+        config: {
+          temperature: 0.2,
+          httpOptions: { timeout: timeoutMs },
+          ...(thinkingConfig ? { thinkingConfig } : {}),
+        },
       });
       const text = res.text?.trim();
-      if (text) return text;
-      lastError = new Error("Geminiが空の応答を返しました");
-    } catch (e) {
-      lastError = e;
-      const msg = String(e);
-      // 4xx (429以外) はリトライしても無駄なので打ち切る
-      if (/\b4\d{2}\b/.test(msg) && !/429/.test(msg)) throw e;
-    }
-  }
-  throw lastError;
+      if (!text) throw new Error("Geminiが空の応答を返しました");
+      return text;
+    },
+  );
 }
 
 export async function POST(request: Request): Promise<NextResponse<SummarizeResponse>> {

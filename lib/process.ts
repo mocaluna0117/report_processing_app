@@ -44,8 +44,8 @@ async function requestSummary(req: SummarizeRequest): Promise<SummarizeResponse>
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
-    // サーバー側のリトライ(最大~40s)より長めに取り、通信不能時のハングを防ぐ
-    signal: AbortSignal.timeout(120_000),
+    // サーバー側の予算(30s)より少し長めに取り、通信不能時のハングを防ぐ
+    signal: AbortSignal.timeout(40_000),
   });
   if (!res.ok) throw new Error(`summarize API ${res.status}`);
   return (await res.json()) as SummarizeResponse;
@@ -56,7 +56,8 @@ async function requestWorkCategories(images: string[]): Promise<WorkCategoriesRe
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ images }),
-    signal: AbortSignal.timeout(180_000),
+    // サーバー側の予算(45s)より少し長めに取る
+    signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) throw new Error(`work-categories API ${res.status}`);
   return (await res.json()) as WorkCategoriesResponse;
@@ -108,12 +109,16 @@ export async function processPair(
       warnings.push("点検報告書が未指定のため結合PDFは作成していません");
     }
 
-    // 要約 (キー未設定・Gemini失敗時はサーバー側でルールベースにフォールバック)。
-    // 通信自体の失敗で抽出済み項目や結合PDFまで失わないよう、ここだけ個別にcatchする
+    // 要約と工事区分は互いに独立なので並列に実行する (待ち時間の大半がAPI応答)。
+    // どちらかが失敗しても他の結果 (抽出済み項目・結合PDF) は残す。
     let summary = "";
     let engine: "gemini" | "rule" | null = null;
     let summaryFailed = false;
-    if (data.templateRecognized) {
+    let categories: WorkCategoryEntry[] = [];
+    let categoryEngine: "gemini" | "none" = "none";
+
+    const summaryTask = async () => {
+      if (!data.templateRecognized) return;
       try {
         const res = await requestSummary({
           defects: data.defects.map((d) => ({
@@ -136,13 +141,15 @@ export async function processPair(
           `要約の取得に失敗しました (${errorMessage(e)})。アフター受付内容は手動で入力してください`,
         );
       }
-    }
+    };
 
     // 工事区分: 点検報告書 (手書きチェックシート) の「有」の丸を画像認識で判定。
-    // 個人情報 (署名・電話番号) は切り落とした画像だけを送る。失敗しても他の結果は残す
-    let categories: WorkCategoryEntry[] = [];
-    let categoryEngine: "gemini" | "none" = "none";
-    if (inspectionBytes) {
+    // 個人情報 (署名・電話番号) は切り落とした画像だけを送る
+    const categoryTask = async () => {
+      if (!inspectionBytes) {
+        warnings.push("点検報告書が無いため工事区分を判定できません");
+        return;
+      }
       try {
         const rendered = await renderInspectionPages(inspectionBytes.slice());
         warnings.push(...rendered.warnings);
@@ -163,9 +170,9 @@ export async function processPair(
       } catch (e) {
         warnings.push(`工事区分の判定に失敗しました (${errorMessage(e)})。手動で選択してください`);
       }
-    } else {
-      warnings.push("点検報告書が無いため工事区分を判定できません");
-    }
+    };
+
+    await Promise.all([summaryTask(), categoryTask()]);
 
     for (const f of [
       data.pj,

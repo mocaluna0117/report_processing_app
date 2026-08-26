@@ -27,6 +27,8 @@ export function Dropzone({
       disabled={disabled}
       onClick={() => inputRef.current?.click()}
       onDragOver={(e) => {
+        // 無効時は preventDefault しない = ブラウザがドロップ先と見なさない
+        if (disabled) return;
         e.preventDefault();
         setDragging(true);
       }}
@@ -34,6 +36,7 @@ export function Dropzone({
       onDrop={(e) => {
         e.preventDefault();
         setDragging(false);
+        if (disabled) return;
         accept(e.dataTransfer.files);
       }}
       className={`w-full rounded-xl border-2 border-dashed p-10 text-center transition-colors ${
