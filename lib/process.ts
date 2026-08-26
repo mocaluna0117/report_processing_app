@@ -11,7 +11,7 @@ import type {
   SummarizeRequest,
   SummarizeResponse,
 } from "@/lib/summarize/types";
-import { toDateNoPad, toHalfWidthAlnum } from "@/lib/text";
+import { toDateNoPad, toFullWidthSpace, toHalfWidthAlnum } from "@/lib/text";
 import { COLUMNS } from "@/lib/tsv";
 import type { Confidence, WorkCategoryEntry } from "@/lib/types";
 import type { WorkCategoriesResponse } from "@/lib/work-categories";
@@ -206,7 +206,8 @@ export async function processPair(
       blank, // 担当
       data.developer, // 事業者
       data.propertyName, // 物件名称
-      data.ownerName, // お客様氏名
+      // お客様氏名は姓名の間を全角スペースにする (結合PDF名は半角スペースのまま)
+      fixedWith(toFullWidthSpace(data.ownerName.value), data.ownerName.confidence),
       data.address, // 住所
       // 引渡日もゼロ埋めなし表記 (内部表現はYYYY/MM/DDで持ち、出力時に変換)
       fixedWith(toDateNoPad(data.handoverDate.value), data.handoverDate.confidence),

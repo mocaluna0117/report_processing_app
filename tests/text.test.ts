@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mapTextItems } from "@/lib/pdf/tokens";
-import { toDateNoPad, toHalfWidthAlnum } from "@/lib/text";
+import { toDateNoPad, toFullWidthSpace, toHalfWidthAlnum } from "@/lib/text";
 
 describe("toHalfWidthAlnum", () => {
   it("全角英数字を半角に変換する", () => {
@@ -23,6 +23,26 @@ describe("toDateNoPad", () => {
   it("日付形式でなければそのまま返す", () => {
     expect(toDateNoPad("")).toBe("");
     expect(toDateNoPad("不明")).toBe("不明");
+  });
+});
+
+describe("toFullWidthSpace", () => {
+  it("姓名の区切りを全角スペースにする", () => {
+    expect(toFullWidthSpace("山田 太郎")).toBe("山田　太郎");
+    expect(toFullWidthSpace("佐々木 花子")).toBe("佐々木　花子");
+  });
+
+  it("連続した空白も1つの全角スペースにまとめる", () => {
+    expect(toFullWidthSpace("山田   太郎")).toBe("山田　太郎");
+  });
+
+  it("空白が無い場合・空文字はそのまま", () => {
+    expect(toFullWidthSpace("山田")).toBe("山田");
+    expect(toFullWidthSpace("")).toBe("");
+  });
+
+  it("既に全角スペースの場合は変えない", () => {
+    expect(toFullWidthSpace("山田　太郎")).toBe("山田　太郎");
   });
 });
 

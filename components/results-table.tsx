@@ -58,16 +58,19 @@ export function ResultsTable({
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
             {/* 施主列は左端に固定し、横スクロールの対象外にする (コピー対象外のUI見出し) */}
-            <th className="sticky left-0 z-10 w-28 border-r border-slate-200 bg-slate-50 px-2 py-2">
+            <th className="sticky left-0 z-10 w-28 whitespace-nowrap border-r border-slate-200 bg-slate-50 px-2 py-2">
               施主
             </th>
             {COLUMNS.map((c) => (
-              <th key={c} className={`px-2 py-2 ${COL_WIDTH[c] ?? "w-20"}`}>
+              <th
+                key={c}
+                className={`whitespace-nowrap px-2 py-2 ${COL_WIDTH[c] ?? "w-20"}`}
+              >
                 {c}
               </th>
             ))}
             {/* 操作列は右端に固定し、横スクロールの対象外にする */}
-            <th className="sticky right-0 z-10 w-28 border-l border-slate-200 bg-slate-50 px-2 py-2">
+            <th className="sticky right-0 z-10 w-32 whitespace-nowrap border-l border-slate-200 bg-slate-50 px-2 py-2">
               操作
             </th>
           </tr>
@@ -190,7 +193,7 @@ export function ResultsTable({
                         <button
                           type="button"
                           onClick={() => onCopyRow(row)}
-                          className={`rounded-md border px-2.5 py-1 text-xs font-medium ${
+                          className={`whitespace-nowrap rounded-md border px-2.5 py-1 text-xs font-medium ${
                             copiedRowId === row.pairId
                               ? "border-emerald-300 bg-emerald-50 text-emerald-700"
                               : "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700"
@@ -203,7 +206,7 @@ export function ResultsTable({
                         <button
                           type="button"
                           onClick={() => onDownloadRow(row)}
-                          className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          className="whitespace-nowrap rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
                         >
                           PDFをDL
                         </button>
@@ -212,7 +215,7 @@ export function ResultsTable({
                       )}
                       {!row.error && (
                         <span
-                          className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                          className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium ${
                             row.categoryEngine === "gemini"
                               ? "bg-blue-100 text-blue-800"
                               : "bg-slate-200 text-slate-600"

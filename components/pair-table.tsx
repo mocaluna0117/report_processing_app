@@ -71,7 +71,7 @@ export function PairTable({
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
+          <tr className="whitespace-nowrap border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
             <th className="w-28 px-3 py-2">点検日</th>
             <th className="w-36 px-3 py-2">施主</th>
             <th className="px-3 py-2">写真報告書</th>

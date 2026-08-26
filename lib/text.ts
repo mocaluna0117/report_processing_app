@@ -15,3 +15,11 @@ export function toDateNoPad(s: string): string {
   if (!m) return s;
   return `${Number(m[1])}/${Number(m[2])}/${Number(m[3])}`;
 }
+
+/**
+ * 氏名の姓名区切りを全角スペースにする (Excelの「お客様氏名」列の表記に合わせる)。
+ * 結合PDFのファイル名は半角スペース指定なので、そちらには適用しない。
+ */
+export function toFullWidthSpace(s: string): string {
+  return s.replace(/[ \t\u00a0]+/g, "　");
+}
