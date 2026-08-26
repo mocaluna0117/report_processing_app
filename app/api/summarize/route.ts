@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
-import { GEMINI_SUMMARY_MODEL, callWithRetry } from "@/lib/gemini-model";
+import { GEMINI_SUMMARY_CHAIN, callWithModelChain } from "@/lib/gemini-model";
 import { redactPii } from "@/lib/summarize/redact";
 import { ruleBasedSummary } from "@/lib/summarize/rule-based";
 import type { SummarizeRequest, SummarizeResponse } from "@/lib/summarize/types";
@@ -83,15 +83,12 @@ function buildPrompt(req: SummarizeRequest): string {
 
 async function callGemini(apiKey: string, prompt: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey });
-  return await callWithRetry(
-    {
-      model: GEMINI_SUMMARY_MODEL,
-      budgetMs: BUDGET_MS,
-      attemptTimeoutMs: ATTEMPT_TIMEOUT_MS,
-    },
-    async ({ thinkingConfig, timeoutMs }) => {
+  const { result } = await callWithModelChain(
+    GEMINI_SUMMARY_CHAIN,
+    { budgetMs: BUDGET_MS, attemptTimeoutMs: ATTEMPT_TIMEOUT_MS },
+    async (model, { thinkingConfig, timeoutMs }) => {
       const res = await ai.models.generateContent({
-        model: GEMINI_SUMMARY_MODEL,
+        model,
         contents: prompt,
         config: {
           temperature: 0.2,
@@ -104,6 +101,7 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
       return text;
     },
   );
+  return result;
 }
 
 export async function POST(request: Request): Promise<NextResponse<SummarizeResponse>> {

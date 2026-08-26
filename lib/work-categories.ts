@@ -121,6 +121,10 @@ export interface WorkCategoryHit {
 export interface WorkCategoriesResponse {
   categories: WorkCategoryHit[];
   engine: "gemini" | "none";
+  /** 実際に判定に使えたモデル名 */
+  model?: string;
+  /** 1日の上限到達などで飛ばしたモデル (残り枠の目安) */
+  skipped?: string[];
   error?: string;
 }
 

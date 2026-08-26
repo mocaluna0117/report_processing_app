@@ -32,6 +32,8 @@ export interface ResultRow {
   /** 工事区分 (点検報告書で「有」に丸が付いた項目)。0件なら工事区分空欄の1行を出力 */
   categories: WorkCategoryEntry[];
   categoryEngine: "gemini" | "none";
+  /** 工事区分の判定に使えたモデル名 (表示用) */
+  categoryModel?: string;
   warnings: string[];
   engine: "gemini" | "rule" | null;
   merged: Blob | null;
@@ -116,6 +118,7 @@ export async function processPair(
     let summaryFailed = false;
     let categories: WorkCategoryEntry[] = [];
     let categoryEngine: "gemini" | "none" = "none";
+    let categoryModel: string | undefined;
 
     const summaryTask = async () => {
       if (!data.templateRecognized) return;
@@ -155,6 +158,10 @@ export async function processPair(
         warnings.push(...rendered.warnings);
         const res = await requestWorkCategories(rendered.images);
         categoryEngine = res.engine;
+        categoryModel = res.model;
+        if (res.skipped?.length) {
+          warnings.push(`工事区分: ${res.skipped.join("・")} のため別モデルで判定しました`);
+        }
         categories = res.categories.map((c) => ({
           value: c.category,
           confidence: c.confidence === "low" ? "warn" : "ok",
@@ -233,6 +240,7 @@ export async function processPair(
       confidences: entries.map((e) => e.confidence),
       categories,
       categoryEngine,
+      categoryModel,
       warnings,
       engine,
       merged,

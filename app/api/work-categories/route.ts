@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { NextResponse } from "next/server";
-import { GEMINI_VISION_MODEL, callWithRetry } from "@/lib/gemini-model";
+import { GEMINI_VISION_CHAIN, callWithModelChain } from "@/lib/gemini-model";
 import {
   WORK_CATEGORIES,
   normalizeHits,
@@ -12,10 +12,10 @@ import {
 export const runtime = "nodejs";
 // Vercel等のサーバーレス環境での関数実行上限
 export const maxDuration = 60;
-/** リトライ込みの総予算。maxDuration より短くして、必ずフォールバックを返せるようにする */
-const BUDGET_MS = 45_000;
-/** 1試行あたりのタイムアウト (予算内に2試行が収まる長さ) */
-const ATTEMPT_TIMEOUT_MS = 20_000;
+/** リトライ込みの総予算。maxDuration(60秒) より短くして、必ずフォールバックを返せるようにする */
+const BUDGET_MS = 50_000;
+/** 1試行あたりのタイムアウト。実測で最大25.8秒かかったため余裕を取り、予算内に2試行が収まる長さ */
+const ATTEMPT_TIMEOUT_MS = 24_000;
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_CHARS = 6_000_000; // base64 で約4.5MB
@@ -68,17 +68,17 @@ const RESPONSE_SCHEMA = {
   required: ["flagged"],
 };
 
-async function callGemini(apiKey: string, images: string[]): Promise<WorkCategoryHit[]> {
+async function callGemini(
+  apiKey: string,
+  images: string[],
+): Promise<{ hits: WorkCategoryHit[]; model: string; skipped: string[] }> {
   const ai = new GoogleGenAI({ apiKey });
-  return await callWithRetry(
-    {
-      model: GEMINI_VISION_MODEL,
-      budgetMs: BUDGET_MS,
-      attemptTimeoutMs: ATTEMPT_TIMEOUT_MS,
-    },
-    async ({ thinkingConfig, timeoutMs }) => {
+  const { result, model, skipped } = await callWithModelChain(
+    GEMINI_VISION_CHAIN,
+    { budgetMs: BUDGET_MS, attemptTimeoutMs: ATTEMPT_TIMEOUT_MS },
+    async (model, { thinkingConfig, timeoutMs }) => {
       const res = await ai.models.generateContent({
-        model: GEMINI_VISION_MODEL,
+        model,
         contents: [
           {
             role: "user",
@@ -102,6 +102,7 @@ async function callGemini(apiKey: string, images: string[]): Promise<WorkCategor
       return normalizeHits(Array.isArray(parsed.flagged) ? (parsed.flagged as FlaggedItem[]) : []);
     },
   );
+  return { hits: result, model, skipped };
 }
 
 export async function POST(request: Request): Promise<NextResponse<WorkCategoriesResponse>> {
@@ -121,8 +122,14 @@ export async function POST(request: Request): Promise<NextResponse<WorkCategorie
   }
 
   try {
-    const categories = await callGemini(apiKey, images);
-    return NextResponse.json({ categories, engine: "gemini" });
+    const { hits, model, skipped } = await callGemini(apiKey, images);
+    return NextResponse.json({
+      categories: hits,
+      engine: "gemini",
+      model,
+      // 上限到達などで飛ばしたモデルがあれば、残り枠の目安として伝える
+      ...(skipped.length > 0 ? { skipped } : {}),
+    });
   } catch (e) {
     return NextResponse.json({ categories: [], engine: "none", error: String(e) });
   }

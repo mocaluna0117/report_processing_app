@@ -215,6 +215,7 @@ export function ResultsTable({
                       )}
                       {!row.error && (
                         <span
+                          title={row.categoryModel ? `判定モデル: ${row.categoryModel}` : undefined}
                           className={`whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium ${
                             row.categoryEngine === "gemini"
                               ? "bg-blue-100 text-blue-800"

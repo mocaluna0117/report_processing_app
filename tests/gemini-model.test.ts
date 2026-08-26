@@ -141,13 +141,13 @@ describe("callWithRetry", () => {
     expect(Date.now() - t0).toBeLessThan(1000);
   });
 
-  it("試行ごとのタイムアウトは残り予算を超えない", async () => {
+  it("残り予算が多いときは指定したタイムアウトを使う", async () => {
     const seen: number[] = [];
-    await callWithRetry({ model: model(), budgetMs: 3000, attemptTimeoutMs: 20000 }, async (ctx) => {
+    await callWithRetry({ model: model(), budgetMs: 50000, attemptTimeoutMs: 24000 }, async (ctx) => {
       seen.push(ctx.timeoutMs);
       return 1;
     });
-    expect(seen[0]).toBeLessThanOrEqual(3000);
+    expect(seen[0]).toBe(24000);
   });
 
   it("予算が極端に短くても1回は必ず投げる", async () => {
@@ -158,5 +158,169 @@ describe("callWithRetry", () => {
     });
     expect(r).toBe("ok");
     expect(calls).toBe(1);
+  });
+});
+
+describe("parseModelChain", () => {
+  it("カンマ区切りを解釈し、思考レベル省略時は MINIMAL", async () => {
+    const { parseModelChain } = await import("@/lib/gemini-model");
+    expect(parseModelChain("a, b")).toEqual([
+      { model: "a", thinking: { thinkingLevel: "MINIMAL" } },
+      { model: "b", thinking: { thinkingLevel: "MINIMAL" } },
+    ]);
+  });
+
+  it("モデルごとに思考レベルを指定できる (default は思考設定なし)", async () => {
+    const { parseModelChain } = await import("@/lib/gemini-model");
+    expect(parseModelChain("a:LOW, b:default, c:HIGH")).toEqual([
+      { model: "a", thinking: { thinkingLevel: "LOW" } },
+      { model: "b", thinking: null },
+      { model: "c", thinking: { thinkingLevel: "HIGH" } },
+    ]);
+  });
+
+  it("空要素は無視する", async () => {
+    const { parseModelChain } = await import("@/lib/gemini-model");
+    expect(parseModelChain(" a , , ")).toHaveLength(1);
+  });
+});
+
+describe("callWithModelChain", () => {
+  it("最初のモデルで成功すればそれを返し、他は試さない", async () => {
+    const { callWithModelChain, parseModelChain } = await import("@/lib/gemini-model");
+    const used: string[] = [];
+    const r = await callWithModelChain(
+      parseModelChain(`${model()}, ${model()}`),
+      { budgetMs: 5000, attemptTimeoutMs: 1000 },
+      async (m) => {
+        used.push(m);
+        return "ok";
+      },
+    );
+    expect(r.result).toBe("ok");
+    expect(used).toHaveLength(1);
+    expect(r.skipped).toEqual([]);
+  });
+
+  it("1日の上限に達したモデルは飛ばして次のモデルを使う", async () => {
+    const { callWithModelChain } = await import("@/lib/gemini-model");
+    const m1 = model();
+    const m2 = model();
+    const chain = [
+      { model: m1, thinking: null },
+      { model: m2, thinking: null },
+    ];
+    const used: string[] = [];
+    const r = await callWithModelChain(chain, { budgetMs: 40000, attemptTimeoutMs: 9000 }, async (m) => {
+      used.push(m);
+      if (m === m1) throw dailyQuotaError();
+      return "ok";
+    });
+    expect(r.result).toBe("ok");
+    expect(r.model).toBe(m2);
+    expect(used).toEqual([m1, m2]);
+    expect(r.skipped[0]).toContain("上限");
+  });
+
+  it("上限到達を記憶し、次回の呼び出しではそのモデルを呼ばない", async () => {
+    const { callWithModelChain } = await import("@/lib/gemini-model");
+    const m1 = model();
+    const m2 = model();
+    const chain = [
+      { model: m1, thinking: null },
+      { model: m2, thinking: null },
+    ];
+    await callWithModelChain(chain, { budgetMs: 40000, attemptTimeoutMs: 9000 }, async (m) => {
+      if (m === m1) throw dailyQuotaError();
+      return "ok";
+    });
+    const used: string[] = [];
+    const r = await callWithModelChain(chain, { budgetMs: 40000, attemptTimeoutMs: 9000 }, async (m) => {
+      used.push(m);
+      return "ok";
+    });
+    expect(used).toEqual([m2]); // m1 はAPIを呼ばずに飛ばす
+    expect(r.model).toBe(m2);
+  });
+
+  it("混雑(503)でも次のモデルに切り替える", async () => {
+    const { callWithModelChain } = await import("@/lib/gemini-model");
+    const m1 = model();
+    const m2 = model();
+    const r = await callWithModelChain(
+      [
+        { model: m1, thinking: null },
+        { model: m2, thinking: null },
+      ],
+      { budgetMs: 40000, attemptTimeoutMs: 9000 },
+      async (m) => {
+        if (m === m1) throw new Error('ApiError: {"error":{"code":503,"message":"high demand"}}');
+        return "ok";
+      },
+    );
+    expect(r.model).toBe(m2);
+    expect(r.skipped[0]).toContain("混雑");
+  });
+
+  it("モデルごとの思考設定が渡される", async () => {
+    const { callWithModelChain } = await import("@/lib/gemini-model");
+    const seen: unknown[] = [];
+    const m1 = model();
+    const m2 = model();
+    await callWithModelChain(
+      [
+        { model: m1, thinking: null },
+        { model: m2, thinking: null },
+      ],
+      { budgetMs: 40000, attemptTimeoutMs: 9000 },
+      async (m, ctx) => {
+        seen.push(ctx.thinkingConfig);
+        if (m === m1) throw dailyQuotaError();
+        return "ok";
+      },
+    );
+    expect(seen).toEqual([undefined, undefined]); // thinking: null → 思考設定なし
+  });
+
+  it("全モデルが上限なら QuotaExhaustedError を投げる", async () => {
+    const { callWithModelChain, QuotaExhaustedError: QE } = await import("@/lib/gemini-model");
+    await expect(
+      callWithModelChain(
+        [
+          { model: model(), thinking: null },
+          { model: model(), thinking: null },
+        ],
+        { budgetMs: 40000, attemptTimeoutMs: 9000 },
+        async () => {
+          throw dailyQuotaError();
+        },
+      ),
+    ).rejects.toBeInstanceOf(QE);
+  });
+});
+
+describe("タイムアウトの下限", () => {
+  it("残り予算が少なくても、短すぎるタイムアウトをAPIに渡さない", async () => {
+    const seen: number[] = [];
+    await callWithRetry({ model: model(), budgetMs: 2000, attemptTimeoutMs: 24000 }, async (ctx) => {
+      seen.push(ctx.timeoutMs);
+      return 1;
+    });
+    // APIが拒否する 4秒未満のような値にならないこと
+    expect(seen[0]).toBeGreaterThanOrEqual(8000);
+  });
+
+  it("残り予算がまともな試行に足りなければ再試行せず打ち切る", async () => {
+    let calls = 0;
+    const t0 = Date.now();
+    await expect(
+      callWithRetry({ model: model(), budgetMs: 9000, attemptTimeoutMs: 24000 }, async () => {
+        calls++;
+        throw rateLimitError();
+      }),
+    ).rejects.toThrow();
+    // 1回投げた時点で残りが下限を割るので再試行しない
+    expect(calls).toBe(1);
+    expect(Date.now() - t0).toBeLessThan(2000);
   });
 });
