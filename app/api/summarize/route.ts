@@ -1,8 +1,9 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { NextResponse } from "next/server";
 import { GEMINI_SUMMARY_CHAIN, callWithModelChain } from "@/lib/gemini-model";
 import { redactPii } from "@/lib/summarize/redact";
-import { ruleBasedSummary } from "@/lib/summarize/rule-based";
+import { formatPhenomena } from "@/lib/summarize/format";
+import { ruleBasedSummary, stripRequests } from "@/lib/summarize/rule-based";
 import type { SummarizeRequest, SummarizeResponse } from "@/lib/summarize/types";
 
 export const runtime = "nodejs";
@@ -52,19 +53,24 @@ function buildPrompt(req: SummarizeRequest): string {
   const lines: string[] = [
     "あなたは住宅アフターメンテナンス受付の記録係です。",
     "以下は住宅の定期点検で確認された不具合項目の一覧です。",
-    "管理表の「アフター受付内容」欄に入れる日本語の要約を1〜2文で作成してください。",
+    "管理表の「アフター受付内容」欄に載せるため、**不具合の事象を1件ずつ短くまとめた配列**を作ってください。",
     "",
     "条件:",
-    "- **不具合の事象(どこの何がどうなっているか)だけ**を書く。場所・部位・症状を具体的に含める",
-    "- お客様の要望は一切書かない (例: 補修をご希望、見積もりをご希望、無償での対応をご希望、是正してほしい、取り付けたい — これらは書かない)",
-    "- 弊社・貴社の対応方針や判定も書かない (例: 弊社継続対応、別日対応、見積もり希望、是正不可、対応可否は要確認 — これらは書かない)",
+    "- phenomena には**不具合の事象(どこの何がどうなっているか)だけ**を入れる。場所・部位・症状を具体的に含める",
+    "- **1つの要素に1つの事象**。場所や症状が異なるものは必ず別の要素に分ける (複数の事象を1要素に詰め込まない)",
+    "- 同じ場所・同じ部位で症状が並ぶ場合はまとめてよい (例: 「2階リビング壁のクロスに浮き・隙間」)",
+    "- 各要素は句点で終わらせず、体言止めまたは簡潔な叙述にする (例: 「1階洋室天井のクロスに凹凸」)",
+    "- お客様の要望は入れない (例: 補修をご希望、見積もりをご希望、無償での対応をご希望、取り付けたい)",
+    "- 弊社・貴社の対応方針や判定も入れない (例: 弊社継続対応、別日対応、見積もり希望、是正不可、対応可否は要確認)",
     "- 原因の推測は簡潔であれば含めてよい (例: 下地の不陸によるもの)",
-    "- 「〜をご希望です」「〜されています」のような願望・依頼の表現を使わず、事象を体言止めまたは簡潔な叙述で書く",
-    "- 個人名・住所・電話番号は含めない",
-    "- 前置きや説明は不要。要約文のみを出力する",
+    "- 備考に要望しか書かれていない項目は、事象が無いので配列に入れない",
+    "- 点検員のメモ(立ち会いや連絡先の申し送りなど、不具合でないもの)は入れない",
+    "- 個人名・住所・電話番号は入れない",
+    "- 不具合の事象が1件も無ければ空配列を返す",
     "",
-    "良い例: 「1階洋室天井および2階リビング壁のクロスに凹凸・浮き・隙間、2階階段ササラ仕上げに剥がれ。」",
-    "悪い例: 「クロスの凹凸について補修をご希望。弊社にて継続対応いたします。」(要望と対応方針が含まれており不可)",
+    "良い例: [\"1階洋室天井のクロスに凹凸\", \"2階リビング壁のクロスに浮き・隙間\", \"2階階段ササラ仕上げの剥がれ\"]",
+    "悪い例: [\"クロスの凹凸について補修をご希望。弊社にて継続対応いたします。\"] (要望と対応方針が含まれており不可)",
+    "悪い例: [\"1階洋室天井のクロスに凹凸、2階リビング壁のクロスに浮き、2階階段の剥がれ\"] (複数の事象が1要素に詰め込まれており不可)",
     "",
     "## 不具合項目",
   ];
@@ -79,17 +85,25 @@ function buildPrompt(req: SummarizeRequest): string {
     if (d.remarks) lines.push(`   備考(要望や対応方針は無視し、事象だけ読み取る): ${redactPii(d.remarks)}`);
   });
   if (req.specialNotes.length > 0) {
-    lines.push("## 特記事項 (事象だけ読み取る)");
+    lines.push("## 特記事項 (事象だけ読み取り、phenomena に含める)");
     for (const n of req.specialNotes) lines.push(`- ${redactPii(n)}`);
-  }
-  if (req.standaloneNotes.length > 0) {
-    lines.push("## 点検員メモ (事象だけ読み取る)");
-    for (const n of req.standaloneNotes) lines.push(`- ${redactPii(n)}`);
   }
   return lines.join("\n");
 }
 
-async function callGemini(apiKey: string, prompt: string): Promise<string> {
+const RESPONSE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    phenomena: {
+      type: Type.ARRAY,
+      description: "不具合の事象。1要素に1事象",
+      items: { type: Type.STRING },
+    },
+  },
+  required: ["phenomena"],
+};
+
+async function callGemini(apiKey: string, prompt: string): Promise<string[]> {
   const ai = new GoogleGenAI({ apiKey });
   const { result } = await callWithModelChain(
     GEMINI_SUMMARY_CHAIN,
@@ -100,13 +114,17 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
         contents: prompt,
         config: {
           temperature: 0.2,
+          responseMimeType: "application/json",
+          responseSchema: RESPONSE_SCHEMA,
           httpOptions: { timeout: timeoutMs },
           ...(thinkingConfig ? { thinkingConfig } : {}),
         },
       });
       const text = res.text?.trim();
       if (!text) throw new Error("Geminiが空の応答を返しました");
-      return text;
+      const parsed = JSON.parse(text) as { phenomena?: unknown };
+      if (!Array.isArray(parsed.phenomena)) throw new Error("Geminiの応答形式が不正です");
+      return parsed.phenomena.filter((x): x is string => typeof x === "string" && x.trim() !== "");
     },
   );
   return result;
@@ -131,8 +149,13 @@ export async function POST(request: Request): Promise<NextResponse<SummarizeResp
   }
 
   try {
-    const summary = await callGemini(apiKey, buildPrompt(body));
-    return NextResponse.json({ summary, engine: "gemini" });
+    const phenomena = await callGemini(apiKey, buildPrompt(body));
+    // 番号付け・改行はサーバー側で行い、モデルの表記揺れに左右されないようにする
+    const notes = body.standaloneNotes.map((n) => stripRequests(n)).filter(Boolean);
+    return NextResponse.json({
+      summary: formatPhenomena(phenomena, notes),
+      engine: "gemini",
+    });
   } catch (e) {
     // Gemini失敗時はルールベースにフォールバック (バッチを止めない)
     return NextResponse.json({

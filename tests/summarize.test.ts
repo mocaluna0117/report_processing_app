@@ -74,8 +74,9 @@ describe("ruleBasedSummary", () => {
       ],
       noAbnormality: true,
     });
-    expect(s).toContain("特記事項:");
+    // 特記事項の事象は番号付きの一覧に、点検員メモは「メモ:」行として入る
     expect(s).toContain("クローゼットのポールが外れ");
+    expect(s).toContain("メモ: サイン、立ち会い");
     expect(s).not.toContain("ご希望");
   });
 });
@@ -131,7 +132,7 @@ describe("要望だけの項目", () => {
       specialNotes: [],
       noAbnormality: false,
     });
-    expect(s).toBe("2階 階段 大工 階段のはがれ。");
+    expect(s).toBe("2階 階段 大工 階段のはがれ");
   });
 
   it("全項目が要望だけなら「不具合の指摘なし」になる", () => {
@@ -150,6 +151,52 @@ describe("要望だけの項目", () => {
       noAbnormality: false,
     });
     expect(s).toBe("点検の結果、不具合の指摘なし。");
+  });
+});
+
+describe("事象ごとの改行と採番", () => {
+  const defect = (location: string, symptom: string) => ({
+    location,
+    part: "クロス 壁",
+    symptom,
+    followup: "弊社継続対応",
+    remarks: "",
+  });
+
+  it("事象が複数なら ①②③ を付けて1行ずつ並べる", () => {
+    const s = ruleBasedSummary({
+      defects: [defect("1階 洋室", "凹凸"), defect("2階 リビング", "浮き"), defect("2階 階段", "はがれ")],
+      standaloneNotes: [],
+      specialNotes: [],
+      noAbnormality: false,
+    });
+    expect(s.split("\n")).toEqual([
+      "①1階 洋室 クロス 壁の凹凸",
+      "②2階 リビング クロス 壁の浮き",
+      "③2階 階段 クロス 壁のはがれ",
+    ]);
+  });
+
+  it("事象が1件なら番号を付けない", () => {
+    const s = ruleBasedSummary({
+      defects: [defect("1階 洋室", "凹凸")],
+      standaloneNotes: [],
+      specialNotes: [],
+      noAbnormality: false,
+    });
+    expect(s).toBe("1階 洋室 クロス 壁の凹凸");
+  });
+
+  it("メモは番号を付けず末尾の行にする", () => {
+    const s = ruleBasedSummary({
+      defects: [defect("1階 洋室", "凹凸"), defect("2階 リビング", "浮き")],
+      standaloneNotes: ["立ち会いは管理者様になります。"],
+      specialNotes: [],
+      noAbnormality: false,
+    });
+    const lines = s.split("\n");
+    expect(lines[0]).toBe("①1階 洋室 クロス 壁の凹凸");
+    expect(lines[2]).toBe("メモ: 立ち会いは管理者様になります");
   });
 });
 

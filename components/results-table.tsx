@@ -156,7 +156,7 @@ export function ResultsTable({
                             <div>
                               <textarea
                                 value={value}
-                                rows={4}
+                                rows={6}
                                 onChange={(e) => onCellChange(row.pairId, col, e.target.value)}
                                 className={`w-full rounded border px-2 py-1 text-sm leading-snug ${cellClass(row.confidences[col])}`}
                               />

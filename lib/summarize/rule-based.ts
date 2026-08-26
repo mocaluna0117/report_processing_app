@@ -1,3 +1,4 @@
+import { formatPhenomena } from "./format";
 import type { SummarizeRequest } from "./types";
 
 /**
@@ -80,11 +81,9 @@ function truncate(text: string, max: number): string {
 
 /**
  * LLMを使わない定型要約 (Geminiキー未設定時・API失敗時のフォールバック)。
- * 外部送信ゼロで決定的に動く。要望・対応方針は含めず、不具合の事象のみを並べる。
+ * 外部送信ゼロで決定的に動く。要望・対応方針は含めず、不具合の事象のみを1行ずつ並べる。
  */
 export function ruleBasedSummary(req: SummarizeRequest): string {
-  const parts: string[] = [];
-
   const items = req.defects
     .map((d) => {
       const place = [d.location, d.part].filter(Boolean).join(" ");
@@ -97,20 +96,12 @@ export function ruleBasedSummary(req: SummarizeRequest): string {
     })
     .filter(Boolean);
 
-  if (items.length === 0) {
-    parts.push("点検の結果、不具合の指摘なし。");
-  } else {
-    parts.push(`${items.join("、")}。`);
-  }
-
+  // 特記事項も不具合の事象なので、同じ番号付きの一覧に含める
   for (const n of req.specialNotes) {
     const t = truncate(n, 80);
-    if (t) parts.push(`特記事項: ${t}`);
-  }
-  for (const n of req.standaloneNotes) {
-    const t = truncate(n, 80);
-    if (t) parts.push(`メモ: ${t}`);
+    if (t) items.push(t);
   }
 
-  return parts.join(" ");
+  const notes = req.standaloneNotes.map((n) => truncate(n, 80)).filter(Boolean);
+  return formatPhenomena(items, notes);
 }
