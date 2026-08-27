@@ -32,6 +32,12 @@ export const SUMMARY_COL = COLUMNS.indexOf("アフター受付内容");
 /** 工事区分の列番号 (工事区分の数だけ行を展開する) */
 export const WORK_COL = COLUMNS.indexOf("工事区分");
 
+/** メール文の組み立てに使う列番号 (テーブルで編集した値をそのまま使うため) */
+export const PROPERTY_COL = COLUMNS.indexOf("物件名称");
+export const OWNER_COL = COLUMNS.indexOf("お客様氏名");
+export const ADDRESS_COL = COLUMNS.indexOf("住所");
+export const HANDOVER_COL = COLUMNS.indexOf("引渡日");
+
 function escapeTsvCell(v: string): string {
   let s = v.replace(/\t/g, " ");
   // 改行・引用符を含むセルはCSV流のクオートで包む (Excelの貼り付けで解釈される)

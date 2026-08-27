@@ -68,6 +68,11 @@ export const GEMINI_SUMMARY_CHAIN: ModelSpec[] = parseModelChain(
     "gemini-3.5-flash-lite, gemini-3.1-flash-lite",
 );
 
+/** 施主名のカナ読み推定 (メール文用) のモデル列。省略時は要約と同じ lite 系 */
+export const GEMINI_KANA_CHAIN: ModelSpec[] = process.env.GEMINI_KANA_MODELS
+  ? parseModelChain(process.env.GEMINI_KANA_MODELS)
+  : GEMINI_SUMMARY_CHAIN;
+
 /** 思考トークンを最小化して待ち時間とクォータ消費を抑える (既定値) */
 export const THINKING_CONFIG: ThinkingConfig = { thinkingLevel: ThinkingLevel.MINIMAL };
 

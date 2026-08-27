@@ -23,3 +23,10 @@ export function toDateNoPad(s: string): string {
 export function toFullWidthSpace(s: string): string {
   return s.replace(/[ \t\u00a0]+/g, "　");
 }
+
+/** 「2025/9/26」→「2025/09/26」(メール文用のゼロ埋め表記)。日付形式でなければそのまま返す */
+export function toDateZeroPad(s: string): string {
+  const m = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(s.trim());
+  if (!m) return s;
+  return `${m[1]}/${m[2].padStart(2, "0")}/${m[3].padStart(2, "0")}`;
+}

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Dropzone } from "@/components/dropzone";
 import { PairTable, type PairView } from "@/components/pair-table";
+import { MailDialog } from "@/components/mail-dialog";
 import { ResultsTable } from "@/components/results-table";
 import { runLimited } from "@/lib/concurrency";
 import { pairFiles, parseFileName } from "@/lib/pairing";
@@ -44,6 +45,8 @@ export default function Home() {
   const [copiedRowId, setCopiedRowId] = useState<string | null>(null);
   const [zipping, setZipping] = useState(false);
   const [fallbackTsv, setFallbackTsv] = useState<string | null>(null);
+  // メール文ダイアログは pairId で開く (results は再生成されるので行オブジェクトを直接持たない)
+  const [mailPairId, setMailPairId] = useState<string | null>(null);
   const fileMap = useRef(new Map<string, UploadedFile>());
 
   /** 表示・出力用: まだ完了していないスロットを除いたペア順の結果 */
@@ -206,6 +209,16 @@ export default function Home() {
     );
   };
 
+  // メール文用のカナ読みの手修正 (確認画面で編集した値を保持する)
+  const onKanaChange = (pairId: string, kana: string) => {
+    setResults((prev) =>
+      prev.map((r) =>
+        r && r.pairId === pairId ? { ...r, mail: { ...r.mail, ownerKana: kana } } : r,
+      ),
+    );
+  };
+  const mailRow = mailPairId ? (rows.find((r) => r.pairId === mailPairId) ?? null) : null;
+
   const rowsOf = (r: ResultRow) =>
     expandRow(r.cells, r.categories.map((c) => c.value));
 
@@ -354,8 +367,13 @@ export default function Home() {
             onCategoryChange={onCategoryChange}
             onCategoryAdd={onCategoryAdd}
             onCategoryRemove={onCategoryRemove}
+            onOpenMail={(row) => setMailPairId(row.pairId)}
           />
         </section>
+      )}
+
+      {mailRow && (
+        <MailDialog row={mailRow} onKanaChange={onKanaChange} onClose={() => setMailPairId(null)} />
       )}
 
       {fallbackTsv !== null && (
@@ -388,8 +406,9 @@ export default function Home() {
       )}
 
       <footer className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-400">
-        PDFの解析・結合はすべてブラウザ内で行われます。要約生成時のみ、個人情報を除いた不具合テキストをローカルサーバー経由でGemini
-        APIへ送信します (キー未設定時は定型要約)。
+        PDFの解析・結合はすべてブラウザ内で行われます。Gemini APIへ送るのは、個人情報を除いた不具合テキスト
+        (要約用)・署名と電話番号を切り落とした点検シート画像 (工事区分用)・施主名の漢字 (メール文のカナ読み用)
+        のみです (キー未設定時は定型要約・手動選択になります)。
       </footer>
     </main>
   );

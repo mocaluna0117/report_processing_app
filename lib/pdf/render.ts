@@ -1,11 +1,14 @@
 "use client";
 
 // 点検報告書 (手書きチェックシートの写真) を画像認識用のJPEGにする。
+import type { TextToken } from "@/lib/types";
 import { loadPdfjs } from "./extract";
+import { isPhoneToken } from "./parse-inspection-report";
 import { mapTextItems } from "./tokens";
 
-/** 署名ブロック (個人情報) の位置を示すテキスト層のトークン */
-const PII_TOKEN = /^\d{2,4}-\d{2,4}-\d{3,4}$|署名|承諾/;
+/** 署名ブロック (個人情報) の位置を示すテキスト層のトークン (電話番号は全角ハイフン表記も含めて判定) */
+const SIGNATURE_TOKEN = /署名|承諾/;
+const isPiiToken = (s: string) => isPhoneToken(s) || SIGNATURE_TOKEN.test(s);
 /** 電話番号行の上にある「確認・承諾」2行分の高さ (pt)。見本5件で実測 */
 const SIGNATURE_BLOCK_MARGIN_PT = 50;
 /** 署名ブロックを検出できない場合の切り抜き位置 (ページ高さ比)。見本5件で実測した上端位置 */
@@ -15,6 +18,8 @@ export interface RenderedInspection {
   /** JPEG (base64、data:プレフィックス無し) */
   images: string[];
   warnings: string[];
+  /** 描画したページのテキスト層トークン (連絡先の抽出に使う。外部には送らない) */
+  tokens: TextToken[];
 }
 
 /**
@@ -34,12 +39,14 @@ export async function renderInspectionPages(
   const doc = await loadingTask.promise;
   const images: string[] = [];
   const warnings: string[] = [];
+  const tokens: TextToken[] = [];
   try {
     for (let p = 1; p <= Math.min(doc.numPages, maxPages); p++) {
       const page = await doc.getPage(p);
       const base = page.getViewport({ scale: 1 });
-      const tokens = mapTextItems((await page.getTextContent()).items, base.height, p);
-      const piiYs = tokens.filter((t) => PII_TOKEN.test(t.str)).map((t) => t.y);
+      const pageTokens = mapTextItems((await page.getTextContent()).items, base.height, p);
+      tokens.push(...pageTokens);
+      const piiYs = pageTokens.filter((t) => isPiiToken(t.str)).map((t) => t.y);
 
       let cropPt: number;
       if (piiYs.length > 0) {
@@ -67,5 +74,5 @@ export async function renderInspectionPages(
   } finally {
     await loadingTask.destroy();
   }
-  return { images, warnings };
+  return { images, warnings, tokens };
 }

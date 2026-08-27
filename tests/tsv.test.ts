@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { COLUMNS, SUMMARY_COL, toHtmlTable, toTsv } from "@/lib/tsv";
+import {
+  ADDRESS_COL,
+  COLUMNS,
+  HANDOVER_COL,
+  OWNER_COL,
+  PROPERTY_COL,
+  SUMMARY_COL,
+  toHtmlTable,
+  toTsv,
+} from "@/lib/tsv";
 
 describe("COLUMNS", () => {
   it("転記先Excelの24列構成と一致する", () => {
@@ -30,6 +39,11 @@ describe("COLUMNS", () => {
       "備考欄",
     ]);
     expect(SUMMARY_COL).toBe(19);
+    // メール文の組み立てに使う列
+    expect(PROPERTY_COL).toBe(7);
+    expect(OWNER_COL).toBe(8);
+    expect(ADDRESS_COL).toBe(9);
+    expect(HANDOVER_COL).toBe(10);
   });
 });
 

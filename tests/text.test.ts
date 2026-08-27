@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mapTextItems } from "@/lib/pdf/tokens";
-import { toDateNoPad, toFullWidthSpace, toHalfWidthAlnum } from "@/lib/text";
+import { toDateNoPad, toDateZeroPad, toFullWidthSpace, toHalfWidthAlnum } from "@/lib/text";
 
 describe("toHalfWidthAlnum", () => {
   it("全角英数字を半角に変換する", () => {
@@ -23,6 +23,19 @@ describe("toDateNoPad", () => {
   it("日付形式でなければそのまま返す", () => {
     expect(toDateNoPad("")).toBe("");
     expect(toDateNoPad("不明")).toBe("不明");
+  });
+});
+
+describe("toDateZeroPad", () => {
+  it("yyyy/m/d をゼロ埋めの yyyy/mm/dd にする (メール文用)", () => {
+    expect(toDateZeroPad("2025/9/26")).toBe("2025/09/26");
+    expect(toDateZeroPad("2026/4/5")).toBe("2026/04/05");
+    expect(toDateZeroPad("2026/11/25")).toBe("2026/11/25");
+  });
+
+  it("日付形式でなければそのまま返す", () => {
+    expect(toDateZeroPad("")).toBe("");
+    expect(toDateZeroPad("不明")).toBe("不明");
   });
 });
 

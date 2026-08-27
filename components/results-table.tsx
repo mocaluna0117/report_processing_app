@@ -42,6 +42,7 @@ export function ResultsTable({
   onCategoryChange,
   onCategoryAdd,
   onCategoryRemove,
+  onOpenMail,
 }: {
   results: ResultRow[];
   onCellChange: (pairId: string, col: number, value: string) => void;
@@ -51,6 +52,7 @@ export function ResultsTable({
   onCategoryChange: (pairId: string, index: number, value: string) => void;
   onCategoryAdd: (pairId: string) => void;
   onCategoryRemove: (pairId: string, index: number) => void;
+  onOpenMail: (row: ResultRow) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
@@ -212,6 +214,15 @@ export function ResultsTable({
                         </button>
                       ) : (
                         <span className="text-xs text-slate-400">PDFなし</span>
+                      )}
+                      {!row.error && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenMail(row)}
+                          className="whitespace-nowrap rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-800 hover:bg-blue-100"
+                        >
+                          メール文
+                        </button>
                       )}
                       {!row.error && (
                         <span

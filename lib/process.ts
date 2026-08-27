@@ -1,10 +1,12 @@
 "use client";
 
-// 1ペア分の処理パイプライン (すべてブラウザ内。要約テキストと点検報告書の切り抜き画像のみ /api へ送る)
+// 1ペア分の処理パイプライン (すべてブラウザ内。/api へ送るのは 要約テキスト・点検報告書の切り抜き画像・施主名(カナ推定用) のみ)
 import { formatLastUpdatedJst, formatRemarksJst } from "@/lib/jst-date";
+import type { NameReadingResponse } from "@/lib/kana";
 import { buildMergedPdfName } from "@/lib/naming";
 import { extractTokens } from "@/lib/pdf/extract";
 import { mergeReports } from "@/lib/pdf/merge";
+import { parseInspectionContacts } from "@/lib/pdf/parse-inspection-report";
 import { parsePhotoReport } from "@/lib/pdf/parse-photo-report";
 import { renderInspectionPages } from "@/lib/pdf/render";
 import type {
@@ -13,7 +15,7 @@ import type {
 } from "@/lib/summarize/types";
 import { toDateNoPad, toFullWidthSpace, toHalfWidthAlnum } from "@/lib/text";
 import { COLUMNS } from "@/lib/tsv";
-import type { Confidence, WorkCategoryEntry } from "@/lib/types";
+import type { Confidence, Contact, WorkCategoryEntry } from "@/lib/types";
 import type { WorkCategoriesResponse } from "@/lib/work-categories";
 
 export interface UploadedFile {
@@ -34,6 +36,16 @@ export interface ResultRow {
   categoryEngine: "gemini" | "none";
   /** 工事区分の判定に使えたモデル名 (表示用) */
   categoryModel?: string;
+  /** メール文の組み立てに使う情報 (ブラウザ内でのみ保持) */
+  mail: {
+    /** 施主名のカナ読み (Gemini推定。失敗時は空で手入力) */
+    ownerKana: string;
+    /** ok: 読みが定まる / warn: 候補あり・要確認 / fail: 未取得 */
+    kanaConfidence: Confidence;
+    kanaAlternatives: string[];
+    /** 点検報告書から抽出した連絡先 (① → ② の順) */
+    contacts: Contact[];
+  };
   warnings: string[];
   engine: "gemini" | "rule" | null;
   merged: Blob | null;
@@ -63,6 +75,18 @@ async function requestWorkCategories(images: string[]): Promise<WorkCategoriesRe
   });
   if (!res.ok) throw new Error(`work-categories API ${res.status}`);
   return (await res.json()) as WorkCategoriesResponse;
+}
+
+async function requestNameReading(name: string): Promise<NameReadingResponse> {
+  const res = await fetch("/api/name-reading", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+    // サーバー側の予算(30s)より少し長めに取る
+    signal: AbortSignal.timeout(40_000),
+  });
+  if (!res.ok) throw new Error(`name-reading API ${res.status}`);
+  return (await res.json()) as NameReadingResponse;
 }
 
 const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -119,6 +143,10 @@ export async function processPair(
     let categories: WorkCategoryEntry[] = [];
     let categoryEngine: "gemini" | "none" = "none";
     let categoryModel: string | undefined;
+    let contacts: Contact[] = [];
+    let ownerKana = "";
+    let kanaConfidence: Confidence = "fail";
+    let kanaAlternatives: string[] = [];
 
     const summaryTask = async () => {
       if (!data.templateRecognized) return;
@@ -155,6 +183,8 @@ export async function processPair(
       }
       try {
         const rendered = await renderInspectionPages(inspectionBytes.slice());
+        // 連絡先はテキスト層から取る (API呼び出しの前に確定させ、判定が失敗しても残す)
+        contacts = parseInspectionContacts(rendered.tokens);
         warnings.push(...rendered.warnings);
         const res = await requestWorkCategories(rendered.images);
         categoryEngine = res.engine;
@@ -179,7 +209,28 @@ export async function processPair(
       }
     };
 
-    await Promise.all([summaryTask(), categoryTask()]);
+    // 施主名のカナ読み (メール文用)。漢字の氏名だけを送り、失敗しても確認画面で手入力できる
+    const kanaTask = async () => {
+      if (!data.templateRecognized || !data.ownerName.value) return;
+      try {
+        const res = await requestNameReading(data.ownerName.value);
+        ownerKana = res.kana;
+        kanaAlternatives = res.alternatives;
+        kanaConfidence =
+          res.engine === "none" || !res.kana ? "fail" : res.confidence === "high" ? "ok" : "warn";
+        if (res.error) {
+          warnings.push(
+            `カナ読みの推定に失敗しました (${res.error})。メール文の確認画面で手入力してください`,
+          );
+        }
+      } catch (e) {
+        warnings.push(
+          `カナ読みの推定に失敗しました (${errorMessage(e)})。メール文の確認画面で手入力してください`,
+        );
+      }
+    };
+
+    await Promise.all([summaryTask(), categoryTask(), kanaTask()]);
 
     for (const f of [
       data.pj,
@@ -241,6 +292,7 @@ export async function processPair(
       categories,
       categoryEngine,
       categoryModel,
+      mail: { ownerKana, kanaConfidence, kanaAlternatives, contacts },
       warnings,
       engine,
       merged,
@@ -255,6 +307,7 @@ export async function processPair(
       confidences: Array(COLUMNS.length).fill("fail") as Confidence[],
       categories: [],
       categoryEngine: "none",
+      mail: { ownerKana: "", kanaConfidence: "fail", kanaAlternatives: [], contacts: [] },
       warnings,
       engine: null,
       merged: null,

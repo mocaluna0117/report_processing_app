@@ -51,3 +51,15 @@ export interface WorkCategoryEntry {
   /** 画像認識が読み取った元の項目名 (参考) */
   item?: string;
 }
+
+/**
+ * 点検報告書から抽出した連絡先。
+ * 電話番号はブラウザ内でのみ保持し (メール文の組み立て用)、/api へは送らない。
+ * confidence=warn はハイフン無しの数字列から区切りを推定したもの。
+ */
+export interface Contact {
+  phone: string;
+  /** 続柄 (ご主人 / 奥様 / その他 など)。無ければ空 */
+  relation: string;
+  confidence: Confidence;
+}
