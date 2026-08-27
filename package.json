@@ -1,7 +1,7 @@
 {
-  "name": "report-processing-app",
+  "name": "folio",
   "version": "1.0.0",
-  "description": "写真報告書・点検報告書のPDF結合とExcel転記用テキスト抽出",
+  "description": "Folio — 写真報告書・点検報告書のPDF結合とExcel転記用テキスト抽出",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

@@ -276,7 +276,10 @@ export default function Home() {
 
   return (
     <main className="mx-auto max-w-7xl px-6 py-8">
-      <h1 className="text-2xl font-bold">報告書処理</h1>
+      <h1 className="text-2xl font-bold tracking-tight">
+        Folio
+        <span className="ml-3 align-middle text-sm font-normal text-slate-500">報告書処理</span>
+      </h1>
       <p className="mt-1 text-sm text-slate-600">
         写真報告書と点検報告書をアップロードすると、結合PDFの作成とExcel転記用テキストの抽出を行います。
       </p>

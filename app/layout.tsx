@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "報告書処理",
+  title: "Folio",
   description:
-    "写真報告書・点検報告書のPDF結合とExcel転記用テキスト抽出 (ローカル処理)",
+    "Folio — 写真報告書・点検報告書のPDF結合とExcel転記用テキスト抽出 (ローカル処理)",
 };
 
 export default function RootLayout({

@@ -30,7 +30,7 @@ export function proxy(request: NextRequest) {
   return new NextResponse("認証が必要です", {
     status: 401,
     headers: {
-      "WWW-Authenticate": 'Basic realm="report-processing-app", charset="UTF-8"',
+      "WWW-Authenticate": 'Basic realm="Folio", charset="UTF-8"',
       "Cache-Control": "no-store",
     },
   });
