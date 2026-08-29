@@ -117,7 +117,8 @@ const cells: CellSpec[] = [
   { ref: "B31:U31", border: { l: "medium", r: "medium" } },
   { ref: "P32:Q32", text: "年", h: "right" },
   { ref: "R32:S32", text: "月", h: "right" },
-  { ref: "U32", text: "　　年　　　月　　　日", h: "right" },
+  // 左隣の「年」「月」の欄が埋まっているため、Excelでは U列に収まる「日」しか表示されない
+  { ref: "U32", text: "　　年　　　月　　　日", h: "right", clipToCell: true },
   { ref: "B32:U32", border: { l: "medium", r: "medium" } },
   {
     ref: "U33",

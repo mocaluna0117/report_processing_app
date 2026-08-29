@@ -218,6 +218,23 @@ describe("本紙のレイアウト", () => {
     });
   });
 
+  it("32行目の年月日は重ならない (U列に収まる「日」だけ見せる)", () => {
+    const u32 = main.texts.find((t) => t.text === "　　年　　　月　　　日");
+    expect(u32, "U32 の描画").toBeDefined();
+    // セルで切るので、左隣の「年」「月」と重ならない
+    expect(u32!.clip, "U32 の切り抜き").toBeDefined();
+    const cellLeft = u32!.clip!.x0;
+    for (const text of ["年", "月"]) {
+      const other = main.texts.find((t) => t.text === text);
+      expect(other, `${text} の描画`).toBeDefined();
+      const right = other!.x + measure(text, other!.size, other!.bold);
+      expect(right, `${text} が切り抜きの外にある`).toBeLessThan(cellLeft);
+    }
+    // 「日」は切り抜きの中に入る
+    const dayX = u32!.x + measure("　　年　　　月　　　", u32!.size, u32!.bold);
+    expect(dayX).toBeGreaterThan(cellLeft);
+  });
+
   it("二重下線が3箇所 (会社名・作業者・お客様ご署名) に入る", () => {
     // 1箇所につき2本
     expect(main.underlines).toHaveLength(6);

@@ -44,6 +44,13 @@ export interface CellSpec {
   fill?: string;
   /** 幅に収まらないとき縮小するか */
   shrink?: boolean;
+  /**
+   * はみ出した文字をセルの中で切る。
+   * Excelは隣のセルが埋まっているとはみ出し分を表示しないので、それを再現する
+   * (例: 32行目の「　　年　　　月　　　日」は、左隣に「年」「月」があるため
+   *  U列に収まる「日」しか出ない)。
+   */
+  clipToCell?: boolean;
 }
 
 export interface SheetSpec {
@@ -270,6 +277,7 @@ export function resolveGeometry(
     }
     const clipped = width > usable + 0.5;
     if (clipped && cell.shrink) overflow.push(cell.ref);
+    const clipToCell = cell.clipToCell === true || (clipped && cell.shrink === true);
 
     const bottomBorder = rowBottomBorder.get(box.row1);
     const baseline =
@@ -294,8 +302,8 @@ export function resolveGeometry(
       baseline,
       size,
       bold: Boolean(cell.bold),
-      // 縮小しても収まらない場合だけセル内で切る (隣の欄に重ならないように)
-      clip: clipped && cell.shrink ? { x0: left, y0: top, x1: right, y1: bottom } : undefined,
+      // はみ出した分をセルの中で切る (縮小しても収まらない場合と、Excelが切る欄)
+      clip: clipToCell ? { x0: left, y0: top, x1: right, y1: bottom } : undefined,
     });
 
     if (cell.underline) {
