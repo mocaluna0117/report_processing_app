@@ -127,9 +127,10 @@ export interface HandoverResult {
   issue?: string;
 }
 
-/** 引渡日は yyyy/mm/dd (ゼロ埋め) に揃える */
+/** 引渡日は yyyy/mm/dd (ゼロ埋め) に揃える (全角数字・年月日表記・区切り違いも受ける) */
 export function normalizeHandoverDate(raw: string): HandoverResult {
   const value = toHalfWidthAlnum(trimWide(raw))
+    .replace(/[．／]/g, "/")
     .replace(/[.年月-]/g, "/")
     .replace(/日$/, "");
   if (!value) return { date: null };

@@ -5,6 +5,7 @@ import {
   cleanPropertyName,
   isCorporateName,
   isEmail,
+  normalizeHandoverDate,
   normalizeOwnerKana,
   normalizeOwnerName,
   parsePhoneCell,
@@ -30,7 +31,20 @@ export const DX_HEADERS = {
   email2: "居住者連絡先1-email2",
   sales: "営業担当担当者(主)",
   memo: "備考",
+  built: "築年月日",
 } as const;
+
+/**
+ * 備考に書かれた「エンド引渡日：2025/3/10」。
+ * 備考には「引渡日：」を含む別の記録 (メール文の控えなど) も入るので、この見出しだけを拾う。
+ */
+const END_HANDOVER = /エンド引渡日\s*[:：]?\s*([0-9０-９]{4}\s*[/／.\-年]\s*[0-9０-９]{1,2}\s*[/／.\-月]\s*[0-9０-９]{1,2})/;
+
+const END_HANDOVER_LABEL = /エンド引渡日/;
+
+export function extractEndHandover(memo: string): string | null {
+  return END_HANDOVER.exec(memo)?.[1]?.replace(/\s+/g, "") ?? null;
+}
 
 /** 台帳の書き出しに混ざる技術行 (列キーが値として入っている行) */
 const TECHNICAL_LEDGER = /^importMaster$/i;
@@ -70,6 +84,22 @@ export function dxRowToCustomer(
     if (contact) contacts.push(contact);
   }
 
+  // 引渡日は「備考のエンド引渡日」→「築年月日」の順に見る (どちらも無ければ空欄)
+  const memo = get(DX_HEADERS.memo);
+  const endHandover = extractEndHandover(memo);
+  const fromMemo = endHandover ? normalizeHandoverDate(endHandover) : { date: null };
+  const fromBuilt = fromMemo.date ? { date: null } : normalizeHandoverDate(get(DX_HEADERS.built));
+  const handoverDate = fromMemo.date ?? fromBuilt.date;
+  if (!fromMemo.date && END_HANDOVER_LABEL.test(memo)) {
+    // 見出しはあるのに日付として読めない (書き方が違う) 場合は直してもらう
+    issues.push({
+      field: "handoverDate",
+      message: "備考のエンド引渡日を日付として読めませんでした",
+    });
+  } else if (fromBuilt.issue) {
+    issues.push({ field: "handoverDate", message: fromBuilt.issue.replace("引渡日", "築年月日") });
+  }
+
   const emails: string[] = [];
   for (const key of [DX_HEADERS.email1, DX_HEADERS.email2]) {
     const value = trimWide(get(key));
@@ -92,8 +122,7 @@ export function dxRowToCustomer(
     address,
     contacts,
     emails,
-    // 点検保守台帳には引渡日の列が無い
-    handoverDate: null,
+    handoverDate,
     salesRep: trimWide(get(DX_HEADERS.sales)),
     memo: trimWide(get(DX_HEADERS.memo)),
   };

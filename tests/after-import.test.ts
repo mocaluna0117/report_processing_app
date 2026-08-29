@@ -71,6 +71,7 @@ const DX_HEADER = [
   "居住者 連絡先1 - email2",
   "営業担当 担当者(主)",
   "備考",
+  "築年月日",
 ];
 
 const dxRow = (over: Partial<Record<string, string>> = {}) => {
@@ -90,6 +91,7 @@ const dxRow = (over: Partial<Record<string, string>> = {}) => {
     email2: "",
     sales: "営業担当",
     memo: "",
+    built: "",
     ...over,
   };
   return [
@@ -108,6 +110,7 @@ const dxRow = (over: Partial<Record<string, string>> = {}) => {
     base.email2,
     base.sales,
     base.memo,
+    base.built,
   ];
 };
 
@@ -246,7 +249,6 @@ describe("parseCustomerFile (点検保守台帳)", () => {
       ownerName: "架空　花子",
       ownerKana: "カクウ　ハナコ",
       address: "東京都架空区北町1-2-3",
-      // 点検保守台帳には引渡日の列が無い
       handoverDate: null,
       emails: ["hanako@example.com"],
     });
@@ -319,6 +321,55 @@ describe("parseCustomerFile (点検保守台帳)", () => {
     const customer = result.customers[0];
     expect(effectiveFields(customer).developer).toBeNull();
     expect(openIssues(customer).some((i) => i.field === "developer")).toBe(true);
+  });
+
+  it("備考の「エンド引渡日」を引渡日にする", () => {
+    const result = parseCustomerFile(
+      dxFile([
+        dxRow({
+          memo: "アフターサービス申込書処理：2025/1/20\nエンド引渡日：2025/3/10\n\n顧客データ送付：2025/4/1",
+          built: "2024/12/1",
+        }),
+      ]),
+      "DX.xlsx",
+      1,
+    );
+    // 備考の日付が築年月日より優先される
+    expect(effectiveFields(result.customers[0]).handoverDate).toBe("2025/03/10");
+  });
+
+  it("備考に「エンド引渡日」が無ければ築年月日を使う", () => {
+    const result = parseCustomerFile(
+      dxFile([dxRow({ memo: "アフターサービス申込書回収：2025/1/20", built: "2024/12/1" })]),
+      "DX.xlsx",
+      1,
+    );
+    expect(effectiveFields(result.customers[0]).handoverDate).toBe("2024/12/01");
+  });
+
+  it("備考の別の日付 (メール文の控えなど) は引渡日にしない", () => {
+    const result = parseCustomerFile(
+      dxFile([dxRow({ memo: "【物件情報】\n引渡日：2024/5/1\n物件名：架空台1丁目" })]),
+      "DX.xlsx",
+      1,
+    );
+    expect(effectiveFields(result.customers[0]).handoverDate).toBeNull();
+  });
+
+  it("どちらも無ければ引渡日は空欄", () => {
+    const result = parseCustomerFile(dxFile([dxRow()]), "DX.xlsx", 1);
+    expect(effectiveFields(result.customers[0]).handoverDate).toBeNull();
+  });
+
+  it("「エンド引渡日」の見出しはあるが日付として読めなければ要確認にする", () => {
+    const result = parseCustomerFile(
+      dxFile([dxRow({ memo: "エンド引渡日：202503/10" })]),
+      "DX.xlsx",
+      1,
+    );
+    const customer = result.customers[0];
+    expect(effectiveFields(customer).handoverDate).toBeNull();
+    expect(openIssues(customer).some((i) => i.field === "handoverDate")).toBe(true);
   });
 
   it("同じファイルを再度読んでもIDが変わらない (編集を残せる)", () => {
