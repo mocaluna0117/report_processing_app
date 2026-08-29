@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { downloadBytes } from "@/lib/download";
 import type { ResultRow } from "@/lib/process";
+import { SUMMARY_COL } from "@/lib/tsv";
 import { loadReportAssets, resolveReportFonts } from "@/lib/report/assets";
 import {
   canQueryLocalFonts,
@@ -14,9 +15,12 @@ import {
 } from "@/lib/report/fonts";
 import {
   APPENDIX_THRESHOLD,
+  MAIN_SLOTS,
   REPORT_PDF_NAME,
   REPORT_XLSX_NAME,
   buildReportData,
+  joinSummary,
+  splitSummary,
   type ReportOptions,
 } from "@/lib/report/model";
 
@@ -44,11 +48,14 @@ export function ReportDialog({
   row,
   onOptionsChange,
   onKanaChange,
+  onSummaryChange,
   onClose,
 }: {
   row: ResultRow;
   onOptionsChange: (pairId: string, options: ReportOptions) => void;
   onKanaChange: (pairId: string, kana: string) => void;
+  /** 指示内容の編集。アフター受付内容 (結果テーブルのセル) に書き戻す */
+  onSummaryChange: (pairId: string, summary: string) => void;
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState<"xlsx" | "pdf" | null>(null);
@@ -79,6 +86,20 @@ export function ReportDialog({
   }, [onClose]);
 
   const data = useMemo(() => buildReportData(row, row.report), [row]);
+  // 指示内容はアフター受付内容そのものなので、編集したらセルに書き戻す
+  // (メモ・「指摘なし」の定型文は落とさずに保つ)
+  const summaryParts = useMemo(() => splitSummary(row.cells[SUMMARY_COL] ?? ""), [row]);
+  /**
+   * 編集中の項目。書き戻すときに空欄は落とすので、入力途中の空欄はここで保つ
+   * (「項目を追加」した直後の空欄が消えないようにする)。
+   */
+  const [draftItems, setDraftItems] = useState<string[] | null>(null);
+  useEffect(() => setDraftItems(null), [row.pairId]);
+  const items = draftItems ?? summaryParts.items;
+  const editItems = (next: string[]) => {
+    setDraftItems(next);
+    onSummaryChange(row.pairId, joinSummary({ ...summaryParts, items: next }));
+  };
 
   const toggle = (group: "attendance" | "categories", key: string, checked: boolean) => {
     onOptionsChange(row.pairId, {
@@ -145,7 +166,7 @@ export function ReportDialog({
         role="dialog"
         aria-modal="true"
         aria-label={`完了報告書 ${row.ownerDisplay}`}
-        className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl"
+        className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -164,11 +185,13 @@ export function ReportDialog({
           </button>
         </div>
 
-        <dl className="mt-4 grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 text-sm">
+        <dl className="mt-4 grid gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
           {fields.map(([label, value]) => (
-            <div key={label} className="col-span-2 grid grid-cols-subgrid items-baseline">
+            <div key={label} className="grid grid-cols-[6rem_1fr] items-baseline gap-x-3">
               <dt className="text-slate-500">{label}</dt>
-              <dd className={value ? "" : "text-slate-400"}>{value || "(空欄)"}</dd>
+              <dd className={value ? "truncate" : "text-slate-400"} title={value}>
+                {value || "(空欄)"}
+              </dd>
             </div>
           ))}
         </dl>
@@ -217,19 +240,59 @@ export function ReportDialog({
         </div>
 
         <div className="mt-4">
-          <p className="text-sm font-medium">
-            指示内容 <span className="text-xs font-normal text-slate-500">（アフター受付内容から）</span>
-          </p>
-          {data.items.length === 0 ? (
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-sm font-medium">
+              指示内容
+              <span className="ml-2 text-xs font-normal text-slate-500">
+                ここで直すと結果テーブルの「アフター受付内容」にも反映されます
+              </span>
+            </p>
+            <button
+              type="button"
+              onClick={() => editItems([...items, ""])}
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
+            >
+              項目を追加
+            </button>
+          </div>
+
+          {items.length === 0 ? (
             <p className="mt-1 text-sm text-amber-800">
-              指示内容が空です。アフター受付内容を入力してから作成してください
+              指示内容が空です。「項目を追加」で入力するか、アフター受付内容を入力してから作成してください
             </p>
           ) : (
-            <ol className="mt-1 list-decimal space-y-0.5 pl-6 text-sm">
-              {data.items.map((item, i) => (
-                <li key={`${i}-${item}`}>{item}</li>
+            <ul className="mt-1.5 space-y-1.5">
+              {items.map((item, i) => (
+                // 並べ替えはしないので、位置をそのままキーにする
+                // biome-ignore lint/suspicious/noArrayIndexKey: 入力欄の位置と対応させるため
+                <li key={i} className="flex items-center gap-2">
+                  <span className="w-16 shrink-0 text-right text-xs text-slate-500">
+                    {data.useAppendix ? `別紙 ${i + 1}` : i < MAIN_SLOTS ? `本紙 ${i + 1}` : `${i + 1}`}
+                  </span>
+                  <input
+                    value={item}
+                    onChange={(e) =>
+                      editItems(items.map((v, j) => (j === i ? e.target.value : v)))
+                    }
+                    placeholder="1階洋室 天井クロス：クロス表面に凹凸あり"
+                    className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                  />
+                  <button
+                    type="button"
+                    title="この項目を削除"
+                    onClick={() => editItems(items.filter((_, j) => j !== i))}
+                    className="shrink-0 rounded px-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
+                  >
+                    ✕
+                  </button>
+                </li>
               ))}
-            </ol>
+            </ul>
+          )}
+          {summaryParts.notes.length > 0 && (
+            <p className="mt-1.5 text-xs text-slate-500">
+              メモ (完了報告書には載せません): {summaryParts.notes.join(" / ")}
+            </p>
           )}
           {data.useAppendix && (
             <p className="mt-2 rounded bg-blue-50 px-2 py-1.5 text-xs text-blue-900">
@@ -311,13 +374,18 @@ export function ReportDialog({
               }}
             />
           </div>
-          <p className="mt-2 text-xs text-slate-500">
-            游ゴシックは Windows / Microsoft Office に付属する書体で、再配布はできませんが、
-            ライセンスを持つ端末で自分の文書に埋め込むことは許可されています
-            (フォント側の埋め込み設定も許可)。登録したフォントはこの端末の中だけに保存され、外部へは送信されません。
-            Mac は <code>/Applications/Microsoft Word.app/Contents/Resources/DFonts/YuGothR.ttc</code> と{" "}
-            <code>YuGothB.ttc</code>、Windows は <code>C:\Windows\Fonts\</code> の同名ファイルです
-          </p>
+          <details className="mt-2 text-xs text-slate-500">
+            <summary className="cursor-pointer select-none">游ゴシックを使うには</summary>
+            <p className="mt-1">
+              游ゴシックは Windows / Microsoft Office に付属する書体で、再配布はできませんが、
+              ライセンスを持つ端末で自分の文書に埋め込むことは許可されています (フォント側の埋め込み設定も許可)。
+              登録したフォントはこの端末の中だけに保存され、外部へは送信されません。
+            </p>
+            <p className="mt-1">
+              Mac は <code>/Applications/Microsoft Word.app/Contents/Resources/DFonts/YuGothR.ttc</code>{" "}
+              と <code>YuGothB.ttc</code>、Windows は <code>C:\Windows\Fonts\</code> の同名ファイルです。
+            </p>
+          </details>
         </div>
 
         {error && (

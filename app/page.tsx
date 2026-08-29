@@ -28,7 +28,7 @@ import {
   savePairs,
   saveResults,
 } from "@/lib/storage";
-import { COLUMNS } from "@/lib/tsv";
+import { COLUMNS, SUMMARY_COL } from "@/lib/tsv";
 import { useExcelCopy } from "@/lib/use-excel-copy";
 import { usePersistence } from "@/lib/use-persistence";
 import { useRowEditors } from "@/lib/use-row-editors";
@@ -417,6 +417,9 @@ export default function Home() {
           row={reportRow}
           onOptionsChange={editors.onReportOptionsChange}
           onKanaChange={editors.onKanaChange}
+          onSummaryChange={(pairId, summary) =>
+            editors.onCellChange(pairId, SUMMARY_COL, summary)
+          }
           onClose={() => {
             setReportPairId(null);
             storage.refreshFontInfo();

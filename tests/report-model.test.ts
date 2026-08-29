@@ -9,6 +9,8 @@ import {
   buildOwnerLine,
   buildReportData,
   defaultReportOptions,
+  joinSummary,
+  splitSummary,
   normalizeReportOptions,
   splitInstructionItems,
   type ReportSource,
@@ -219,5 +221,45 @@ describe("アフターメンテナンスの既定", () => {
     expect(
       normalizeReportOptions({ categories: { inspection: true } }, AFTER_REPORT_OPTIONS).categories,
     ).toMatchObject({ inspection: true, after: true });
+  });
+});
+
+describe("splitSummary / joinSummary", () => {
+  it("番号を落として項目にし、メモは分けて持つ", () => {
+    const parts = splitSummary("①壁のひび\n②床のきしみ\nメモ: 立会いは奥様");
+    expect(parts.items).toEqual(["壁のひび", "床のきしみ"]);
+    expect(parts.notes).toEqual(["立会いは奥様"]);
+    expect(parts.noDefect).toBe(false);
+  });
+
+  it("編集した項目を戻すとき、メモを失わない", () => {
+    const parts = splitSummary("①壁のひび\n②床のきしみ\nメモ: 立会いは奥様");
+    const next = joinSummary({ ...parts, items: ["壁のひび", "床のきしみ", "建具の調整"] });
+    expect(next).toBe("①壁のひび\n②床のきしみ\n③建具の調整\nメモ: 立会いは奥様");
+  });
+
+  it("1件だけになったら番号を付けない", () => {
+    const parts = splitSummary("①壁のひび\n②床のきしみ");
+    expect(joinSummary({ ...parts, items: ["壁のひび"] })).toBe("壁のひび");
+  });
+
+  it("「指摘なし」の定型文は項目にせず、空にしたときに戻す", () => {
+    const parts = splitSummary(NO_DEFECT_TEXT);
+    expect(parts.items).toEqual([]);
+    expect(parts.noDefect).toBe(true);
+    expect(joinSummary(parts)).toBe(NO_DEFECT_TEXT);
+    // 項目を足したら定型文は消える
+    expect(joinSummary({ ...parts, items: ["壁のひび"] })).toBe("壁のひび");
+  });
+
+  it("元から項目が無い (アフター) 場合は空文字のまま", () => {
+    const parts = splitSummary("");
+    expect(joinSummary(parts)).toBe("");
+    expect(joinSummary({ ...parts, items: ["", "  "] })).toBe("");
+  });
+
+  it("入力途中の空欄は書き戻しで落ちる", () => {
+    const parts = splitSummary("①壁のひび");
+    expect(joinSummary({ ...parts, items: ["壁のひび", ""] })).toBe("壁のひび");
   });
 });

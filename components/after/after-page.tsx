@@ -35,7 +35,7 @@ import {
   loadAfterCases,
   saveAfterCases,
 } from "@/lib/storage";
-import { COLUMNS, RECEPTION_TYPE_COL } from "@/lib/tsv";
+import { COLUMNS, RECEPTION_TYPE_COL, SUMMARY_COL } from "@/lib/tsv";
 import { useExcelCopy } from "@/lib/use-excel-copy";
 import { usePersistence } from "@/lib/use-persistence";
 import { useRowEditors } from "@/lib/use-row-editors";
@@ -396,6 +396,9 @@ export function AfterPage() {
           row={reportRow}
           onOptionsChange={editors.onReportOptionsChange}
           onKanaChange={editors.onKanaChange}
+          onSummaryChange={(pairId, summary) =>
+            editors.onCellChange(pairId, SUMMARY_COL, summary)
+          }
           onClose={() => {
             setReportCaseId(null);
             storage.refreshFontInfo();

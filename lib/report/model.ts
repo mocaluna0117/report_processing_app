@@ -1,5 +1,5 @@
 // 完了報告書 (xlsx / PDF) に載せる値の組み立て。純関数のみ (ブラウザ・Nodeどちらでも動く)
-import { NO_DEFECT_TEXT, circledNumber } from "@/lib/summarize/format";
+import { NO_DEFECT_TEXT, circledNumber, formatPhenomena } from "@/lib/summarize/format";
 import { toFullWidthSpace } from "@/lib/text";
 import {
   ADDRESS_COL,
@@ -138,19 +138,57 @@ export interface ReportSource {
 }
 
 const LEADING_NUMBER = /^(?:[①-⑳]|\(\d+\)|\d+[.)、]|・)\s*/;
-const NOTE_LINE = /^メモ\s*[:：]/;
+const NOTE_LINE = /^メモ\s*[:：]\s*/;
+
+/** アフター受付内容を、指示内容の項目と点検員メモに分ける */
+export interface SummaryParts {
+  /** 指示内容の項目 (先頭の番号は落とす) */
+  items: string[];
+  /** 点検員メモ (「メモ: 」の接頭辞は落とす) */
+  notes: string[];
+  /** 元が「不具合の指摘なし」の定型文だったか (項目を空にしたときに戻す) */
+  noDefect: boolean;
+}
+
+/**
+ * アフター受付内容 (①②…で改行された要約) を項目・メモに分ける。
+ * 指示内容の編集で書き戻すときに、メモや定型文を失わないようにするため分けて持つ。
+ */
+export function splitSummary(summary: string): SummaryParts {
+  const lines = summary
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const items: string[] = [];
+  const notes: string[] = [];
+  let noDefect = false;
+  for (const line of lines) {
+    if (NOTE_LINE.test(line)) {
+      notes.push(line.replace(NOTE_LINE, "").trim());
+    } else if (line === NO_DEFECT_TEXT) {
+      noDefect = true;
+    } else {
+      const text = line.replace(LEADING_NUMBER, "").trim();
+      if (text) items.push(text);
+    }
+  }
+  return { items, notes, noDefect };
+}
 
 /**
  * アフター受付内容 (①②…で改行された要約) を項目の配列にする。
  * 先頭の番号・点検員メモ・「指摘なし」の定型文は落とす。
  */
 export function splitInstructionItems(summary: string): string[] {
-  return summary
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !NOTE_LINE.test(line) && line !== NO_DEFECT_TEXT)
-    .map((line) => line.replace(LEADING_NUMBER, "").trim())
-    .filter(Boolean);
+  return splitSummary(summary).items;
+}
+
+/** 編集した指示内容をアフター受付内容の本文に戻す (メモ・定型文は保つ) */
+export function joinSummary(parts: SummaryParts): string {
+  const items = parts.items.map((s) => s.trim()).filter(Boolean);
+  return formatPhenomena(items, parts.notes, {
+    emptyText: parts.noDefect ? NO_DEFECT_TEXT : "",
+  });
 }
 
 /** 別紙のタイトル。アフターは固定、定期点検は受付種別から (空なら時期を省く) */
