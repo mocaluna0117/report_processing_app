@@ -195,6 +195,25 @@ describe("normalizeOwnerKana", () => {
   it("漢字が混ざる個人名のカナは要確認", () => {
     expect(normalizeOwnerKana("ヤマダ太郎").issue).toBeTruthy();
   });
+
+  it("連名 (「・」区切り) は正しい書き方として扱う", () => {
+    const result = normalizeOwnerKana("サトウ　ハナコ・サトウ　ジロウ");
+    expect(result.kana).toBe("サトウ　ハナコ・サトウ　ジロウ");
+    expect(result.issue).toBeUndefined();
+  });
+
+  it("連名の区切りが読点・半角中黒でも「・」に揃える", () => {
+    expect(normalizeOwnerKana("サトウ　ハナコ、サトウ　ジロウ").kana).toBe(
+      "サトウ　ハナコ・サトウ　ジロウ",
+    );
+    expect(normalizeOwnerKana("ｻﾄｳ ﾊﾅｺ･ｻﾄｳ ｼﾞﾛｳ")).toEqual({
+      kana: "サトウ　ハナコ・サトウ　ジロウ",
+    });
+  });
+
+  it("連名でも片方にカタカナ以外が混ざれば要確認", () => {
+    expect(normalizeOwnerKana("サトウ　ハナコ・サトウ　次郎").issue).toBeTruthy();
+  });
 });
 
 describe("parsePhoneCell", () => {

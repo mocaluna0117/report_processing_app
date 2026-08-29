@@ -74,15 +74,25 @@ export interface KanaResult {
   issue?: string;
 }
 
+/**
+ * 連名の区切り (「サトウ　ハナコ・サトウ　ジロウ」)。
+ * カナとしては正しい書き方なので、要確認にはしない。
+ */
+const JOINT_SEPARATOR = /[・､、]/;
+
 /** カナ読み: 半角カナ・ひらがなをカタカナに寄せ、姓名間は全角スペース1つにする */
 export function normalizeOwnerKana(raw: string, corporate = false): KanaResult {
   const value = trimWide(raw);
   if (!value) return { kana: "" };
-  const { kana, valid } = normalizeKana(hiraganaToKatakana(toFullWidthKatakana(value)));
-  if (!valid && !corporate) {
-    return { kana, issue: "カナにカタカナ以外が含まれます (要確認)" };
-  }
-  return { kana };
+  // 連名は1人ずつ整えてから「・」でつなぎ直す
+  const parts = hiraganaToKatakana(toFullWidthKatakana(value))
+    .split(JOINT_SEPARATOR)
+    .map((part) => normalizeKana(part))
+    .filter((part) => part.kana !== "");
+  const kana = parts.map((part) => part.kana).join("・");
+  if (parts.length > 0 && parts.every((part) => part.valid)) return { kana };
+  if (corporate) return { kana };
+  return { kana, issue: "カナにカタカナ以外が含まれます (要確認)" };
 }
 
 const RELATION_ALIASES: readonly [RegExp, string][] = [
