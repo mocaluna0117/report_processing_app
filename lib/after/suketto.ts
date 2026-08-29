@@ -67,7 +67,12 @@ export function suketToCustomer(
   }
 
   const handover = normalizeHandoverDate(get(SUKETTO_HEADERS.handover));
-  if (handover.issue) issues.push({ field: "handoverDate", message: handover.issue });
+  if (handover.unreadable) {
+    issues.push({
+      field: "handoverDate",
+      message: `引渡日を日付として読めませんでした (${handover.unreadable})`,
+    });
+  }
 
   const developer = developerFromBranch(get(SUKETTO_HEADERS.branch));
   if (!developer) issues.push({ field: "developer", message: "担当支店が空のため事業者が未設定です" });

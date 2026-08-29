@@ -347,6 +347,23 @@ describe("parseCustomerFile (点検保守台帳)", () => {
     expect(effectiveFields(result.customers[0]).handoverDate).toBe("2024/12/01");
   });
 
+  it("築年月日が日付書式のセル (シリアル値) でも読める", () => {
+    // Excelは日付書式のセルを数値で書き出すので、文字列とは別に確かめる
+    const row: (string | number)[] = [...dxRow()];
+    row[DX_HEADER.indexOf("築年月日")] = 45726;
+    const bytes = buildXlsx([{ name: "Sheet1", rows: [DX_HEADER, row] }], { mode: "inline" });
+    expect(effectiveFields(parseCustomerFile(bytes, "DX.xlsx", 1).customers[0]).handoverDate).toBe(
+      "2025/03/10",
+    );
+  });
+
+  it("築年月日が読めない値なら空欄にして、その値を要確認に出す", () => {
+    const result = parseCustomerFile(dxFile([dxRow({ built: "未定" })]), "DX.xlsx", 1);
+    const customer = result.customers[0];
+    expect(effectiveFields(customer).handoverDate).toBeNull();
+    expect(openIssues(customer).find((i) => i.field === "handoverDate")?.message).toContain("未定");
+  });
+
   it("備考の別の日付 (メール文の控えなど) は引渡日にしない", () => {
     const result = parseCustomerFile(
       dxFile([dxRow({ memo: "【物件情報】\n引渡日：2024/5/1\n物件名：架空台1丁目" })]),

@@ -125,19 +125,88 @@ export function parsePhoneCell(raw: string): Contact | null {
 export interface HandoverResult {
   date: string | null;
   issue?: string;
+  /** 日付として読めなかった元の値 (どの列かは呼び出し側が付ける) */
+  unreadable?: string;
 }
 
-/** 引渡日は yyyy/mm/dd (ゼロ埋め) に揃える (全角数字・年月日表記・区切り違いも受ける) */
+/** 和暦の元号 → 元年の前年 (令和1年 = 2019年) */
+const ERAS: readonly [RegExp, number][] = [
+  [/^(?:令和|R)/i, 2018],
+  [/^(?:平成|H)/i, 1988],
+  [/^(?:昭和|S)/i, 1925],
+];
+
+/**
+ * Excelの日付シリアル値が入りうる範囲 (1927年〜2064年)。
+ * 日付書式のセルは数値で書き出されるため、この範囲の数値は日付として読む。
+ */
+const SERIAL_MIN = 10000;
+const SERIAL_MAX = 60000;
+
+function fromSerial(serial: number): { y: number; m: number; d: number } {
+  // Excelの起点は1899/12/30 (1900年をうるう年とみなす不具合に合わせた慣例)。
+  // 小数部は時刻なので切り捨てて日付だけを取る
+  const date = new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 86_400_000);
+  return { y: date.getUTCFullYear(), m: date.getUTCMonth() + 1, d: date.getUTCDate() };
+}
+
+/** 実在する日付か (2025/2/30 のような値を弾く) */
+function isRealDate(y: number, m: number, d: number): boolean {
+  if (y < 1900 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return false;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCMonth() + 1 === m && date.getUTCDate() === d;
+}
+
+/**
+ * 引渡日・築年月日を yyyy/mm/dd (ゼロ埋め) に揃える。
+ * 取り込み元によって書き方が違うので、次を受け付ける:
+ * 2025/3/10・2025-3-10・2025.3.10・2025年3月10日・20250310・全角数字・
+ * 時刻付き (2025/3/10 0:00)・和暦 (令和7年3月10日)・Excelの日付シリアル値 (45726)
+ */
 export function normalizeHandoverDate(raw: string): HandoverResult {
-  const value = toHalfWidthAlnum(trimWide(raw))
-    .replace(/[．／]/g, "/")
-    .replace(/[.年月-]/g, "/")
-    .replace(/日$/, "");
-  if (!value) return { date: null };
-  if (!/^\d{4}\/\d{1,2}\/\d{1,2}$/.test(value)) {
-    return { date: null, issue: `引渡日の形式が読めません (${trimWide(raw)})` };
+  const input = toHalfWidthAlnum(trimWide(raw));
+  if (!input) return { date: null };
+  const unreadable: HandoverResult = {
+    date: null,
+    issue: `日付の形式が読めません (${trimWide(raw)})`,
+    unreadable: trimWide(raw),
+  };
+
+  // 時刻が付いていることがあるので日付部分だけ見る
+  const head = input.split(/[ T]/)[0];
+
+  // Excelの日付シリアル値 (日付書式のセルは数値で書き出される。小数部は時刻)
+  if (/^\d+(?:\.\d+)?$/.test(head)) {
+    const n = Number(head);
+    if (n >= SERIAL_MIN && n <= SERIAL_MAX) {
+      const { y, m, d } = fromSerial(n);
+      if (isRealDate(y, m, d)) return { date: `${y}/${String(m).padStart(2, "0")}/${String(d).padStart(2, "0")}` };
+    }
+    // 20250310 のような8桁表記
+    const digits = /^(\d{4})(\d{2})(\d{2})$/.exec(head.split(".")[0]);
+    if (digits) {
+      const [y, m, d] = digits.slice(1).map(Number);
+      if (isRealDate(y, m, d)) return { date: `${y}/${String(m).padStart(2, "0")}/${String(d).padStart(2, "0")}` };
+    }
+    return unreadable;
   }
-  return { date: toDateZeroPad(value) };
+
+  // 和暦 (令和7年3月10日 / R7/3/10)
+  let body = head.replace(/[．／]/g, "/").replace(/[.-]/g, "/");
+  for (const [pattern, base] of ERAS) {
+    if (!pattern.test(body)) continue;
+    const rest = body.replace(pattern, "");
+    const m = /^(\d{1,2}|元)[/年](\d{1,2})[/月](\d{1,2})/.exec(rest);
+    if (!m) return unreadable;
+    body = `${base + (m[1] === "元" ? 1 : Number(m[1]))}/${m[2]}/${m[3]}`;
+    break;
+  }
+
+  const parts = /^(\d{4})[/年](\d{1,2})[/月](\d{1,2})日?$/.exec(body.replace(/日$/, "日"));
+  if (!parts) return unreadable;
+  const [y, m, d] = parts.slice(1).map(Number);
+  if (!isRealDate(y, m, d)) return unreadable;
+  return { date: `${y}/${String(m).padStart(2, "0")}/${String(d).padStart(2, "0")}` };
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

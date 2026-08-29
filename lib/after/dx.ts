@@ -96,8 +96,11 @@ export function dxRowToCustomer(
       field: "handoverDate",
       message: "備考のエンド引渡日を日付として読めませんでした",
     });
-  } else if (fromBuilt.issue) {
-    issues.push({ field: "handoverDate", message: fromBuilt.issue.replace("引渡日", "築年月日") });
+  } else if (fromBuilt.unreadable) {
+    issues.push({
+      field: "handoverDate",
+      message: `築年月日を日付として読めませんでした (${fromBuilt.unreadable})`,
+    });
   }
 
   const emails: string[] = [];

@@ -247,8 +247,29 @@ describe("normalizeHandoverDate", () => {
     expect(normalizeHandoverDate("")).toEqual({ date: null });
   });
 
-  it("読めない形式は要確認", () => {
-    expect(normalizeHandoverDate("未定").issue).toBeTruthy();
+  it("Excelの日付シリアル値 (日付書式のセル) を読む", () => {
+    expect(normalizeHandoverDate("45726").date).toBe("2025/03/10");
+    // 小数部は時刻なので日付だけ取る
+    expect(normalizeHandoverDate("45726.5").date).toBe("2025/03/10");
+  });
+
+  it("時刻付き・8桁・和暦も読む", () => {
+    expect(normalizeHandoverDate("2025/3/10 0:00").date).toBe("2025/03/10");
+    expect(normalizeHandoverDate("2025-03-10T00:00:00").date).toBe("2025/03/10");
+    expect(normalizeHandoverDate("20250310").date).toBe("2025/03/10");
+    expect(normalizeHandoverDate("令和7年3月10日").date).toBe("2025/03/10");
+    expect(normalizeHandoverDate("R7/3/10").date).toBe("2025/03/10");
+    expect(normalizeHandoverDate("平成31年4月1日").date).toBe("2019/04/01");
+    expect(normalizeHandoverDate("令和元年5月1日").date).toBe("2019/05/01");
+  });
+
+  it("実在しない日付・年月だけ・文字は読めない値として返す", () => {
+    for (const value of ["未定", "2025/3", "2025/2/30", "2025/13/1", "45726/0", "1"]) {
+      const result = normalizeHandoverDate(value);
+      expect(result.date, value).toBeNull();
+      // どの値が読めなかったか画面に出せるようにする
+      expect(result.unreadable, value).toBe(value);
+    }
   });
 });
 
