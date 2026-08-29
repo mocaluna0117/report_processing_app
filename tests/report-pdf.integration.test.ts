@@ -131,13 +131,12 @@ describe.skipIf(!fonts)("完了報告書PDF", () => {
     expect(compact[0]).not.toContain("太郎（");
   }, 30_000);
 
-  it("日本語フォントを丸ごと埋め込んだPDFになる", async () => {
+  it("必要な文字だけに絞ったフォントを埋め込み、PDFは小さくなる", async () => {
     const { bytes } = await render(["壁のひび"]);
     expect(Buffer.from(bytes.slice(0, 5)).toString("latin1")).toBe("%PDF-");
-    // pdf-lib はオブジェクトを圧縮ストリームに入れるので、埋め込みは大きさで確かめる
-    // (サブセット化は字形が欠ける不具合があるため使わない → 1.5MB程度になる)
-    expect(bytes.length).toBeGreaterThan(1_000_000);
-    expect(bytes.length).toBeLessThan(3_000_000);
+    // hb-subset で使う文字だけに絞ってから埋め込むので、数十KBに収まる
+    expect(bytes.length).toBeGreaterThan(10_000);
+    expect(bytes.length).toBeLessThan(300_000);
   }, 30_000);
 });
 

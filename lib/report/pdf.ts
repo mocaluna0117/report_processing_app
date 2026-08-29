@@ -25,10 +25,14 @@ import { resolveGeometry, type Geometry, type SheetSpec } from "@/lib/report/lay
 import { MAIN_SHEET } from "@/lib/report/layout/main-sheet";
 import { PAGE_HEIGHT, PAGE_WIDTH } from "@/lib/report/metrics";
 import type { ReportData } from "@/lib/report/model";
+import { codePointsOf, subsetFont } from "@/lib/report/subset";
 
 export interface ReportFonts {
   regular: Uint8Array;
   bold: Uint8Array;
+  /** .ttc を渡す場合、使う書体の位置 (省略時は0) */
+  regularFaceIndex?: number;
+  boldFaceIndex?: number;
 }
 
 /** 埋め込みフォントに無い文字の代わりに出す字 (下駄記号) */
@@ -194,6 +198,28 @@ class Painter {
   }
 }
 
+/** この報告書で使う文字をすべて集める (フォントを必要な文字だけに絞るため) */
+function reportTexts(data: ReportData, values: Record<string, string>): string[] {
+  const texts = [...Object.values(values), MISSING_GLYPH];
+  for (const cell of MAIN_SHEET.cells) if (cell.text) texts.push(cell.text);
+  if (MAIN_SHEET.header) texts.push(MAIN_SHEET.header.text);
+  if (data.appendix) {
+    const pages = paginateAppendixItems(data.appendix.items);
+    pages.forEach((items, index) => {
+      const { spec, values: appendixValues } = appendixSheet({
+        title: data.appendix!.title,
+        propertyLine: data.appendix!.propertyLine,
+        ownerLine: data.appendix!.ownerLine,
+        items,
+        pageLabel: appendixPageLabel(index, pages.length),
+      });
+      for (const cell of spec.cells) if (cell.text) texts.push(cell.text);
+      texts.push(...Object.values(appendixValues));
+    });
+  }
+  return texts.map(sanitizeText);
+}
+
 /** 本紙に差し込む値 */
 function mainValues(data: ReportData): Record<string, string> {
   const values: Record<string, string> = {
@@ -243,11 +269,19 @@ export async function buildReportPdf(data: ReportData, fonts: ReportFonts): Prom
   const fontkit = await import("@pdf-lib/fontkit").then((m) => m.default ?? m);
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit as never);
-  // フォントは丸ごと埋め込む。pdf-lib (fontkit) のサブセット化は、CJKのような
-  // 字形数の多いTrueTypeフォントで一部の字形が空になる不具合があるため使えない
-  // (Noto Sans JP の配布版でも再現。1ページあたり約1.5MBになるが、確実に表示される方を取る)。
-  const regular = await doc.embedFont(fonts.regular, { subset: false });
-  const bold = await doc.embedFont(fonts.bold, { subset: false });
+
+  // この文書で使う文字だけにフォントを絞ってから埋め込む。
+  // pdf-lib (fontkit) のサブセット化は字形数の多い日本語フォントで字形が欠けるため使えないので、
+  // HarfBuzz (hb-subset) で先に小さくし、pdf-lib には subset:false で渡す。
+  // .ttc (游ゴシック等) から1書体を取り出すのもここで行う。
+  const values = mainValues(data);
+  const used = codePointsOf(reportTexts(data, values));
+  const [regularBytes, boldBytes] = await Promise.all([
+    subsetFont(fonts.regular, used, { faceIndex: fonts.regularFaceIndex }),
+    subsetFont(fonts.bold, used, { faceIndex: fonts.boldFaceIndex }),
+  ]);
+  const regular = await doc.embedFont(regularBytes, { subset: false });
+  const bold = await doc.embedFont(boldBytes, { subset: false });
   const charset = {
     regular: new Set(regular.getCharacterSet()),
     bold: new Set(bold.getCharacterSet()),
@@ -275,7 +309,7 @@ export async function buildReportPdf(data: ReportData, fonts: ReportFonts): Prom
     for (const ref of geometry.overflow) overflow.add(ref);
   };
 
-  render(MAIN_SHEET, mainValues(data), mainFlags(data));
+  render(MAIN_SHEET, values, mainFlags(data));
 
   if (data.appendix) {
     const pages = paginateAppendixItems(data.appendix.items);

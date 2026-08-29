@@ -3,7 +3,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { downloadBytes } from "@/lib/download";
 import type { ResultRow } from "@/lib/process";
-import { loadReportAssets } from "@/lib/report/assets";
+import { loadReportAssets, resolveReportFonts } from "@/lib/report/assets";
+import {
+  canQueryLocalFonts,
+  clearLocalFonts,
+  loadLocalFontInfo,
+  registerFromFiles,
+  registerFromLocalFonts,
+  type LocalFontInfo,
+} from "@/lib/report/fonts";
 import {
   APPENDIX_THRESHOLD,
   REPORT_PDF_NAME,
@@ -48,7 +56,17 @@ export function ReportDialog({
   /** PDF作成時の注意 (フォントに無い文字・枠に収まらない欄)。エラーとは分けて残す */
   const [notices, setNotices] = useState<string[]>([]);
   const [done, setDone] = useState<"xlsx" | "pdf" | null>(null);
+  /** PDFに使う書体 (未登録なら同梱の Noto Sans JP) */
+  const [fontInfo, setFontInfo] = useState<LocalFontInfo | null>(null);
+  const [fontBusy, setFontBusy] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const fontInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    void loadLocalFontInfo()
+      .then(setFontInfo)
+      .catch(() => setFontInfo(null));
+  }, []);
 
   // Escで閉じられるようにする (他のダイアログと同じ操作感)
   useEffect(() => {
@@ -81,7 +99,8 @@ export function ReportDialog({
         downloadBytes(buildReportXlsx(assets.template, data), REPORT_XLSX_NAME, XLSX_MIME);
       } else {
         const { buildReportPdf } = await import("@/lib/report/pdf");
-        const { bytes, warnings } = await buildReportPdf(data, assets.fonts);
+        const { fonts } = await resolveReportFonts();
+        const { bytes, warnings } = await buildReportPdf(data, fonts);
         downloadBytes(bytes, REPORT_PDF_NAME, "application/pdf");
         setNotices(warnings);
       }
@@ -91,6 +110,20 @@ export function ReportDialog({
       setError(`${kind === "xlsx" ? "Excel" : "PDF"}の作成に失敗しました (${e instanceof Error ? e.message : String(e)})`);
     } finally {
       setBusy(null);
+    }
+  };
+
+  const registerFonts = async (action: () => Promise<LocalFontInfo | null>) => {
+    setFontBusy(true);
+    setError(null);
+    try {
+      const info = await action();
+      if (info) setFontInfo(info);
+      else setError("游ゴシックが見つかりませんでした。フォントファイルを選んで登録してください");
+    } catch (e) {
+      setError(`フォントを登録できませんでした (${e instanceof Error ? e.message : String(e)})`);
+    } finally {
+      setFontBusy(false);
     }
   };
 
@@ -208,6 +241,83 @@ export function ReportDialog({
               {w}
             </p>
           ))}
+        </div>
+
+        <div className="mt-4 rounded-lg border border-slate-200 p-3 text-sm">
+          <p className="text-xs font-medium text-slate-500">PDFの書体</p>
+          <p className="mt-1">
+            {fontInfo ? (
+              <>
+                <span className="font-medium">{fontInfo.family}</span>
+                <span className="ml-2 text-xs text-slate-500">
+                  この端末に登録済み ({fontInfo.regularName} / {fontInfo.boldName},{" "}
+                  {(fontInfo.bytes / 1024 / 1024).toFixed(1)}MB)
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="font-medium">Noto Sans JP</span>
+                <span className="ml-2 text-xs text-slate-500">
+                  同梱の代替書体。見本と同じ游ゴシックにするには、この端末のフォントを登録してください
+                </span>
+              </>
+            )}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {canQueryLocalFonts() && (
+              <button
+                type="button"
+                disabled={fontBusy}
+                onClick={() => registerFonts(() => registerFromLocalFonts())}
+                className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50 disabled:opacity-50"
+              >
+                {fontBusy ? "登録中…" : "端末の游ゴシックを使う"}
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={fontBusy}
+              onClick={() => fontInputRef.current?.click()}
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50 disabled:opacity-50"
+            >
+              フォントファイルを選ぶ…
+            </button>
+            {fontInfo && (
+              <button
+                type="button"
+                disabled={fontBusy}
+                onClick={() =>
+                  registerFonts(async () => {
+                    await clearLocalFonts();
+                    setFontInfo(null);
+                    return null;
+                  }).then(() => setError(null))
+                }
+                className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                同梱の書体に戻す
+              </button>
+            )}
+            <input
+              ref={fontInputRef}
+              type="file"
+              accept=".ttc,.ttf,.otf,font/ttf,font/otf"
+              multiple
+              hidden
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                e.target.value = "";
+                if (files.length > 0) void registerFonts(() => registerFromFiles(files));
+              }}
+            />
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            游ゴシックは Windows / Microsoft Office に付属する書体で、再配布はできませんが、
+            ライセンスを持つ端末で自分の文書に埋め込むことは許可されています
+            (フォント側の埋め込み設定も許可)。登録したフォントはこの端末の中だけに保存され、外部へは送信されません。
+            Mac は <code>/Applications/Microsoft Word.app/Contents/Resources/DFonts/YuGothR.ttc</code> と{" "}
+            <code>YuGothB.ttc</code>、Windows は <code>C:\Windows\Fonts\</code> の同名ファイルです
+          </p>
         </div>
 
         {error && (

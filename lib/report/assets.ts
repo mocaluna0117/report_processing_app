@@ -9,6 +9,7 @@ import {
   REPORT_FONT_REGULAR_URL,
   REPORT_TEMPLATE_URL,
 } from "@/lib/report/asset-names.generated";
+import { loadLocalFontInfo, loadLocalFonts, type LocalFontInfo } from "@/lib/report/fonts";
 import type { ReportFonts } from "@/lib/report/pdf";
 
 export interface ReportAssets {
@@ -52,6 +53,38 @@ export function loadReportAssets(): Promise<ReportAssets> {
     });
   }
   return cache;
+}
+
+export interface ResolvedReportFonts {
+  fonts: ReportFonts;
+  /** local: 端末に登録された書体 (游ゴシック等) / bundled: 同梱の Noto Sans JP */
+  source: "local" | "bundled";
+  info: LocalFontInfo | null;
+}
+
+/**
+ * PDFに使うフォントを決める。端末のフォントが登録されていればそれを、
+ * 無ければ同梱の Noto Sans JP を返す。
+ */
+export async function resolveReportFonts(): Promise<ResolvedReportFonts> {
+  const [local, info] = await Promise.all([
+    loadLocalFonts().catch(() => null),
+    loadLocalFontInfo().catch(() => null),
+  ]);
+  if (local && info) {
+    return {
+      fonts: {
+        regular: local.regular,
+        bold: local.bold,
+        regularFaceIndex: local.regularFaceIndex,
+        boldFaceIndex: local.boldFaceIndex,
+      },
+      source: "local",
+      info,
+    };
+  }
+  const assets = await loadReportAssets();
+  return { fonts: assets.fonts, source: "bundled", info: null };
 }
 
 /** ボタンにカーソルを乗せた時などに先読みする (失敗は無視) */

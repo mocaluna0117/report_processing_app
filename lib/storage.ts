@@ -149,6 +149,28 @@ export async function loadFiles(): Promise<UploadedFile[]> {
   );
 }
 
+// ---------- 任意の設定値 (meta ストアの汎用キー) ----------
+
+/**
+ * 設定などを meta ストアに置く。完了報告書のフォント登録に使う。
+ * キーは "report:fontRegular" のように用途を前置きする。
+ */
+export async function saveMeta<T>(key: string, value: T): Promise<void> {
+  await withStore(STORE_META, "readwrite", (s) => {
+    s.put(value, key);
+  });
+}
+
+export async function loadMeta<T>(key: string): Promise<T | undefined> {
+  return (await withStore(STORE_META, "readonly", (s) => request(s.get(key)))) as T | undefined;
+}
+
+export async function deleteMeta(key: string): Promise<void> {
+  await withStore(STORE_META, "readwrite", (s) => {
+    s.delete(key);
+  });
+}
+
 // ---------- ペアリング ----------
 
 /**

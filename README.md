@@ -139,8 +139,19 @@ npm run dev
 
 - **Excel**: 同梱テンプレート `public/report/completion-report.xlsx` の「入力シート」「作業報告書　兼　完了報告書」「別紙」の3シートを保ったまま、必要なセルだけ書き換えます。本紙は入力シートを参照する数式のままなので、Excelで入力シートを直せば本紙も追従します（数式のキャッシュ値も書いているので、再計算しないビューアでも値が見えます）
 - **PDF**: 見本PDFと同じ体裁をブラウザ内で描き起こしています（A4縦・罫線・チェックボックス・別紙ページ）。別紙は1ページ12件で、13件以上は別紙を複数ページに分けます（Excelの別紙シートは12件までなので、その場合は警告が出ます）
-- 書体は見本の游ゴシック（有償）を同梱できないため **Noto Sans JP（OFL-1.1）** で代替しています。`public/report/fonts/OFL.txt` がライセンス、フォントに無い文字は「〓」に置き換えて警告します
-- 生成はすべてブラウザ内で、テンプレートとフォントは静的ファイルの取得だけです（個人情報はサーバーへ送られません）。フォントは丸ごと埋め込むためPDFは約1.5MBになります
+- 生成はすべてブラウザ内で、テンプレートとフォントは静的ファイルの取得だけです（個人情報はサーバーへ送られません）。フォントは HarfBuzz（hb-subset）で **その報告書に出てくる文字だけに絞って**から埋め込むので、PDFは数十KBです
+
+#### PDFの書体（游ゴシックにしたい場合）
+
+既定は **Noto Sans JP（OFL-1.1、同梱）** です。見本と同じ **游ゴシック**にしたい場合は、完了報告書ダイアログの「PDFの書体」から**この端末に入っている游ゴシックを登録**できます。
+
+- 游ゴシックは Windows / Microsoft Office に付属する書体で **再配布はできない**ため同梱していません。一方でフォント自身の埋め込み設定は `fsType = Editable`（埋め込み可）で、ライセンス表記も「このフォントに含まれる埋め込み制限の範囲で文書に埋め込んでよい」となっています。**ライセンスを持つ端末で自分の文書に埋め込むのは許可**されている、という前提の機能です（Excelの「PDFとして保存」と同じ扱い）
+- 登録の仕方は2通り。Chrome / Edge なら「端末の游ゴシックを使う」（フォントへのアクセス許可を1回聞かれます）。他のブラウザではフォントファイルを選びます
+  - Mac（Office同梱）: `/Applications/Microsoft Word.app/Contents/Resources/DFonts/YuGothR.ttc` と `YuGothB.ttc`
+  - Windows: `C:\Windows\Fonts\YuGothR.ttc` と `YuGothB.ttc`
+  - `.ttc`（複数書体入り）から適切な書体を自動で選びます（Yu Gothic UI などの派生は避けます）
+- 登録したフォントは**この端末の IndexedDB にだけ**保存され、外部には送信されません。約27MB使うので、不要になったら「同梱の書体に戻す」か「保存データを消去」で消せます
+- フォントに無い文字は「〓」に置き換えて警告します
 
 ## 処理速度
 
@@ -244,6 +255,6 @@ python3 scripts/report_visual_diff.py      # 罫線のずれを数値で確認 (
 
 ## 技術スタック
 
-Next.js 16 (App Router) / TypeScript / Tailwind CSS 4 / pdfjs-dist（テキスト層抽出）/ pdf-lib ＋ @pdf-lib/fontkit（結合・完了報告書PDF）/ fflate（ZIP・xlsx の読み書き）/ @google/genai（要約・任意）/ vitest
+Next.js 16 (App Router) / TypeScript / Tailwind CSS 4 / pdfjs-dist（テキスト層抽出）/ pdf-lib ＋ @pdf-lib/fontkit（結合・完了報告書PDF）/ harfbuzzjs（hb-subset。PDFのフォントを必要な文字だけに絞る）/ fflate（ZIP・xlsx の読み書き）/ @google/genai（要約・任意）/ vitest
 
 フォントは Noto Sans JP（SIL Open Font License 1.1）を同梱しています。
