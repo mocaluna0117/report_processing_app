@@ -250,8 +250,8 @@ export function ReportDialog({
               <>
                 <span className="font-medium">{fontInfo.family}</span>
                 <span className="ml-2 text-xs text-slate-500">
-                  この端末に登録済み ({fontInfo.regularName} / {fontInfo.boldName},{" "}
-                  {(fontInfo.bytes / 1024 / 1024).toFixed(1)}MB)
+                  この端末に登録済み。以後のPDFはこの書体で作ります ({fontInfo.regularName} /{" "}
+                  {fontInfo.boldName}, {(fontInfo.bytes / 1024 / 1024).toFixed(1)}MB)
                 </span>
               </>
             ) : (

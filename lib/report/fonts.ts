@@ -10,7 +10,14 @@
  * ライセンスを持つ端末で自分の文書に埋め込むのは許可されている。
  * 登録したフォントはこの端末の IndexedDB にだけ置き、外部へは送らない。
  */
-import { loadMeta, saveMeta, deleteMeta } from "@/lib/storage";
+import {
+  SETTING_KEY_FONT_BOLD,
+  SETTING_KEY_FONT_INFO,
+  SETTING_KEY_FONT_REGULAR,
+  deleteMeta,
+  loadMeta,
+  saveMeta,
+} from "@/lib/storage";
 
 export interface LocalFontFaces {
   /** フォントファイルの中身 (.ttc の場合もある) */
@@ -29,9 +36,9 @@ export interface LocalFontInfo {
   bytes: number;
 }
 
-const META_FONT_INFO = "report:fontInfo";
-const META_FONT_REGULAR = "report:fontRegular";
-const META_FONT_BOLD = "report:fontBold";
+const META_FONT_INFO = SETTING_KEY_FONT_INFO;
+const META_FONT_REGULAR = SETTING_KEY_FONT_REGULAR;
+const META_FONT_BOLD = SETTING_KEY_FONT_BOLD;
 
 /** ttc/ttf を読み、書体の一覧 (表示名・太さ) を返す */
 export interface FaceCandidate {
@@ -137,9 +144,15 @@ export async function saveLocalFonts(files: {
     boldName: bold.fullName,
     bytes: files.regular.byteLength + files.bold.byteLength,
   };
-  await saveMeta(META_FONT_REGULAR, { bytes: files.regular, faceIndex: regular.index });
-  await saveMeta(META_FONT_BOLD, { bytes: files.bold, faceIndex: bold.index });
-  await saveMeta(META_FONT_INFO, info);
+  try {
+    await saveMeta(META_FONT_REGULAR, { bytes: files.regular, faceIndex: regular.index });
+    await saveMeta(META_FONT_BOLD, { bytes: files.bold, faceIndex: bold.index });
+    await saveMeta(META_FONT_INFO, info);
+  } catch (e) {
+    // 途中で失敗すると、画面からは未登録に見えるのに容量だけ使う状態になるので後始末する
+    await clearLocalFonts().catch(() => {});
+    throw e;
+  }
   return info;
 }
 

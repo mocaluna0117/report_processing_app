@@ -20,6 +20,21 @@ const STORE_MERGED = "merged";
 const STORE_META = "meta";
 const META_PAIRS = "pairs";
 const META_RESULTS = "results";
+/**
+ * 「保存データを消去」でも残す設定のキー (顧客データではないもの)。
+ * ここに挙げたキーだけが残るので、顧客情報を含む値は絶対に追加しないこと。
+ * 現在は完了報告書PDFの書体登録 (利用者が自分の端末のフォントを登録したもの) だけ。
+ */
+export const SETTING_KEY_FONT_INFO = "report:fontInfo";
+export const SETTING_KEY_FONT_REGULAR = "report:fontRegular";
+export const SETTING_KEY_FONT_BOLD = "report:fontBold";
+const SETTING_KEYS: ReadonlySet<string> = new Set([
+  SETTING_KEY_FONT_INFO,
+  SETTING_KEY_FONT_REGULAR,
+  SETTING_KEY_FONT_BOLD,
+]);
+const isSettingKey = (key: unknown): boolean =>
+  typeof key === "string" && SETTING_KEYS.has(key);
 
 export function isStorageAvailable(): boolean {
   return typeof indexedDB !== "undefined";
@@ -153,7 +168,9 @@ export async function loadFiles(): Promise<UploadedFile[]> {
 
 /**
  * 設定などを meta ストアに置く。完了報告書のフォント登録に使う。
- * キーは "report:fontRegular" のように用途を前置きする。
+ * ここに置いた値は既定で「保存データを消去」の対象になる。
+ * 消去しても残したい設定は SETTING_KEYS に挙げること
+ * (逆に、顧客情報を含む値を SETTING_KEYS のキーで保存してはいけない)。
  */
 export async function saveMeta<T>(key: string, value: T): Promise<void> {
   await withStore(STORE_META, "readwrite", (s) => {
@@ -314,18 +331,41 @@ export async function loadSession(): Promise<RestoredSession> {
 
 /** 保存データが1件でも残っているか (画面の状態とは独立に判定する) */
 export async function hasStoredData(): Promise<boolean> {
-  for (const store of [STORE_FILES, STORE_MERGED, STORE_META]) {
+  for (const store of [STORE_FILES, STORE_MERGED]) {
     const n = await withStore(store, "readonly", (s) => request(s.count()));
     if (n > 0) return true;
   }
-  return false;
+  // 設定 (書体の登録など) と、消去後に書き戻される空の記録は「保存データあり」と数えない
+  const entries = await withStore(STORE_META, "readonly", async (s) => ({
+    keys: await request(s.getAllKeys()),
+    values: await request(s.getAll()),
+  }));
+  return entries.keys.some((key, i) => {
+    if (isSettingKey(key)) return false;
+    const value = entries.values[i];
+    return !(Array.isArray(value) && value.length === 0);
+  });
 }
 
-/** 保存データをすべて消す (「保存データを消去」ボタン) */
-export async function clearAll(): Promise<void> {
-  for (const store of [STORE_FILES, STORE_MERGED, STORE_META]) {
+/**
+ * 保存データを消す (「保存データを消去」ボタン)。
+ * 顧客データ (PDF・ペアリング・抽出結果) を消し、設定 (完了報告書の書体登録) は残す。
+ * 設定も消したい場合は includeSettings を指定する。
+ */
+export async function clearAll(options: { includeSettings?: boolean } = {}): Promise<void> {
+  for (const store of [STORE_FILES, STORE_MERGED]) {
     await withStore(store, "readwrite", (s) => {
       s.clear();
     });
   }
+  await withStore(STORE_META, "readwrite", async (s) => {
+    if (options.includeSettings) {
+      s.clear();
+      return;
+    }
+    const keys = await request(s.getAllKeys());
+    for (const key of keys) {
+      if (!isSettingKey(key)) s.delete(key);
+    }
+  });
 }

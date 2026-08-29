@@ -9,6 +9,7 @@ import { ResultsTable } from "@/components/results-table";
 import { runLimited } from "@/lib/concurrency";
 import { downloadBlob as download } from "@/lib/download";
 import { prefetchReportAssets } from "@/lib/report/assets";
+import { clearLocalFonts, loadLocalFontInfo, type LocalFontInfo } from "@/lib/report/fonts";
 import type { ReportOptions } from "@/lib/report/model";
 import { pairFiles, parseFileName } from "@/lib/pairing";
 import { warmUpPdfjs } from "@/lib/pdf/extract";
@@ -71,6 +72,8 @@ export default function Home() {
   /** 画面が空でも保存データが残っているか (消去の導線を出すため) */
   const [hasSaved, setHasSaved] = useState(false);
   const [usageBytes, setUsageBytes] = useState<number | null>(null);
+  /** 完了報告書PDFに使う登録済みの書体 (顧客データではないので消去しても残る) */
+  const [fontInfo, setFontInfo] = useState<LocalFontInfo | null>(null);
   // 長時間走る処理のコールバックが古い値を掴み続けないように ref でも持つ
   const canPersistRef = useRef(false);
   const fileMap = useRef(new Map<string, UploadedFile>());
@@ -85,6 +88,14 @@ export default function Home() {
   useEffect(() => {
     warmUpPdfjs();
   }, []);
+
+  // 登録済みの書体 (消去しても残るので、画面下部の保存欄で扱えるようにする)
+  const refreshFontInfo = () => {
+    void loadLocalFontInfo()
+      .then(setFontInfo)
+      .catch(() => setFontInfo(null));
+  };
+  useEffect(refreshFontInfo, []);
 
   // 再読み込み後も作業を続けられるよう、前回の内容 (PDF・ペア・結果) を復元する
   useEffect(() => {
@@ -150,7 +161,9 @@ export default function Home() {
       (e) => {
         setStorageError(
           isQuotaError(e)
-            ? "保存容量が足りません。作業を終えた分は「保存データを消去」で消してから続けてください (このままでも処理は続けられますが、再読み込みすると失われます)"
+            ? "保存容量が足りません。作業を終えた分は「保存データを消去」で消してから続けてください" +
+              (fontInfo ? "。登録した書体も「書体の登録を消す」で空けられます" : "") +
+              " (このままでも処理は続けられますが、再読み込みすると失われます)"
             : `保存できませんでした (${e instanceof Error ? e.message : String(e)})。再読み込みすると内容が失われる可能性があります`,
         );
       },
@@ -401,7 +414,8 @@ export default function Home() {
   const clearSaved = async () => {
     if (
       !confirm(
-        "保存されているPDF・ペアリング・抽出結果をすべて消去します。取り消せません。よろしいですか？",
+        "保存されているPDF・ペアリング・抽出結果をすべて消去します。取り消せません。" +
+          "(完了報告書の書体の登録は残ります)よろしいですか？",
       )
     ) {
       return;
@@ -424,6 +438,21 @@ export default function Home() {
     void hasStoredData()
       .then(setHasSaved)
       .catch(() => setHasSaved(true));
+    void estimateUsage().then(setUsageBytes);
+    refreshFontInfo();
+  };
+
+  /** 登録した書体を消す (顧客データの消去とは別操作) */
+  const clearFont = async () => {
+    if (!confirm("登録した書体を消して、同梱の書体 (Noto Sans JP) に戻します。よろしいですか？")) {
+      return;
+    }
+    try {
+      await clearLocalFonts();
+    } catch (e) {
+      setStorageError(`書体の登録を消せませんでした (${e instanceof Error ? e.message : String(e)})`);
+    }
+    refreshFontInfo();
     void estimateUsage().then(setUsageBytes);
   };
 
@@ -547,7 +576,10 @@ export default function Home() {
           row={reportRow}
           onOptionsChange={onReportOptionsChange}
           onKanaChange={onKanaChange}
-          onClose={() => setReportPairId(null)}
+          onClose={() => {
+            setReportPairId(null);
+            refreshFontInfo();
+          }}
         />
       )}
 
@@ -580,26 +612,50 @@ export default function Home() {
         </div>
       )}
 
-      {(files.length > 0 || rows.length > 0 || hasSaved) && (
-        <div className="mt-8 flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
+      {(files.length > 0 || rows.length > 0 || hasSaved || fontInfo) && (
+        <div className="mt-8 flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
           <span>
             {canPersist
               ? "アップロードしたPDF・ペアリング・抽出結果はこのブラウザ内に保存され、再読み込みしても残ります (サーバーには送信されません)。作業が終わったら消去してください。"
               : "このタブでは保存を停止しています (再読み込みすると復元を試み直せます)。以前の保存データが端末に残っている場合は消去できます。"}
+            {fontInfo && (
+              <>
+                {" "}
+                完了報告書の書体として「{fontInfo.family}」を登録済みです。顧客データではないので
+                「保存データを消去」では消えません。
+              </>
+            )}
             {usageBytes !== null && usageBytes > 0 && (
-              <span className="ml-1 text-slate-400">
+              <span className="ml-1 block text-slate-400">
                 保存量 約{Math.round(usageBytes / 1024 / 1024)}MB
+                {/* 保存量はブラウザの推定値で、実バイト数より小さく出ることがある。
+                    内訳が総量を超えて見えると誤解を招くので、収まるときだけ出す */}
+                {fontInfo &&
+                  fontInfo.bytes < usageBytes &&
+                  `（うち登録した書体 約${Math.round(fontInfo.bytes / 1024 / 1024)}MB）`}
               </span>
             )}
           </span>
-          <button
-            type="button"
-            onClick={clearSaved}
-            disabled={processing}
-            className="shrink-0 whitespace-nowrap rounded-md border border-red-300 bg-white px-3 py-1.5 font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-          >
-            保存データを消去
-          </button>
+          <span className="flex shrink-0 flex-col items-end gap-1">
+            <button
+              type="button"
+              onClick={clearSaved}
+              disabled={processing}
+              className="whitespace-nowrap rounded-md border border-red-300 bg-white px-3 py-1.5 font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              保存データを消去
+            </button>
+            {fontInfo && (
+              <button
+                type="button"
+                onClick={clearFont}
+                disabled={processing}
+                className="whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                書体の登録を消す
+              </button>
+            )}
+          </span>
         </div>
       )}
 

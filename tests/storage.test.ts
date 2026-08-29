@@ -195,3 +195,18 @@ describe("完了報告書のチェック状態", () => {
     expect(results.find((r) => r.pairId === "p-2")?.report).toEqual(DEFAULT_REPORT_OPTIONS);
   });
 });
+
+describe("保存データの有無の判定", () => {
+  it("消去後に空のペアリング・結果が書き戻されても「保存データあり」にはしない", async () => {
+    await saveFiles([pdf("a.pdf")]);
+    await savePairs([{ id: "p-1", photoId: "f-a.pdf", inspectionId: null } as PairView]);
+    expect(await hasStoredData()).toBe(true);
+
+    await clearAll();
+    expect(await hasStoredData()).toBe(false);
+    // 画面側の保存処理が消去直後に空配列を書き戻しても、判定は変わらない
+    await savePairs([]);
+    await saveResults([]);
+    expect(await hasStoredData()).toBe(false);
+  });
+});
