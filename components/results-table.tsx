@@ -43,6 +43,8 @@ export function ResultsTable({
   onCategoryAdd,
   onCategoryRemove,
   onOpenMail,
+  onOpenReport,
+  onPrefetchReport,
 }: {
   results: ResultRow[];
   onCellChange: (pairId: string, col: number, value: string) => void;
@@ -53,6 +55,9 @@ export function ResultsTable({
   onCategoryAdd: (pairId: string) => void;
   onCategoryRemove: (pairId: string, index: number) => void;
   onOpenMail: (row: ResultRow) => void;
+  onOpenReport: (row: ResultRow) => void;
+  /** 完了報告書のテンプレート・フォントを先読みする (ボタンにカーソルを乗せた時) */
+  onPrefetchReport: () => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
@@ -222,6 +227,16 @@ export function ResultsTable({
                           className="whitespace-nowrap rounded-md border border-blue-300 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-800 hover:bg-blue-100"
                         >
                           メール文
+                        </button>
+                      )}
+                      {!row.error && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenReport(row)}
+                          onMouseEnter={onPrefetchReport}
+                          className="whitespace-nowrap rounded-md border border-slate-400 bg-white px-2.5 py-1 text-xs font-medium text-slate-800 hover:bg-slate-50"
+                        >
+                          完了報告書
                         </button>
                       )}
                       {!row.error && (

@@ -1,0 +1,1517 @@
+{
+ "note": "見本PDFから抽出した罫線と固定ラベルの位置 (個人情報は含めない)。scripts/extract_report_geometry.py が生成する",
+ "unit": "pt",
+ "origin": "top-left, y down",
+ "pages": {
+  "main": {
+   "pageWidth": 595.32,
+   "pageHeight": 841.92,
+   "rects": [
+    {
+     "x0": 51.0,
+     "x1": 51.96,
+     "top": 105.72,
+     "bottom": 235.08,
+     "width": 0.96,
+     "height": 129.36,
+     "orientation": "v"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 105.72,
+     "bottom": 106.68,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 99.96,
+     "x1": 100.92,
+     "top": 106.68,
+     "bottom": 235.08,
+     "width": 0.96,
+     "height": 128.4,
+     "orientation": "v"
+    },
+    {
+     "x0": 320.28,
+     "x1": 321.24,
+     "top": 106.68,
+     "bottom": 132.36,
+     "width": 0.96,
+     "height": 25.68,
+     "orientation": "v"
+    },
+    {
+     "x0": 369.24,
+     "x1": 370.2,
+     "top": 106.68,
+     "bottom": 132.36,
+     "width": 0.96,
+     "height": 25.68,
+     "orientation": "v"
+    },
+    {
+     "x0": 540.6,
+     "x1": 541.56,
+     "top": 106.68,
+     "bottom": 235.08,
+     "width": 0.96,
+     "height": 128.4,
+     "orientation": "v"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 131.4,
+     "bottom": 132.36,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 157.08,
+     "bottom": 158.04,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 182.76,
+     "bottom": 183.72,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 208.44,
+     "bottom": 209.4,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 320.28,
+     "x1": 321.24,
+     "top": 209.4,
+     "bottom": 235.08,
+     "width": 0.96,
+     "height": 25.68,
+     "orientation": "v"
+    },
+    {
+     "x0": 369.24,
+     "x1": 370.2,
+     "top": 209.4,
+     "bottom": 235.08,
+     "width": 0.96,
+     "height": 25.68,
+     "orientation": "v"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 234.12,
+     "bottom": 235.08,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.0,
+     "x1": 51.96,
+     "top": 247.92,
+     "bottom": 325.92,
+     "width": 0.96,
+     "height": 78.0,
+     "orientation": "v"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 247.92,
+     "bottom": 248.88,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 99.96,
+     "x1": 100.92,
+     "top": 248.88,
+     "bottom": 325.92,
+     "width": 0.96,
+     "height": 77.04,
+     "orientation": "v"
+    },
+    {
+     "x0": 540.6,
+     "x1": 541.56,
+     "top": 248.88,
+     "bottom": 325.92,
+     "width": 0.96,
+     "height": 77.04,
+     "orientation": "v"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 273.6,
+     "bottom": 274.56,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 299.28,
+     "bottom": 300.24,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 271.32,
+     "x1": 272.28,
+     "top": 300.24,
+     "bottom": 325.92,
+     "width": 0.96,
+     "height": 25.68,
+     "orientation": "v"
+    },
+    {
+     "x0": 320.28,
+     "x1": 321.24,
+     "top": 300.24,
+     "bottom": 325.92,
+     "width": 0.96,
+     "height": 25.68,
+     "orientation": "v"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 324.96,
+     "bottom": 325.92,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.0,
+     "x1": 51.96,
+     "top": 334.92,
+     "bottom": 489.96,
+     "width": 0.96,
+     "height": 155.04,
+     "orientation": "v"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 334.92,
+     "bottom": 335.88,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 540.6,
+     "x1": 541.56,
+     "top": 335.88,
+     "bottom": 489.96,
+     "width": 0.96,
+     "height": 154.08,
+     "orientation": "v"
+    },
+    {
+     "x0": 51.96,
+     "x1": 540.6,
+     "top": 359.64,
+     "bottom": 360.6,
+     "width": 488.64,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 540.6,
+     "top": 361.56,
+     "bottom": 362.52,
+     "width": 488.64,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 75.48,
+     "x1": 76.44,
+     "top": 362.52,
+     "bottom": 489.96,
+     "width": 0.96,
+     "height": 127.44,
+     "orientation": "v"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 386.28,
+     "bottom": 387.24,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 411.96,
+     "bottom": 412.92,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 437.64,
+     "bottom": 438.6,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 463.32,
+     "bottom": 464.28,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 489.0,
+     "bottom": 489.96,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.0,
+     "x1": 51.96,
+     "top": 502.08,
+     "bottom": 657.12,
+     "width": 0.96,
+     "height": 155.04,
+     "orientation": "v"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 502.08,
+     "bottom": 503.04,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 491.64,
+     "x1": 492.6,
+     "top": 503.04,
+     "bottom": 526.8,
+     "width": 0.96,
+     "height": 23.76,
+     "orientation": "v"
+    },
+    {
+     "x0": 540.6,
+     "x1": 541.56,
+     "top": 503.04,
+     "bottom": 657.12,
+     "width": 0.96,
+     "height": 154.08,
+     "orientation": "v"
+    },
+    {
+     "x0": 51.96,
+     "x1": 540.6,
+     "top": 526.8,
+     "bottom": 527.76,
+     "width": 488.64,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 540.6,
+     "top": 528.72,
+     "bottom": 529.68,
+     "width": 488.64,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 75.48,
+     "x1": 76.44,
+     "top": 529.68,
+     "bottom": 657.12,
+     "width": 0.96,
+     "height": 127.44,
+     "orientation": "v"
+    },
+    {
+     "x0": 491.64,
+     "x1": 492.6,
+     "top": 529.68,
+     "bottom": 657.12,
+     "width": 0.96,
+     "height": 127.44,
+     "orientation": "v"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 553.44,
+     "bottom": 554.4,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 579.12,
+     "bottom": 580.08,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 604.8,
+     "bottom": 605.76,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 630.48,
+     "bottom": 631.44,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 541.56,
+     "top": 656.16,
+     "bottom": 657.12,
+     "width": 489.6,
+     "height": 0.96,
+     "orientation": "h"
+    },
+    {
+     "x0": 50.52,
+     "x1": 52.44,
+     "top": 664.92,
+     "bottom": 706.08,
+     "width": 1.92,
+     "height": 41.16,
+     "orientation": "v"
+    },
+    {
+     "x0": 52.44,
+     "x1": 542.04,
+     "top": 664.92,
+     "bottom": 666.84,
+     "width": 489.6,
+     "height": 1.92,
+     "orientation": "h"
+    },
+    {
+     "x0": 540.12,
+     "x1": 542.04,
+     "top": 666.84,
+     "bottom": 706.08,
+     "width": 1.92,
+     "height": 39.24,
+     "orientation": "v"
+    },
+    {
+     "x0": 53.52,
+     "x1": 296.4,
+     "top": 699.36,
+     "bottom": 699.96,
+     "width": 242.88,
+     "height": 0.6,
+     "orientation": "h"
+    },
+    {
+     "x0": 322.8,
+     "x1": 521.52,
+     "top": 699.36,
+     "bottom": 699.96,
+     "width": 198.72,
+     "height": 0.6,
+     "orientation": "h"
+    },
+    {
+     "x0": 53.52,
+     "x1": 296.4,
+     "top": 700.56,
+     "bottom": 701.16,
+     "width": 242.88,
+     "height": 0.6,
+     "orientation": "h"
+    },
+    {
+     "x0": 322.8,
+     "x1": 521.52,
+     "top": 700.56,
+     "bottom": 701.16,
+     "width": 198.72,
+     "height": 0.6,
+     "orientation": "h"
+    },
+    {
+     "x0": 52.44,
+     "x1": 542.04,
+     "top": 704.16,
+     "bottom": 706.08,
+     "width": 489.6,
+     "height": 1.92,
+     "orientation": "h"
+    },
+    {
+     "x0": 50.52,
+     "x1": 52.44,
+     "top": 712.56,
+     "bottom": 801.96,
+     "width": 1.92,
+     "height": 89.4,
+     "orientation": "v"
+    },
+    {
+     "x0": 52.44,
+     "x1": 542.04,
+     "top": 712.56,
+     "bottom": 714.48,
+     "width": 489.6,
+     "height": 1.92,
+     "orientation": "h"
+    },
+    {
+     "x0": 540.12,
+     "x1": 542.04,
+     "top": 714.48,
+     "bottom": 801.96,
+     "width": 1.92,
+     "height": 87.48,
+     "orientation": "v"
+    },
+    {
+     "x0": 285.12,
+     "x1": 539.04,
+     "top": 795.24,
+     "bottom": 795.84,
+     "width": 253.92,
+     "height": 0.6,
+     "orientation": "h"
+    },
+    {
+     "x0": 285.12,
+     "x1": 539.04,
+     "top": 796.44,
+     "bottom": 797.04,
+     "width": 253.92,
+     "height": 0.6,
+     "orientation": "h"
+    },
+    {
+     "x0": 52.44,
+     "x1": 542.04,
+     "top": 800.04,
+     "bottom": 801.96,
+     "width": 489.6,
+     "height": 1.92,
+     "orientation": "h"
+    }
+   ],
+   "grid": {
+    "verticalCenters": [
+     51.48,
+     75.96,
+     100.44,
+     271.8,
+     320.76,
+     369.72,
+     492.12,
+     541.08
+    ],
+    "horizontalCenters": [
+     106.2,
+     131.88,
+     157.56,
+     183.24,
+     208.92,
+     234.6,
+     248.4,
+     274.08,
+     299.76,
+     325.44,
+     335.4,
+     360.12,
+     362.04,
+     386.76,
+     412.44,
+     438.12,
+     463.8,
+     489.48,
+     502.56,
+     527.28,
+     529.2,
+     553.92,
+     579.6,
+     605.28,
+     630.96,
+     656.64,
+     665.88,
+     699.66,
+     700.86,
+     705.12,
+     713.52,
+     795.54,
+     796.74,
+     801.0
+    ]
+   },
+   "labels": [
+    {
+     "text": "作業報告書　兼　完了報告書",
+     "x0": 51.96,
+     "x1": 234.49,
+     "top": 29.74,
+     "bottom": 43.78,
+     "baseline": 39.6,
+     "size": 14.04,
+     "bold": true
+    },
+    {
+     "text": "タカマツビルド　株式会社",
+     "x0": 406.56,
+     "x1": 538.16,
+     "top": 44.97,
+     "bottom": 56.01,
+     "baseline": 52.68,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "アフターメンテナンス課",
+     "x0": 417.6,
+     "x1": 538.49,
+     "top": 63.45,
+     "bottom": 74.49,
+     "baseline": 71.16,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "PJコード",
+     "x0": 53.52,
+     "x1": 98.36,
+     "top": 118.29,
+     "bottom": 129.33,
+     "baseline": 126.0,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "引渡日",
+     "x0": 322.8,
+     "x1": 355.92,
+     "top": 118.29,
+     "bottom": 129.33,
+     "baseline": 126.0,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "物件名",
+     "x0": 53.52,
+     "x1": 86.64,
+     "top": 143.97,
+     "bottom": 155.01,
+     "baseline": 151.68,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "施主名",
+     "x0": 53.52,
+     "x1": 86.64,
+     "top": 169.65,
+     "bottom": 180.69,
+     "baseline": 177.36,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "住所",
+     "x0": 53.52,
+     "x1": 75.6,
+     "top": 195.33,
+     "bottom": 206.37,
+     "baseline": 203.04,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "連絡先①",
+     "x0": 53.52,
+     "x1": 97.68,
+     "top": 221.01,
+     "bottom": 232.05,
+     "baseline": 228.72,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "連絡先②",
+     "x0": 322.8,
+     "x1": 366.96,
+     "top": 221.01,
+     "bottom": 232.05,
+     "baseline": 228.72,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "立会",
+     "x0": 53.52,
+     "x1": 75.6,
+     "top": 260.49,
+     "bottom": 271.53,
+     "baseline": 268.2,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "施主",
+     "x0": 126.96,
+     "x1": 149.04,
+     "top": 260.49,
+     "bottom": 271.53,
+     "baseline": 268.2,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "施主ご家族",
+     "x0": 200.4,
+     "x1": 255.6,
+     "top": 260.49,
+     "bottom": 271.53,
+     "baseline": 268.2,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "その他（",
+     "x0": 298.33,
+     "x1": 342.49,
+     "top": 260.49,
+     "bottom": 271.53,
+     "baseline": 268.2,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "）",
+     "x0": 441.85,
+     "x1": 452.9,
+     "top": 260.49,
+     "bottom": 271.53,
+     "baseline": 268.2,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "受付項目",
+     "x0": 53.52,
+     "x1": 97.68,
+     "top": 286.17,
+     "bottom": 297.21,
+     "baseline": 293.88,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "点検",
+     "x0": 126.96,
+     "x1": 149.04,
+     "top": 286.17,
+     "bottom": 297.21,
+     "baseline": 293.88,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "アフター",
+     "x0": 200.38,
+     "x1": 244.54,
+     "top": 286.17,
+     "bottom": 297.21,
+     "baseline": 293.88,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "有償工事",
+     "x0": 298.31,
+     "x1": 342.47,
+     "top": 286.17,
+     "bottom": 297.21,
+     "baseline": 293.88,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "直収対応",
+     "x0": 371.73,
+     "x1": 415.89,
+     "top": 286.17,
+     "bottom": 297.21,
+     "baseline": 293.88,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "無償対応",
+     "x0": 445.26,
+     "x1": 489.42,
+     "top": 286.17,
+     "bottom": 297.21,
+     "baseline": 293.88,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "受付日",
+     "x0": 53.52,
+     "x1": 86.64,
+     "top": 311.85,
+     "bottom": 322.89,
+     "baseline": 319.56,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "受付者",
+     "x0": 273.84,
+     "x1": 306.96,
+     "top": 311.85,
+     "bottom": 322.89,
+     "baseline": 319.56,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "指示内容",
+     "x0": 53.52,
+     "x1": 97.68,
+     "top": 346.53,
+     "bottom": 357.57,
+     "baseline": 354.24,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "別紙参照",
+     "x0": 78.0,
+     "x1": 122.16,
+     "top": 373.17,
+     "bottom": 384.21,
+     "baseline": 380.88,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "作業内容・是正内容",
+     "x0": 53.52,
+     "x1": 152.88,
+     "top": 513.69,
+     "bottom": 524.73,
+     "baseline": 521.4,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "完了ﾁｪｯｸ",
+     "x0": 497.04,
+     "x1": 537.08,
+     "top": 514.45,
+     "bottom": 524.41,
+     "baseline": 521.4,
+     "size": 9.96,
+     "bold": false
+    },
+    {
+     "text": "会社名：",
+     "x0": 53.52,
+     "x1": 97.68,
+     "top": 690.57,
+     "bottom": 701.61,
+     "baseline": 698.28,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "作業者：",
+     "x0": 322.8,
+     "x1": 366.96,
+     "top": 690.57,
+     "bottom": 701.61,
+     "baseline": 698.28,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "◎上記作業内容もしくは是正工事が完了したことを確認しました。",
+     "x0": 53.52,
+     "x1": 384.73,
+     "top": 725.61,
+     "bottom": 736.65,
+     "baseline": 733.32,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "年",
+     "x0": 430.08,
+     "x1": 441.12,
+     "top": 751.29,
+     "bottom": 762.33,
+     "baseline": 759.0,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "月",
+     "x0": 479.04,
+     "x1": 490.08,
+     "top": 751.29,
+     "bottom": 762.33,
+     "baseline": 759.0,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "日",
+     "x0": 528.0,
+     "x1": 539.04,
+     "top": 751.29,
+     "bottom": 762.33,
+     "baseline": 759.0,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "お客様ご署名",
+     "x0": 285.12,
+     "x1": 351.36,
+     "top": 786.45,
+     "bottom": 797.49,
+     "baseline": 794.16,
+     "size": 11.04,
+     "bold": false
+    },
+    {
+     "text": "印",
+     "x0": 505.93,
+     "x1": 516.97,
+     "top": 786.45,
+     "bottom": 797.49,
+     "baseline": 794.16,
+     "size": 11.04,
+     "bold": false
+    }
+   ],
+   "checkboxes": [
+    {
+     "codepoint": "U+E258",
+     "x0": 111.24,
+     "x1": 122.28,
+     "top": 260.04,
+     "bottom": 271.08,
+     "size": 11.04,
+     "baseline": 271.08
+    },
+    {
+     "codepoint": "U+E258",
+     "x0": 184.66,
+     "x1": 195.7,
+     "top": 260.04,
+     "bottom": 271.08,
+     "size": 11.04,
+     "baseline": 271.08
+    },
+    {
+     "codepoint": "U+E258",
+     "x0": 282.59,
+     "x1": 293.63,
+     "top": 260.04,
+     "bottom": 271.08,
+     "size": 11.04,
+     "baseline": 271.08
+    },
+    {
+     "codepoint": "U+E259",
+     "x0": 111.24,
+     "x1": 122.28,
+     "top": 285.72,
+     "bottom": 296.76,
+     "size": 11.04,
+     "baseline": 296.76
+    },
+    {
+     "codepoint": "U+E258",
+     "x0": 184.66,
+     "x1": 195.7,
+     "top": 285.72,
+     "bottom": 296.76,
+     "size": 11.04,
+     "baseline": 296.76
+    },
+    {
+     "codepoint": "U+E258",
+     "x0": 282.59,
+     "x1": 293.63,
+     "top": 285.72,
+     "bottom": 296.76,
+     "size": 11.04,
+     "baseline": 296.76
+    },
+    {
+     "codepoint": "U+E258",
+     "x0": 356.01,
+     "x1": 367.05,
+     "top": 285.72,
+     "bottom": 296.76,
+     "size": 11.04,
+     "baseline": 296.76
+    },
+    {
+     "codepoint": "U+E258",
+     "x0": 429.43,
+     "x1": 440.47,
+     "top": 285.72,
+     "bottom": 296.76,
+     "size": 11.04,
+     "baseline": 296.76
+    },
+    {
+     "codepoint": "U+E258",
+     "x0": 510.6,
+     "x1": 521.64,
+     "top": 536.76,
+     "bottom": 547.8,
+     "size": 11.04,
+     "baseline": 547.8
+    },
+    {
+     "codepoint": "U+E258",
+     "x0": 510.6,
+     "x1": 521.64,
+     "top": 562.44,
+     "bottom": 573.48,
+     "size": 11.04,
+     "baseline": 573.48
+    },
+    {
+     "codepoint": "U+E258",
+     "x0": 510.6,
+     "x1": 521.64,
+     "top": 588.12,
+     "bottom": 599.16,
+     "size": 11.04,
+     "baseline": 599.16
+    },
+    {
+     "codepoint": "U+E258",
+     "x0": 510.6,
+     "x1": 521.64,
+     "top": 613.8,
+     "bottom": 624.84,
+     "size": 11.04,
+     "baseline": 624.84
+    },
+    {
+     "codepoint": "U+E258",
+     "x0": 510.6,
+     "x1": 521.64,
+     "top": 639.48,
+     "bottom": 650.52,
+     "size": 11.04,
+     "baseline": 650.52
+    }
+   ]
+  },
+  "appendix": {
+   "pageWidth": 595.32,
+   "pageHeight": 841.92,
+   "rects": [
+    {
+     "x0": 51.12,
+     "x1": 51.96,
+     "top": 127.08,
+     "bottom": 748.44,
+     "width": 0.84,
+     "height": 621.36,
+     "orientation": "v"
+    },
+    {
+     "x0": 51.96,
+     "x1": 542.76,
+     "top": 127.08,
+     "bottom": 127.92,
+     "width": 490.8,
+     "height": 0.84,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 542.4,
+     "top": 127.44,
+     "bottom": 143.28,
+     "width": 490.44,
+     "height": 15.84,
+     "orientation": "h"
+    },
+    {
+     "x0": 484.68,
+     "x1": 485.52,
+     "top": 127.92,
+     "bottom": 748.44,
+     "width": 0.84,
+     "height": 620.52,
+     "orientation": "v"
+    },
+    {
+     "x0": 541.92,
+     "x1": 542.76,
+     "top": 127.92,
+     "bottom": 748.44,
+     "width": 0.84,
+     "height": 620.52,
+     "orientation": "v"
+    },
+    {
+     "x0": 51.96,
+     "x1": 542.76,
+     "top": 142.8,
+     "bottom": 143.64,
+     "width": 490.8,
+     "height": 0.84,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 484.68,
+     "top": 158.88,
+     "bottom": 159.0,
+     "width": 432.72,
+     "height": 0.12,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 542.76,
+     "top": 193.2,
+     "bottom": 194.04,
+     "width": 490.8,
+     "height": 0.84,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 484.68,
+     "top": 209.28,
+     "bottom": 209.4,
+     "width": 432.72,
+     "height": 0.12,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 542.76,
+     "top": 243.6,
+     "bottom": 244.44,
+     "width": 490.8,
+     "height": 0.84,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 484.68,
+     "top": 259.68,
+     "bottom": 259.8,
+     "width": 432.72,
+     "height": 0.12,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 542.76,
+     "top": 294.0,
+     "bottom": 294.84,
+     "width": 490.8,
+     "height": 0.84,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 484.68,
+     "top": 310.08,
+     "bottom": 310.2,
+     "width": 432.72,
+     "height": 0.12,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 542.76,
+     "top": 344.4,
+     "bottom": 345.24,
+     "width": 490.8,
+     "height": 0.84,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 484.68,
+     "top": 360.48,
+     "bottom": 360.6,
+     "width": 432.72,
+     "height": 0.12,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 542.76,
+     "top": 394.8,
+     "bottom": 395.64,
+     "width": 490.8,
+     "height": 0.84,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 484.68,
+     "top": 410.88,
+     "bottom": 411.0,
+     "width": 432.72,
+     "height": 0.12,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 542.76,
+     "top": 445.2,
+     "bottom": 446.04,
+     "width": 490.8,
+     "height": 0.84,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 484.68,
+     "top": 461.28,
+     "bottom": 461.4,
+     "width": 432.72,
+     "height": 0.12,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 542.76,
+     "top": 495.6,
+     "bottom": 496.44,
+     "width": 490.8,
+     "height": 0.84,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 484.68,
+     "top": 511.68,
+     "bottom": 511.8,
+     "width": 432.72,
+     "height": 0.12,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 542.76,
+     "top": 546.0,
+     "bottom": 546.84,
+     "width": 490.8,
+     "height": 0.84,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 484.68,
+     "top": 562.08,
+     "bottom": 562.2,
+     "width": 432.72,
+     "height": 0.12,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 542.76,
+     "top": 596.4,
+     "bottom": 597.24,
+     "width": 490.8,
+     "height": 0.84,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 484.68,
+     "top": 612.48,
+     "bottom": 612.6,
+     "width": 432.72,
+     "height": 0.12,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 542.76,
+     "top": 646.8,
+     "bottom": 647.64,
+     "width": 490.8,
+     "height": 0.84,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 484.68,
+     "top": 662.88,
+     "bottom": 663.0,
+     "width": 432.72,
+     "height": 0.12,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 542.76,
+     "top": 697.2,
+     "bottom": 698.04,
+     "width": 490.8,
+     "height": 0.84,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 484.68,
+     "top": 713.28,
+     "bottom": 713.4,
+     "width": 432.72,
+     "height": 0.12,
+     "orientation": "h"
+    },
+    {
+     "x0": 51.96,
+     "x1": 542.76,
+     "top": 747.6,
+     "bottom": 748.44,
+     "width": 490.8,
+     "height": 0.84,
+     "orientation": "h"
+    }
+   ],
+   "grid": {
+    "verticalCenters": [
+     51.54,
+     485.1,
+     542.34
+    ],
+    "horizontalCenters": [
+     127.5,
+     135.36,
+     143.22,
+     158.94,
+     193.62,
+     209.34,
+     244.02,
+     259.74,
+     294.42,
+     310.14,
+     344.82,
+     360.54,
+     395.22,
+     410.94,
+     445.62,
+     461.34,
+     496.02,
+     511.74,
+     546.42,
+     562.14,
+     596.82,
+     612.54,
+     647.22,
+     662.94,
+     697.62,
+     713.34,
+     748.02
+    ]
+   },
+   "labels": [
+    {
+     "text": "（別　紙）",
+     "x0": 53.76,
+     "x1": 113.16,
+     "top": 59.82,
+     "bottom": 71.7,
+     "baseline": 68.16,
+     "size": 11.88,
+     "bold": true
+    },
+    {
+     "text": "2/2",
+     "x0": 525.6,
+     "x1": 540.54,
+     "top": 60.67,
+     "bottom": 70.03,
+     "baseline": 67.2,
+     "size": 9.36,
+     "bold": false
+    },
+    {
+     "text": "物件名：",
+     "x0": 53.28,
+     "x1": 90.72,
+     "top": 78.31,
+     "bottom": 87.67,
+     "baseline": 84.84,
+     "size": 9.36,
+     "bold": false
+    },
+    {
+     "text": "施主名：",
+     "x0": 53.28,
+     "x1": 90.72,
+     "top": 94.03,
+     "bottom": 103.39,
+     "baseline": 100.56,
+     "size": 9.36,
+     "bold": false
+    },
+    {
+     "text": "1年目点検是正項目",
+     "x0": 53.76,
+     "x1": 155.69,
+     "top": 112.14,
+     "bottom": 124.02,
+     "baseline": 120.48,
+     "size": 11.88,
+     "bold": true
+    },
+    {
+     "text": "項　　　目",
+     "x0": 245.28,
+     "x1": 292.08,
+     "top": 131.95,
+     "bottom": 141.31,
+     "baseline": 138.48,
+     "size": 9.36,
+     "bold": false
+    },
+    {
+     "text": "チェック欄",
+     "x0": 486.87,
+     "x1": 533.39,
+     "top": 131.95,
+     "bottom": 141.31,
+     "baseline": 138.48,
+     "size": 9.36,
+     "bold": false
+    },
+    {
+     "text": "対応結果：",
+     "x0": 53.28,
+     "x1": 100.08,
+     "top": 172.87,
+     "bottom": 182.23,
+     "baseline": 179.4,
+     "size": 9.36,
+     "bold": false
+    },
+    {
+     "text": "対応結果：",
+     "x0": 53.28,
+     "x1": 100.08,
+     "top": 223.27,
+     "bottom": 232.63,
+     "baseline": 229.8,
+     "size": 9.36,
+     "bold": false
+    },
+    {
+     "text": "対応結果：",
+     "x0": 53.28,
+     "x1": 100.08,
+     "top": 273.67,
+     "bottom": 283.03,
+     "baseline": 280.2,
+     "size": 9.36,
+     "bold": false
+    },
+    {
+     "text": "対応結果：",
+     "x0": 53.28,
+     "x1": 100.08,
+     "top": 324.07,
+     "bottom": 333.43,
+     "baseline": 330.6,
+     "size": 9.36,
+     "bold": false
+    },
+    {
+     "text": "対応結果：",
+     "x0": 53.28,
+     "x1": 100.08,
+     "top": 374.47,
+     "bottom": 383.83,
+     "baseline": 381.0,
+     "size": 9.36,
+     "bold": false
+    },
+    {
+     "text": "対応結果：",
+     "x0": 53.28,
+     "x1": 100.08,
+     "top": 424.87,
+     "bottom": 434.23,
+     "baseline": 431.4,
+     "size": 9.36,
+     "bold": false
+    }
+   ],
+   "checkboxes": []
+  }
+ }
+}

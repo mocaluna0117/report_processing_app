@@ -4,8 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Dropzone } from "@/components/dropzone";
 import { PairTable, type PairView } from "@/components/pair-table";
 import { MailDialog } from "@/components/mail-dialog";
+import { ReportDialog } from "@/components/report-dialog";
 import { ResultsTable } from "@/components/results-table";
 import { runLimited } from "@/lib/concurrency";
+import { downloadBlob as download } from "@/lib/download";
+import { prefetchReportAssets } from "@/lib/report/assets";
+import type { ReportOptions } from "@/lib/report/model";
 import { pairFiles, parseFileName } from "@/lib/pairing";
 import { warmUpPdfjs } from "@/lib/pdf/extract";
 import { processPair, type ResultRow, type UploadedFile } from "@/lib/process";
@@ -44,15 +48,6 @@ const uid = () =>
 const genId = () => `f-${uid()}`;
 const genPairId = () => `p-${uid()}`;
 
-function download(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
-
 export default function Home() {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [pairs, setPairs] = useState<PairView[]>([]);
@@ -67,6 +62,8 @@ export default function Home() {
   const [fallbackTsv, setFallbackTsv] = useState<string | null>(null);
   // メール文ダイアログは pairId で開く (results は再生成されるので行オブジェクトを直接持たない)
   const [mailPairId, setMailPairId] = useState<string | null>(null);
+  // 完了報告書ダイアログも同様に pairId で開く
+  const [reportPairId, setReportPairId] = useState<string | null>(null);
   // 復元が「成功して」終わるまでは保存し返さない (空の状態で上書きしてしまわないように)
   const [restored, setRestored] = useState(false);
   const [canPersist, setCanPersist] = useState(false);
@@ -336,7 +333,14 @@ export default function Home() {
       ),
     );
   };
+  const onReportOptionsChange = (pairId: string, options: ReportOptions) => {
+    setResults((prev) =>
+      prev.map((r) => (r && r.pairId === pairId ? { ...r, report: options } : r)),
+    );
+  };
+
   const mailRow = mailPairId ? (rows.find((r) => r.pairId === mailPairId) ?? null) : null;
+  const reportRow = reportPairId ? (rows.find((r) => r.pairId === reportPairId) ?? null) : null;
 
   const rowsOf = (r: ResultRow) =>
     expandRow(r.cells, r.categories.map((c) => c.value));
@@ -528,12 +532,23 @@ export default function Home() {
             onCategoryAdd={onCategoryAdd}
             onCategoryRemove={onCategoryRemove}
             onOpenMail={(row) => setMailPairId(row.pairId)}
+            onOpenReport={(row) => setReportPairId(row.pairId)}
+            onPrefetchReport={prefetchReportAssets}
           />
         </section>
       )}
 
       {mailRow && (
         <MailDialog row={mailRow} onKanaChange={onKanaChange} onClose={() => setMailPairId(null)} />
+      )}
+
+      {reportRow && (
+        <ReportDialog
+          row={reportRow}
+          onOptionsChange={onReportOptionsChange}
+          onKanaChange={onKanaChange}
+          onClose={() => setReportPairId(null)}
+        />
       )}
 
       {fallbackTsv !== null && (
@@ -589,9 +604,9 @@ export default function Home() {
       )}
 
       <footer className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-400">
-        PDFの解析・結合はすべてブラウザ内で行われます。Gemini APIへ送るのは、個人情報を除いた不具合テキスト
-        (要約用)・署名と電話番号を切り落とした点検シート画像 (工事区分用)・施主名の漢字 (メール文のカナ読み用)
-        のみです (キー未設定時は定型要約・手動選択になります)。
+        PDFの解析・結合・完了報告書 (Excel・PDF) の作成はすべてブラウザ内で行われます。Gemini APIへ送るのは、
+        個人情報を除いた不具合テキスト (要約用)・署名と電話番号を切り落とした点検シート画像 (工事区分用)・
+        施主名の漢字 (カナ読み用) のみです (キー未設定時は定型要約・手動選択になります)。
       </footer>
     </main>
   );

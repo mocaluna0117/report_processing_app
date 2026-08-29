@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { PairView } from "@/components/pair-table";
 import type { ResultRow, UploadedFile } from "@/lib/process";
+import { DEFAULT_REPORT_OPTIONS } from "@/lib/report/model";
 import {
   clearAll,
   clearResults,
@@ -29,6 +30,7 @@ const row = (pairId: string, merged: Blob | null = null): ResultRow => ({
   confidences: COLUMNS.map(() => "ok" as const),
   categories: [{ value: "クロス", confidence: "ok" }],
   categoryEngine: "gemini",
+  report: DEFAULT_REPORT_OPTIONS,
   mail: { ownerKana: "ヤマダ　タロウ", kanaConfidence: "ok", kanaAlternatives: [], contacts: [] },
   warnings: [],
   engine: "gemini",
@@ -174,5 +176,22 @@ describe("storage", () => {
     await saveResults([row("p1")]);
     await clearAll();
     expect(await loadSession()).toEqual({ files: [], pairs: [], results: [], partialErrors: [] });
+  });
+});
+
+describe("完了報告書のチェック状態", () => {
+  it("保存・復元でき、古い保存データ (report なし) は既定値になる", async () => {
+    const custom = {
+      attendance: { owner: true, family: false, other: false },
+      categories: { inspection: false, after: true, paid: false, direct: false, free: false },
+    };
+    await saveResults([
+      { ...row("p-1"), report: custom },
+      // 古い形式: report フィールドが無い
+      { ...row("p-2"), report: undefined as unknown as ResultRow["report"] },
+    ]);
+    const { results } = await loadSession();
+    expect(results.find((r) => r.pairId === "p-1")?.report).toEqual(custom);
+    expect(results.find((r) => r.pairId === "p-2")?.report).toEqual(DEFAULT_REPORT_OPTIONS);
   });
 });

@@ -4,6 +4,7 @@
 import { formatLastUpdatedJst, formatRemarksJst } from "@/lib/jst-date";
 import type { NameReadingResponse } from "@/lib/kana";
 import { buildMergedPdfName } from "@/lib/naming";
+import { DEFAULT_REPORT_OPTIONS, type ReportOptions } from "@/lib/report/model";
 import { extractTokens } from "@/lib/pdf/extract";
 import { mergeReports } from "@/lib/pdf/merge";
 import { parseInspectionContacts } from "@/lib/pdf/parse-inspection-report";
@@ -36,6 +37,8 @@ export interface ResultRow {
   categoryEngine: "gemini" | "none";
   /** 工事区分の判定に使えたモデル名 (表示用) */
   categoryModel?: string;
+  /** 完了報告書の立会・受付項目のチェック状態 (ダイアログで変更でき、保存される) */
+  report: ReportOptions;
   /** メール文の組み立てに使う情報 (ブラウザ内でのみ保持) */
   mail: {
     /** 施主名のカナ読み (Gemini推定。失敗時は空で手入力) */
@@ -292,6 +295,7 @@ export async function processPair(
       categories,
       categoryEngine,
       categoryModel,
+      report: DEFAULT_REPORT_OPTIONS,
       mail: { ownerKana, kanaConfidence, kanaAlternatives, contacts },
       warnings,
       engine,
@@ -307,6 +311,7 @@ export async function processPair(
       confidences: Array(COLUMNS.length).fill("fail") as Confidence[],
       categories: [],
       categoryEngine: "none",
+      report: DEFAULT_REPORT_OPTIONS,
       mail: { ownerKana: "", kanaConfidence: "fail", kanaAlternatives: [], contacts: [] },
       warnings,
       engine: null,

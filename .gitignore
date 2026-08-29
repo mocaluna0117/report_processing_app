@@ -4,6 +4,7 @@ out/
 .env*
 !.env.example
 public/pdf.worker.min.mjs
+.cache/
 *.tsbuildinfo
 next-env.d.ts
 .DS_Store
@@ -11,6 +12,7 @@ next-env.d.ts
 # 実在のお客様の個人情報を含むため絶対にコミットしない (ローカル専用)
 写真報告書_例/
 点検報告書_例/
+完了報告書_例/
 tests/fixtures/
 *.pdf
 *.PDF

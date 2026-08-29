@@ -32,7 +32,10 @@ export const SUMMARY_COL = COLUMNS.indexOf("アフター受付内容");
 /** 工事区分の列番号 (工事区分の数だけ行を展開する) */
 export const WORK_COL = COLUMNS.indexOf("工事区分");
 
-/** メール文の組み立てに使う列番号 (テーブルで編集した値をそのまま使うため) */
+/** メール文・完了報告書の組み立てに使う列番号 (テーブルで編集した値をそのまま使うため) */
+export const PJ_COL = COLUMNS.indexOf("PJ");
+export const RECEPTION_TYPE_COL = COLUMNS.indexOf("受付種別");
+export const RECEPTION_DATE_COL = COLUMNS.indexOf("受付日");
 export const PROPERTY_COL = COLUMNS.indexOf("物件名称");
 export const OWNER_COL = COLUMNS.indexOf("お客様氏名");
 export const ADDRESS_COL = COLUMNS.indexOf("住所");

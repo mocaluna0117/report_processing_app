@@ -7,6 +7,7 @@
 // - 顧客情報を含むため、「保存データを消去」で明示的に消せるようにしている
 import type { PairView } from "@/components/pair-table";
 import type { ResultRow, UploadedFile } from "@/lib/process";
+import { normalizeReportOptions } from "@/lib/report/model";
 import { COLUMNS } from "@/lib/tsv";
 
 const DB_NAME = "folio";
@@ -250,6 +251,7 @@ export async function loadResults(): Promise<ResultRow[]> {
     ...r,
     // 古い保存データに無いフィールドは既定値で埋める
     mail: r.mail ?? { ownerKana: "", kanaConfidence: "fail", kanaAlternatives: [], contacts: [] },
+    report: normalizeReportOptions(r.report),
     merged: (merged.get(r.pairId) as Blob | undefined) ?? null,
   }));
 }

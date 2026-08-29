@@ -7,8 +7,14 @@ import type { TextToken } from "../../lib/types";
 export async function getTokensFromFile(
   path: string,
 ): Promise<{ tokens: TextToken[]; pageCount: number }> {
+  return getTokensFromBytes(new Uint8Array(await readFile(path)));
+}
+
+/** 生成したPDF (バイト列) からトークンを取り出す */
+export async function getTokensFromBytes(
+  data: Uint8Array,
+): Promise<{ tokens: TextToken[]; pageCount: number }> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const data = new Uint8Array(await readFile(path));
   const loadingTask = pdfjs.getDocument({ data });
   const doc = await loadingTask.promise;
   try {
