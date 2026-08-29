@@ -30,3 +30,17 @@ export function toDateZeroPad(s: string): string {
   if (!m) return s;
   return `${m[1]}/${m[2].padStart(2, "0")}/${m[3].padStart(2, "0")}`;
 }
+
+/**
+ * 半角カタカナ (ｦ-ﾟ) を全角にする。「ｾｷｭﾚｱ」→「セキュレア」。
+ * 濁点・半濁点の合成もするため、この範囲だけ NFKC を掛ける
+ * (全体に NFKC を掛けると記号や丸数字まで変わってしまう)。
+ */
+export function toFullWidthKatakana(s: string): string {
+  return s.replace(/[｡-ﾟ]+/g, (run) => run.normalize("NFKC"));
+}
+
+/** 前後の空白 (半角・全角・タブ・改行) を落とす。Excelのセルは全角スペース付きのことが多い */
+export function trimWide(s: string): string {
+  return s.replace(/^[\s　]+|[\s　]+$/g, "");
+}

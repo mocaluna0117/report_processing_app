@@ -1,10 +1,11 @@
 "use client";
 
 // 1ペア分の処理パイプライン (すべてブラウザ内。/api へ送るのは 要約テキスト・点検報告書の切り抜き画像・施主名(カナ推定用) のみ)
+import { buildCells, blankCells, entry } from "@/lib/cells";
 import { formatLastUpdatedJst, formatRemarksJst } from "@/lib/jst-date";
 import type { NameReadingResponse } from "@/lib/kana";
 import { buildMergedPdfName } from "@/lib/naming";
-import { DEFAULT_REPORT_OPTIONS, type ReportOptions } from "@/lib/report/model";
+import { DEFAULT_REPORT_OPTIONS, type ReportKind, type ReportOptions } from "@/lib/report/model";
 import { extractTokens } from "@/lib/pdf/extract";
 import { mergeReports } from "@/lib/pdf/merge";
 import { parseInspectionContacts } from "@/lib/pdf/parse-inspection-report";
@@ -14,8 +15,7 @@ import type {
   SummarizeRequest,
   SummarizeResponse,
 } from "@/lib/summarize/types";
-import { toDateNoPad, toFullWidthSpace, toHalfWidthAlnum } from "@/lib/text";
-import { COLUMNS } from "@/lib/tsv";
+import { toDateNoPad, toDateZeroPad, toFullWidthSpace, toHalfWidthAlnum } from "@/lib/text";
 import type { Confidence, Contact, WorkCategoryEntry } from "@/lib/types";
 import type { WorkCategoriesResponse } from "@/lib/work-categories";
 
@@ -29,6 +29,8 @@ export interface UploadedFile {
 export interface ResultRow {
   pairId: string;
   ownerDisplay: string;
+  /** 完了報告書の既定値・別紙タイトルの出し分け (省略時は定期点検) */
+  kind?: ReportKind;
   /** 24列 (工事区分列は空欄のテンプレート。出力時に categories の数だけ行を展開する) */
   cells: string[];
   confidences: Confidence[];
@@ -253,45 +255,32 @@ export async function processPair(
 
     // 最終更新日・備考欄は処理実行日 (日本時間) を自動入力
     const now = new Date();
-    const blank = { value: "", confidence: "ok" as Confidence };
-    const fixed = (value: string) => ({ value, confidence: "ok" as Confidence });
-    const fixedWith = (value: string, confidence: Confidence) => ({ value, confidence });
 
-    // 転記先Excelの列構成そのまま (lib/tsv.ts の COLUMNS と同順・同数)
-    const entries: { value: string; confidence: Confidence }[] = [
-      blank, // 物件数
-      data.pj, // PJ
-      data.inspectionTiming, // 受付種別
-      fixedWith(toDateNoPad(data.inspectionDate.value), data.inspectionDate.confidence), // 受付日 (点検日 yyyy/m/d)
-      fixed("木村"), // 受付者
-      blank, // 担当
-      data.developer, // 事業者
-      data.propertyName, // 物件名称
+    // 転記先Excelの列構成 (lib/cells.ts が COLUMNS の順に並べる)
+    const { cells, confidences } = buildCells({
+      PJ: data.pj,
+      受付種別: data.inspectionTiming,
+      // 受付日 = 点検日 (ゼロ埋めなし yyyy/m/d)
+      受付日: entry(toDateNoPad(data.inspectionDate.value), data.inspectionDate.confidence),
+      受付者: entry("木村"),
+      事業者: data.developer,
+      物件名称: data.propertyName,
       // お客様氏名は姓名の間を全角スペースにする (結合PDF名は半角スペースのまま)
-      fixedWith(toFullWidthSpace(data.ownerName.value), data.ownerName.confidence),
-      data.address, // 住所
-      // 引渡日もゼロ埋めなし表記 (内部表現はYYYY/MM/DDで持ち、出力時に変換)
-      fixedWith(toDateNoPad(data.handoverDate.value), data.handoverDate.confidence),
-      blank, // 監督
-      blank, // 営業
-      blank, // 初回訪問日
-      blank, // 前回対応日
-      blank, // 対応予定日
-      blank, // 完了日
-      blank, // 完了報告書取得日
-      blank, // 工事区分 (出力時に categories の数だけ行展開して埋める)
-      fixedWith(summary, summaryConfidence), // アフター受付内容
-      blank, // 手配業者
-      blank, // 処置
-      fixed(formatLastUpdatedJst(now)), // 最終更新日
-      fixed(formatRemarksJst(now)), // 備考欄
-    ];
+      お客様氏名: entry(toFullWidthSpace(data.ownerName.value), data.ownerName.confidence),
+      住所: data.address,
+      // 引渡日はゼロ埋め表記 (yyyy/mm/dd)
+      引渡日: entry(toDateZeroPad(data.handoverDate.value), data.handoverDate.confidence),
+      // 工事区分は出力時に categories の数だけ行展開して埋める
+      アフター受付内容: entry(summary, summaryConfidence),
+      最終更新日: entry(formatLastUpdatedJst(now)),
+      備考欄: entry(formatRemarksJst(now)),
+    });
 
     return {
       pairId,
       ownerDisplay,
-      cells: entries.map((e) => e.value),
-      confidences: entries.map((e) => e.confidence),
+      cells,
+      confidences,
       categories,
       categoryEngine,
       categoryModel,
@@ -307,8 +296,7 @@ export async function processPair(
     return {
       pairId,
       ownerDisplay,
-      cells: Array(COLUMNS.length).fill(""),
-      confidences: Array(COLUMNS.length).fill("fail") as Confidence[],
+      ...blankCells(),
       categories: [],
       categoryEngine: "none",
       report: DEFAULT_REPORT_OPTIONS,

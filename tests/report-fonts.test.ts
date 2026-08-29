@@ -24,8 +24,9 @@ const toFile = (bytes: Uint8Array, name: string) =>
   new File([bytes as unknown as BlobPart], name, { type: "font/ttf" });
 
 beforeEach(async () => {
-  // 書体の登録は clearAll では残るので、テスト間の持ち越しを防ぐため設定ごと消す
-  await clearAll({ includeSettings: true });
+  // 書体の登録は clearAll では残るので、テスト間の持ち越しを防ぐため明示的に消す
+  await clearAll();
+  await clearLocalFonts();
 });
 
 describe.skipIf(!regular || !bold)("端末のフォント登録", () => {
@@ -74,14 +75,14 @@ describe.skipIf(!regular || !bold)("端末のフォント登録", () => {
 });
 
 describe.skipIf(!regular)("書体の登録は保存データの消去で消えない", () => {
-  it("clearAll では残り、includeSettings を指定したときだけ消える", async () => {
+  it("clearAll では残り、「同梱の書体に戻す」で消える", async () => {
     await registerFromFiles([toFile(regular!, "regular.ttf")]);
-    // 顧客データの消去 (「保存データを消去」ボタン) では残す
+    // 定期点検の「保存データを消去」では残す (毎回登録し直さなくてよいように)
     await clearAll();
     expect(await loadLocalFontInfo()).not.toBeNull();
     expect(await loadLocalFonts()).not.toBeNull();
-    // 設定ごと消す指定のときだけ消える
-    await clearAll({ includeSettings: true });
+    // 書体の登録を消すボタンでだけ消える
+    await clearLocalFonts();
     expect(await loadLocalFontInfo()).toBeNull();
   }, 30_000);
 

@@ -2,25 +2,25 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Dropzone } from "@/components/dropzone";
-import { PairTable, type PairView } from "@/components/pair-table";
+import { FallbackTsvDialog } from "@/components/fallback-tsv-dialog";
 import { MailDialog } from "@/components/mail-dialog";
+import { PairTable, type PairView } from "@/components/pair-table";
 import { ReportDialog } from "@/components/report-dialog";
 import { ResultsTable } from "@/components/results-table";
+import { StorageBanner } from "@/components/storage-banner";
 import { runLimited } from "@/lib/concurrency";
 import { downloadBlob as download } from "@/lib/download";
-import { prefetchReportAssets } from "@/lib/report/assets";
-import { clearLocalFonts, loadLocalFontInfo, type LocalFontInfo } from "@/lib/report/fonts";
-import type { ReportOptions } from "@/lib/report/model";
+import { setNavigationGuard } from "@/lib/navigation-guard";
 import { pairFiles, parseFileName } from "@/lib/pairing";
 import { warmUpPdfjs } from "@/lib/pdf/extract";
 import { processPair, type ResultRow, type UploadedFile } from "@/lib/process";
+import { prefetchReportAssets } from "@/lib/report/assets";
+import { expandRow } from "@/lib/rows";
 import {
   clearAll as clearStorage,
   clearResults as clearStoredResults,
   collectGarbage,
-  estimateUsage,
   hasStoredData,
-  isQuotaError,
   isStorageAvailable,
   loadSession,
   saveFiles,
@@ -28,9 +28,10 @@ import {
   savePairs,
   saveResults,
 } from "@/lib/storage";
-import { expandRow } from "@/lib/rows";
-import { COLUMNS, copyRowsForExcel, toTsv } from "@/lib/tsv";
-import type { WorkCategoryEntry } from "@/lib/types";
+import { COLUMNS } from "@/lib/tsv";
+import { useExcelCopy } from "@/lib/use-excel-copy";
+import { usePersistence } from "@/lib/use-persistence";
+import { useRowEditors } from "@/lib/use-row-editors";
 import { zipFiles } from "@/lib/zip";
 
 /** ペアの同時処理数。待ち時間の大半がAPI応答なので並列化が効く (無料枠の429を避けるため控えめ) */
@@ -56,128 +57,55 @@ export default function Home() {
   const [results, setResults] = useState<(ResultRow | null)[]>([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number; current: string }>();
-  const [includeHeader, setIncludeHeader] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [copiedRowId, setCopiedRowId] = useState<string | null>(null);
   const [zipping, setZipping] = useState(false);
-  const [fallbackTsv, setFallbackTsv] = useState<string | null>(null);
-  // メール文ダイアログは pairId で開く (results は再生成されるので行オブジェクトを直接持たない)
+  // ダイアログは pairId で開く (results は再生成されるので行オブジェクトを直接持たない)
   const [mailPairId, setMailPairId] = useState<string | null>(null);
-  // 完了報告書ダイアログも同様に pairId で開く
   const [reportPairId, setReportPairId] = useState<string | null>(null);
-  // 復元が「成功して」終わるまでは保存し返さない (空の状態で上書きしてしまわないように)
-  const [restored, setRestored] = useState(false);
-  const [canPersist, setCanPersist] = useState(false);
-  const [storageError, setStorageError] = useState<string | null>(null);
-  /** 画面が空でも保存データが残っているか (消去の導線を出すため) */
-  const [hasSaved, setHasSaved] = useState(false);
-  const [usageBytes, setUsageBytes] = useState<number | null>(null);
-  /** 完了報告書PDFに使う登録済みの書体 (顧客データではないので消去しても残る) */
-  const [fontInfo, setFontInfo] = useState<LocalFontInfo | null>(null);
-  // 長時間走る処理のコールバックが古い値を掴み続けないように ref でも持つ
-  const canPersistRef = useRef(false);
   const fileMap = useRef(new Map<string, UploadedFile>());
 
+  const storage = usePersistence({
+    restore: async () => {
+      const session = await loadSession();
+      for (const f of session.files) fileMap.current.set(f.id, f);
+      setFiles(session.files);
+      setPairs(session.pairs);
+      setResults(session.results);
+      // 結果に紐づかない前回の結合PDFを掃除して容量を戻す
+      void collectGarbage(new Set(session.results.map((r) => r.pairId))).catch(() => {});
+      return { partialErrors: session.partialErrors };
+    },
+    hasSaved: hasStoredData,
+  });
+  const copyState = useExcelCopy();
+
   /** 表示・出力用: まだ完了していないスロットを除いたペア順の結果 */
-  const rows = useMemo(
-    () => results.filter((r): r is ResultRow => r !== null),
-    [results],
-  );
+  const rows = useMemo(() => results.filter((r): r is ResultRow => r !== null), [results]);
+
+  const editors = useRowEditors<ResultRow>((pairId, fn) => {
+    setResults((prev) => prev.map((r) => (r && r.pairId === pairId ? fn(r) : r)));
+  });
 
   // 初回処理時のworker起動待ちを避けるため、表示中にpdfjsを先読みする
   useEffect(() => {
     warmUpPdfjs();
   }, []);
 
-  // 登録済みの書体 (消去しても残るので、画面下部の保存欄で扱えるようにする)
-  const refreshFontInfo = () => {
-    void loadLocalFontInfo()
-      .then(setFontInfo)
-      .catch(() => setFontInfo(null));
-  };
-  useEffect(refreshFontInfo, []);
-
-  // 再読み込み後も作業を続けられるよう、前回の内容 (PDF・ペア・結果) を復元する
+  // 処理中に画面を切り替えると未完了分が失われるので確認を出す
   useEffect(() => {
-    if (!isStorageAvailable()) {
-      setRestored(true);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const session = await loadSession();
-        if (cancelled) return;
-        for (const f of session.files) fileMap.current.set(f.id, f);
-        setFiles(session.files);
-        setPairs(session.pairs);
-        setResults(session.results);
-        if (session.partialErrors.length > 0) {
-          setStorageError(
-            `前回の内容を一部復元できませんでした (${session.partialErrors.join(" / ")})`,
-          );
-        }
-        // 復元できたので保存を再開してよい
-        canPersistRef.current = true;
-        setCanPersist(true);
-        // 結果に紐づかない前回の結合PDFを掃除して容量を戻す
-        void collectGarbage(new Set(session.results.map((r) => r.pairId))).catch(() => {});
-      } catch (e) {
-        if (!cancelled) {
-          // 復元できていないので保存もしない (空の状態で保存データを上書きしないため)
-          setStorageError(
-            `前回の内容を復元できませんでした (${e instanceof Error ? e.message : String(e)})。` +
-              "このタブでは保存を停止します。再読み込みすると復元を試み直せます",
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setRestored(true);
-          void hasStoredData()
-            .then((h) => {
-              if (!cancelled) setHasSaved(h);
-            })
-            .catch(() => {});
-          void estimateUsage().then((u) => {
-            if (!cancelled) setUsageBytes(u);
-          });
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  /** 保存の失敗は作業を止めない (警告だけ出す) */
-  const persist = (task: () => Promise<void>) => {
-    if (!canPersistRef.current || !isStorageAvailable()) return;
-    void task().then(
-      () => {
-        setStorageError((prev) => (prev?.startsWith("保存できませんでした") ? null : prev));
-        setHasSaved(true);
-        void estimateUsage().then(setUsageBytes);
-      },
-      (e) => {
-        setStorageError(
-          isQuotaError(e)
-            ? "保存容量が足りません。作業を終えた分は「保存データを消去」で消してから続けてください" +
-              (fontInfo ? "。登録した書体も「書体の登録を消す」で空けられます" : "") +
-              " (このままでも処理は続けられますが、再読み込みすると失われます)"
-            : `保存できませんでした (${e instanceof Error ? e.message : String(e)})。再読み込みすると内容が失われる可能性があります`,
-        );
-      },
+    setNavigationGuard(
+      processing ? "処理中です。画面を切り替えると未完了分の結果が失われます。移動しますか？" : null,
     );
-  };
+    return () => setNavigationGuard(null);
+  }, [processing]);
 
   // ペアリングと結果は変更のたびに保存する (PDF本体は取り込み時に1回だけ保存)
   useEffect(() => {
-    persist(() => savePairs(pairs));
-  }, [pairs, canPersist]);
+    storage.persist(() => savePairs(pairs));
+  }, [pairs, storage.canPersist]);
 
   useEffect(() => {
-    persist(() => saveResults(results.filter((r): r is ResultRow => r !== null)));
-  }, [results, canPersist]);
+    storage.persist(() => saveResults(results.filter((r): r is ResultRow => r !== null)));
+  }, [results, storage.canPersist]);
 
   const photoFiles = useMemo(
     () => files.filter((f) => parseFileName(f.name).kind === "photo"),
@@ -205,7 +133,7 @@ export default function Home() {
     setFiles(merged);
     // 追加分のPDFだけを保存する (既存分は取り込み時に保存済み)
     const added = merged.filter((m) => !files.some((f) => f.id === m.id));
-    persist(() => saveFiles(added));
+    storage.persist(() => saveFiles(added));
     // 手動修正済みのペアは保持し、それ以外のファイルだけを自動ペアリングし直す
     const lockedPairs = pairs.filter((p) => p.manual);
     const lockedIds = new Set(
@@ -261,7 +189,7 @@ export default function Home() {
     setProcessing(true);
     setResults([]);
     // 今回処理する分の結合PDFだけを消す (他タブ・前回セッションの分を巻き込まない)
-    persist(() => clearStoredResults(targets.map((p) => p.id)));
+    storage.persist(() => clearStoredResults(targets.map((p) => p.id)));
     let done = 0;
     setProgress({ done: 0, total: targets.length, current: "" });
     setResults(new Array<ResultRow | null>(targets.length).fill(null));
@@ -286,7 +214,7 @@ export default function Home() {
         // 結合PDFは大きいので、ここで1回だけ保存する (結果JSONとは別ストア)
         if (row.merged) {
           const blob = row.merged;
-          persist(() => saveMergedPdf(row.pairId, blob));
+          storage.persist(() => saveMergedPdf(row.pairId, blob));
         }
         // 完了したペアの位置にそのまま入れる (ペア順が実行ごとに変わらない)
         setResults((prev) => {
@@ -304,86 +232,15 @@ export default function Home() {
     setProcessing(false);
   };
 
-  // 工事区分の手動編集 (画像認識の結果を修正・追加・削除)
-  const updateCategories = (
-    pairId: string,
-    fn: (cats: WorkCategoryEntry[]) => WorkCategoryEntry[],
-  ) => {
-    setResults((prev) =>
-      prev.map((r) => (r && r.pairId === pairId ? { ...r, categories: fn(r.categories) } : r)),
-    );
-  };
-  const onCategoryChange = (pairId: string, index: number, value: string) =>
-    updateCategories(pairId, (cats) => {
-      const next: WorkCategoryEntry[] =
-        cats.length > 0 ? [...cats] : [{ value: "", confidence: "ok" }];
-      next[index] = { value, confidence: "ok" };
-      return next;
-    });
-  const onCategoryAdd = (pairId: string) =>
-    updateCategories(pairId, (cats) => [
-      ...(cats.length > 0 ? cats : [{ value: "", confidence: "ok" as const }]),
-      { value: "", confidence: "ok" },
-    ]);
-  const onCategoryRemove = (pairId: string, index: number) =>
-    updateCategories(pairId, (cats) => cats.filter((_, i) => i !== index));
-
-  const onCellChange = (pairId: string, col: number, value: string) => {
-    setResults((prev) =>
-      prev.map((r) =>
-        r && r.pairId === pairId
-          ? { ...r, cells: r.cells.map((c, i) => (i === col ? value : c)) }
-          : r,
-      ),
-    );
-  };
-
-  // メール文用のカナ読みの手修正 (確認画面で編集した値を保持する)
-  const onKanaChange = (pairId: string, kana: string) => {
-    setResults((prev) =>
-      prev.map((r) =>
-        r && r.pairId === pairId ? { ...r, mail: { ...r.mail, ownerKana: kana } } : r,
-      ),
-    );
-  };
-  const onReportOptionsChange = (pairId: string, options: ReportOptions) => {
-    setResults((prev) =>
-      prev.map((r) => (r && r.pairId === pairId ? { ...r, report: options } : r)),
-    );
-  };
-
   const mailRow = mailPairId ? (rows.find((r) => r.pairId === mailPairId) ?? null) : null;
   const reportRow = reportPairId ? (rows.find((r) => r.pairId === reportPairId) ?? null) : null;
 
-  const rowsOf = (r: ResultRow) =>
-    expandRow(r.cells, r.categories.map((c) => c.value));
+  const rowsOf = (r: ResultRow) => expandRow(r.cells, r.categories.map((c) => c.value));
 
   // 工事区分の数だけ行を展開した貼り付け用データ
   const dataRows = () => {
     const data = rows.filter((r) => !r.error).flatMap(rowsOf);
-    return includeHeader ? [[...COLUMNS], ...data] : data;
-  };
-
-  const copy = async () => {
-    try {
-      await copyRowsForExcel(dataRows());
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    } catch {
-      // クリップボードAPIが使えない環境向けフォールバック
-      setFallbackTsv(toTsv(dataRows()));
-    }
-  };
-
-  // 1行だけコピー (ヘッダー行は付けない: 既存シートの行への貼り付け用)
-  const copyRow = async (row: ResultRow) => {
-    try {
-      await copyRowsForExcel(rowsOf(row));
-      setCopiedRowId(row.pairId);
-      setTimeout(() => setCopiedRowId((prev) => (prev === row.pairId ? null : prev)), 2500);
-    } catch {
-      setFallbackTsv(toTsv(rowsOf(row)));
-    }
+    return copyState.includeHeader ? [[...COLUMNS], ...data] : data;
   };
 
   const zipAll = async () => {
@@ -396,8 +253,7 @@ export default function Home() {
         if (!r.merged) continue;
         const n = (usedNames.get(r.mergedName) ?? 0) + 1;
         usedNames.set(r.mergedName, n);
-        const name =
-          n === 1 ? r.mergedName : r.mergedName.replace(/\.pdf$/i, ` (${n}).pdf`);
+        const name = n === 1 ? r.mergedName : r.mergedName.replace(/\.pdf$/i, ` (${n}).pdf`);
         entries.push({ name, data: new Uint8Array(await r.merged.arrayBuffer()) });
       }
       download(await zipFiles(entries), "結合報告書.zip");
@@ -410,12 +266,12 @@ export default function Home() {
 
   const mergedCount = rows.filter((r) => r.merged).length;
 
-  /** 保存データを消して最初の状態に戻す (顧客情報を端末に残さないため) */
+  /** 定期点検の保存データを消して最初の状態に戻す (顧客情報を端末に残さないため) */
   const clearSaved = async () => {
     if (
       !confirm(
-        "保存されているPDF・ペアリング・抽出結果をすべて消去します。取り消せません。" +
-          "(完了報告書の書体の登録は残ります)よろしいですか？",
+        "定期点検で保存されているPDF・ペアリング・抽出結果をすべて消去します。取り消せません。" +
+          "(アフターメンテナンスの顧客データ・受付一覧、完了報告書の書体の登録は残ります)よろしいですか？",
       )
     ) {
       return;
@@ -434,46 +290,27 @@ export default function Home() {
     setPairs([]);
     setResults([]);
     setMailPairId(null);
-    setStorageError(failure);
-    void hasStoredData()
-      .then(setHasSaved)
-      .catch(() => setHasSaved(true));
-    void estimateUsage().then(setUsageBytes);
-    refreshFontInfo();
-  };
-
-  /** 登録した書体を消す (顧客データの消去とは別操作) */
-  const clearFont = async () => {
-    if (!confirm("登録した書体を消して、同梱の書体 (Noto Sans JP) に戻します。よろしいですか？")) {
-      return;
-    }
-    try {
-      await clearLocalFonts();
-    } catch (e) {
-      setStorageError(`書体の登録を消せませんでした (${e instanceof Error ? e.message : String(e)})`);
-    }
-    refreshFontInfo();
-    void estimateUsage().then(setUsageBytes);
+    setReportPairId(null);
+    storage.setStorageError(failure);
+    storage.refreshHasSaved();
+    storage.refreshUsage();
+    storage.refreshFontInfo();
   };
 
   return (
-    <main className="mx-auto max-w-7xl px-6 py-8">
-      <h1 className="text-2xl font-bold tracking-tight">
-        Folio
-        <span className="ml-3 align-middle text-sm font-normal text-slate-500">報告書処理</span>
-      </h1>
-      <p className="mt-1 text-sm text-slate-600">
+    <main>
+      <p className="mt-4 text-sm text-slate-600">
         写真報告書と点検報告書をアップロードすると、結合PDFの作成とExcel転記用テキストの抽出を行います。
       </p>
 
       <section className="mt-6">
-        <Dropzone onFiles={handleFiles} disabled={processing || !restored} />
-        {!restored && (
+        <Dropzone onFiles={handleFiles} disabled={processing || !storage.restored} />
+        {!storage.restored && (
           <p className="mt-2 text-sm text-slate-500">前回の内容を読み込んでいます…</p>
         )}
-        {storageError && (
+        {storage.storageError && (
           <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            {storageError}
+            {storage.storageError}
           </p>
         )}
         {unclassified.length > 0 && (
@@ -496,7 +333,7 @@ export default function Home() {
             <button
               type="button"
               onClick={run}
-              disabled={processing || !restored || pairs.every((p) => !p.photoId)}
+              disabled={processing || !storage.restored || pairs.every((p) => !p.photoId)}
               className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {processing
@@ -528,18 +365,18 @@ export default function Home() {
               <label className="flex items-center gap-1.5 text-sm text-slate-600">
                 <input
                   type="checkbox"
-                  checked={includeHeader}
-                  onChange={(e) => setIncludeHeader(e.target.checked)}
+                  checked={copyState.includeHeader}
+                  onChange={(e) => copyState.setIncludeHeader(e.target.checked)}
                 />
                 ヘッダー行を含める
               </label>
               <button
                 type="button"
-                onClick={copy}
+                onClick={() => copyState.copyAll(dataRows())}
                 disabled={processing || rows.every((r) => r.error)}
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
               >
-                {copied ? "コピーしました ✓" : "Excel用にコピー"}
+                {copyState.copied ? "コピーしました ✓" : "Excel用にコピー"}
               </button>
               <button
                 type="button"
@@ -553,13 +390,13 @@ export default function Home() {
           </div>
           <ResultsTable
             results={rows}
-            onCellChange={onCellChange}
+            onCellChange={editors.onCellChange}
             onDownloadRow={(row) => download(row.merged!, row.mergedName)}
-            onCopyRow={copyRow}
-            copiedRowId={copiedRowId}
-            onCategoryChange={onCategoryChange}
-            onCategoryAdd={onCategoryAdd}
-            onCategoryRemove={onCategoryRemove}
+            onCopyRow={(row) => copyState.copyRow(row.pairId, rowsOf(row))}
+            copiedRowId={copyState.copiedRowId}
+            onCategoryChange={editors.onCategoryChange}
+            onCategoryAdd={editors.onCategoryAdd}
+            onCategoryRemove={editors.onCategoryRemove}
             onOpenMail={(row) => setMailPairId(row.pairId)}
             onOpenReport={(row) => setReportPairId(row.pairId)}
             onPrefetchReport={prefetchReportAssets}
@@ -568,95 +405,42 @@ export default function Home() {
       )}
 
       {mailRow && (
-        <MailDialog row={mailRow} onKanaChange={onKanaChange} onClose={() => setMailPairId(null)} />
+        <MailDialog
+          row={mailRow}
+          onKanaChange={editors.onKanaChange}
+          onClose={() => setMailPairId(null)}
+        />
       )}
 
       {reportRow && (
         <ReportDialog
           row={reportRow}
-          onOptionsChange={onReportOptionsChange}
-          onKanaChange={onKanaChange}
+          onOptionsChange={editors.onReportOptionsChange}
+          onKanaChange={editors.onKanaChange}
           onClose={() => {
             setReportPairId(null);
-            refreshFontInfo();
+            storage.refreshFontInfo();
           }}
         />
       )}
 
-      {fallbackTsv !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
-          <div className="w-full max-w-3xl rounded-xl bg-white p-5 shadow-xl">
-            <h3 className="font-semibold">
-              クリップボードにアクセスできませんでした
-            </h3>
-            <p className="mt-1 text-sm text-slate-600">
-              下のテキストを全選択 (Ctrl/Cmd+A) してコピーし、Excelに貼り付けてください。
-            </p>
-            <textarea
-              readOnly
-              value={fallbackTsv}
-              rows={10}
-              onFocus={(e) => e.target.select()}
-              className="mt-3 w-full rounded-md border border-slate-300 p-2 font-mono text-xs"
-            />
-            <div className="mt-3 text-right">
-              <button
-                type="button"
-                onClick={() => setFallbackTsv(null)}
-                className="rounded-md border border-slate-300 px-4 py-1.5 text-sm hover:bg-slate-50"
-              >
-                閉じる
-              </button>
-            </div>
-          </div>
-        </div>
+      {copyState.fallbackTsv !== null && (
+        <FallbackTsvDialog text={copyState.fallbackTsv} onClose={copyState.closeFallback} />
       )}
 
-      {(files.length > 0 || rows.length > 0 || hasSaved || fontInfo) && (
-        <div className="mt-8 flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
-          <span>
-            {canPersist
+      {(files.length > 0 || rows.length > 0 || storage.hasSaved || storage.fontInfo) && (
+        <StorageBanner
+          description={
+            storage.canPersist
               ? "アップロードしたPDF・ペアリング・抽出結果はこのブラウザ内に保存され、再読み込みしても残ります (サーバーには送信されません)。作業が終わったら消去してください。"
-              : "このタブでは保存を停止しています (再読み込みすると復元を試み直せます)。以前の保存データが端末に残っている場合は消去できます。"}
-            {fontInfo && (
-              <>
-                {" "}
-                完了報告書の書体として「{fontInfo.family}」を登録済みです。顧客データではないので
-                「保存データを消去」では消えません。
-              </>
-            )}
-            {usageBytes !== null && usageBytes > 0 && (
-              <span className="ml-1 block text-slate-400">
-                保存量 約{Math.round(usageBytes / 1024 / 1024)}MB
-                {/* 保存量はブラウザの推定値で、実バイト数より小さく出ることがある。
-                    内訳が総量を超えて見えると誤解を招くので、収まるときだけ出す */}
-                {fontInfo &&
-                  fontInfo.bytes < usageBytes &&
-                  `（うち登録した書体 約${Math.round(fontInfo.bytes / 1024 / 1024)}MB）`}
-              </span>
-            )}
-          </span>
-          <span className="flex shrink-0 flex-col items-end gap-1">
-            <button
-              type="button"
-              onClick={clearSaved}
-              disabled={processing}
-              className="whitespace-nowrap rounded-md border border-red-300 bg-white px-3 py-1.5 font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-            >
-              保存データを消去
-            </button>
-            {fontInfo && (
-              <button
-                type="button"
-                onClick={clearFont}
-                disabled={processing}
-                className="whitespace-nowrap rounded-md border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-              >
-                書体の登録を消す
-              </button>
-            )}
-          </span>
-        </div>
+              : "このタブでは保存を停止しています (再読み込みすると復元を試み直せます)。以前の保存データが端末に残っている場合は消去できます。"
+          }
+          usageBytes={storage.usageBytes}
+          fontInfo={storage.fontInfo}
+          disabled={processing}
+          actions={[{ label: "保存データを消去", onClick: clearSaved, danger: true }]}
+          onClearFont={storage.clearFont}
+        />
       )}
 
       <footer className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-400">

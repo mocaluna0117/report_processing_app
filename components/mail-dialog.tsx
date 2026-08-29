@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { buildMailText } from "@/lib/email";
 import type { ResultRow } from "@/lib/process";
 import { ADDRESS_COL, HANDOVER_COL, OWNER_COL, PROPERTY_COL, SUMMARY_COL } from "@/lib/tsv";
@@ -21,6 +21,17 @@ export function MailDialog({
 }) {
   const [copied, setCopied] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const fromDatabase = row.kind === "after";
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    closeRef.current?.focus();
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   const text = useMemo(
     () =>
@@ -58,7 +69,12 @@ export function MailDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
-      <div className="w-full max-w-3xl rounded-xl bg-white p-5 shadow-xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`メール文 ${row.ownerDisplay}`}
+        className="w-full max-w-3xl rounded-xl bg-white p-5 shadow-xl"
+      >
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="font-semibold">メール文 — {row.ownerDisplay}</h3>
@@ -67,6 +83,7 @@ export function MailDialog({
             </p>
           </div>
           <button
+            ref={closeRef}
             type="button"
             onClick={onClose}
             className="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50"
@@ -79,10 +96,14 @@ export function MailDialog({
           <span className="font-medium">施主名のカナ</span>
           <span className="ml-2 text-xs text-slate-500">
             {row.mail.kanaConfidence === "fail"
-              ? "取得できませんでした。手入力してください"
-              : row.mail.kanaConfidence === "warn"
-                ? "Geminiの推定です。読みが複数ありえるので確認してください"
-                : "Geminiの推定です。念のため確認してください"}
+              ? fromDatabase
+                ? "顧客データに読みがありません。手入力してください"
+                : "取得できませんでした。手入力してください"
+              : fromDatabase
+                ? "顧客データの読みです。念のため確認してください"
+                : row.mail.kanaConfidence === "warn"
+                  ? "Geminiの推定です。読みが複数ありえるので確認してください"
+                  : "Geminiの推定です。念のため確認してください"}
           </span>
           <input
             value={row.mail.ownerKana}
@@ -104,7 +125,9 @@ export function MailDialog({
         )}
         {row.mail.contacts.length === 0 && (
           <p className="mt-2 text-xs text-slate-500">
-            連絡先は点検報告書から取得できなかったため空欄です。必要なら貼り付け後に補ってください
+            {fromDatabase
+              ? "顧客データに電話番号が無いため空欄です。必要なら貼り付け後に補ってください"
+              : "連絡先は点検報告書から取得できなかったため空欄です。必要なら貼り付け後に補ってください"}
           </p>
         )}
 

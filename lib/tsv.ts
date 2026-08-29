@@ -10,7 +10,7 @@ export const COLUMNS = [
   "物件名称", // 現場名の【】以降
   "お客様氏名", // 施主名
   "住所",
-  "引渡日", // YYYY/MM/DD
+  "引渡日", // yyyy/mm/dd (ゼロ埋め)
   "監督", // 空白
   "営業", // 空白
   "初回訪問日", // 空白
@@ -40,6 +40,11 @@ export const PROPERTY_COL = COLUMNS.indexOf("物件名称");
 export const OWNER_COL = COLUMNS.indexOf("お客様氏名");
 export const ADDRESS_COL = COLUMNS.indexOf("住所");
 export const HANDOVER_COL = COLUMNS.indexOf("引渡日");
+export const RECEPTIONIST_COL = COLUMNS.indexOf("受付者");
+export const DEVELOPER_COL = COLUMNS.indexOf("事業者");
+export const LAST_UPDATED_COL = COLUMNS.indexOf("最終更新日");
+/** 備考欄。アフターメンテナンスではこの列を貼り付けない */
+export const REMARKS_COL = COLUMNS.indexOf("備考欄");
 
 function escapeTsvCell(v: string): string {
   let s = v.replace(/\t/g, " ");

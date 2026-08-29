@@ -13,6 +13,9 @@ import {
 } from "@/lib/tsv";
 import type { Contact } from "@/lib/types";
 
+/** 定期点検か、アフターメンテナンスか (既定のチェック・別紙タイトルが変わる) */
+export type ReportKind = "inspection" | "after";
+
 /** 受付者は運用上固定 (見本の完了報告書と同じ) */
 export const RECEPTIONIST = "木村美恵子";
 /** ダウンロード時のファイル名 (行の内容に依らず固定) */
@@ -46,11 +49,28 @@ export const DEFAULT_REPORT_OPTIONS: ReportOptions = {
   categories: { inspection: true, after: false, paid: false, direct: false, free: false },
 };
 
+/** アフターメンテナンスの既定は「アフター」のみチェック */
+export const AFTER_REPORT_OPTIONS: ReportOptions = {
+  attendance: { owner: false, family: false, other: false },
+  categories: { inspection: false, after: true, paid: false, direct: false, free: false },
+};
+
+/** アフターメンテナンスの別紙タイトル (点検時期を使わない) */
+export const AFTER_APPENDIX_TITLE = "アフターメンテナンス是正項目";
+
+/** 種別ごとの既定チェック */
+export function defaultReportOptions(kind: ReportKind = "inspection"): ReportOptions {
+  return kind === "after" ? AFTER_REPORT_OPTIONS : DEFAULT_REPORT_OPTIONS;
+}
+
 const ATTENDANCE_KEYS = ["owner", "family", "other"] as const;
 const CATEGORY_KEYS = ["inspection", "after", "paid", "direct", "free"] as const;
 
 /** 保存データ・古い形式から読み込むときの正規化 (欠けていれば既定値) */
-export function normalizeReportOptions(raw: unknown): ReportOptions {
+export function normalizeReportOptions(
+  raw: unknown,
+  defaults: ReportOptions = DEFAULT_REPORT_OPTIONS,
+): ReportOptions {
   const o = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
   const pick = <K extends string>(group: unknown, keys: readonly K[], defaults: Record<K, boolean>) => {
     const g = (typeof group === "object" && group !== null ? group : {}) as Record<string, unknown>;
@@ -59,8 +79,8 @@ export function normalizeReportOptions(raw: unknown): ReportOptions {
     ) as Record<K, boolean>;
   };
   return {
-    attendance: pick(o.attendance, ATTENDANCE_KEYS, DEFAULT_REPORT_OPTIONS.attendance),
-    categories: pick(o.categories, CATEGORY_KEYS, DEFAULT_REPORT_OPTIONS.categories),
+    attendance: pick(o.attendance, ATTENDANCE_KEYS, defaults.attendance),
+    categories: pick(o.categories, CATEGORY_KEYS, defaults.categories),
   };
 }
 
@@ -113,6 +133,8 @@ export interface ReportData {
 export interface ReportSource {
   cells: string[];
   mail: { ownerKana: string; contacts: Contact[] };
+  /** 省略時は定期点検 */
+  kind?: ReportKind;
 }
 
 const LEADING_NUMBER = /^(?:[①-⑳]|\(\d+\)|\d+[.)、]|・)\s*/;
@@ -131,8 +153,9 @@ export function splitInstructionItems(summary: string): string[] {
     .filter(Boolean);
 }
 
-/** 別紙のタイトル。受付種別が空なら時期を省く */
-export function appendixTitle(timing: string): string {
+/** 別紙のタイトル。アフターは固定、定期点検は受付種別から (空なら時期を省く) */
+export function appendixTitle(timing: string, kind: ReportKind = "inspection"): string {
+  if (kind === "after") return AFTER_APPENDIX_TITLE;
   const t = timing.trim();
   return t ? `${t}目点検是正項目` : "点検是正項目";
 }
@@ -168,7 +191,7 @@ export function buildReportData(row: ReportSource, options: ReportOptions): Repo
 
   const appendix: ReportAppendix | null = useAppendix
     ? {
-        title: appendixTitle(cell(RECEPTION_TYPE_COL)),
+        title: appendixTitle(cell(RECEPTION_TYPE_COL), row.kind),
         propertyLine: `物件名：${cell(PROPERTY_COL)}`,
         // 別紙は漢字のみ・姓名間は半角スペース・「様」を直結 (見本と同じ)
         ownerLine: ownerName ? `施主名：${ownerName.replace(/　/g, " ")}様` : "施主名：",

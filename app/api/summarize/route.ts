@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { GEMINI_SUMMARY_CHAIN, callWithModelChain } from "@/lib/gemini-model";
 import { redactPii } from "@/lib/summarize/redact";
 import { formatPhenomena } from "@/lib/summarize/format";
+import { INQUIRY_TEXT_MAX, buildInquiryPrompt, ruleBasedInquirySummary } from "@/lib/summarize/inquiry";
 import { ruleBasedSummary, stripRequests } from "@/lib/summarize/rule-based";
 import type { SummarizeRequest, SummarizeResponse } from "@/lib/summarize/types";
 
@@ -46,6 +47,8 @@ function sanitizeRequest(raw: unknown): SummarizeRequest {
     standaloneNotes: strArray(obj.standaloneNotes),
     specialNotes: strArray(obj.specialNotes),
     noAbnormality: obj.noAbnormality === true,
+    // 制御文字はプロンプトを壊すので落とす
+    inquiryText: str(obj.inquiryText, INQUIRY_TEXT_MAX).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, ""),
   };
 }
 
@@ -142,6 +145,30 @@ export async function POST(request: Request): Promise<NextResponse<SummarizeResp
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
+
+  // アフターメンテナンス: コールセンターの受付メモから事象だけを取り出す
+  const inquiryText = body.inquiryText?.trim() ?? "";
+  if (inquiryText) {
+    if (!apiKey) {
+      return NextResponse.json({ summary: ruleBasedInquirySummary(inquiryText), engine: "rule" });
+    }
+    try {
+      const phenomena = await callGemini(apiKey, buildInquiryPrompt(redactPii(inquiryText)));
+      return NextResponse.json({
+        summary: formatPhenomena(phenomena, [], { emptyText: "" }),
+        engine: "gemini",
+        ...(phenomena.length === 0
+          ? { error: "受付メモから事象を取り出せませんでした。手入力してください" }
+          : {}),
+      });
+    } catch (e) {
+      return NextResponse.json({
+        summary: ruleBasedInquirySummary(inquiryText),
+        engine: "rule",
+        error: String(e),
+      });
+    }
+  }
 
   // 不具合ゼロは定型文で十分 (API呼び出し節約)
   if (!apiKey || (body.defects.length === 0 && body.specialNotes.length === 0 && body.standaloneNotes.length === 0)) {

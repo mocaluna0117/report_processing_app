@@ -8,3 +8,12 @@ export function expandRow(cells: string[], categories: string[]): string[][] {
   if (categories.length === 0) return [cells];
   return categories.map((c) => cells.map((v, i) => (i === WORK_COL ? c : v)));
 }
+
+/**
+ * 指定した列を落とす (アフターメンテナンスは備考欄を貼り付けない)。
+ * ヘッダー行にも同じものを掛けること。
+ */
+export function dropColumns(rows: string[][], hidden: ReadonlySet<number>): string[][] {
+  if (hidden.size === 0) return rows;
+  return rows.map((r) => r.filter((_, i) => !hidden.has(i)));
+}

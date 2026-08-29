@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  AFTER_APPENDIX_TITLE,
+  AFTER_REPORT_OPTIONS,
   APPENDIX_REFERENCE_TEXT,
   DEFAULT_REPORT_OPTIONS,
   RECEPTIONIST,
   appendixTitle,
   buildOwnerLine,
   buildReportData,
+  defaultReportOptions,
   normalizeReportOptions,
   splitInstructionItems,
   type ReportSource,
@@ -186,5 +189,35 @@ describe("normalizeReportOptions", () => {
     expect(normalizeReportOptions({ attendance: "yes", categories: { inspection: 1 } })).toEqual(
       DEFAULT_REPORT_OPTIONS,
     );
+  });
+});
+
+describe("アフターメンテナンスの既定", () => {
+  it("受付項目は「アフター」だけチェックされる", () => {
+    expect(AFTER_REPORT_OPTIONS.categories).toEqual({
+      inspection: false,
+      after: true,
+      paid: false,
+      direct: false,
+      free: false,
+    });
+    expect(Object.values(AFTER_REPORT_OPTIONS.attendance).some(Boolean)).toBe(false);
+    expect(defaultReportOptions("after")).toEqual(AFTER_REPORT_OPTIONS);
+    expect(defaultReportOptions()).toEqual(DEFAULT_REPORT_OPTIONS);
+  });
+
+  it("別紙タイトルは受付種別によらず固定", () => {
+    expect(appendixTitle("1年", "after")).toBe(AFTER_APPENDIX_TITLE);
+    expect(appendixTitle("", "after")).toBe(AFTER_APPENDIX_TITLE);
+    // 定期点検は従来どおり
+    expect(appendixTitle("1年")).toBe("1年目点検是正項目");
+  });
+
+  it("normalizeReportOptions は既定値を差し替えられる (保存データに無い項目)", () => {
+    expect(normalizeReportOptions(undefined, AFTER_REPORT_OPTIONS)).toEqual(AFTER_REPORT_OPTIONS);
+    // 保存済みの値は既定より優先される
+    expect(
+      normalizeReportOptions({ categories: { inspection: true } }, AFTER_REPORT_OPTIONS).categories,
+    ).toMatchObject({ inspection: true, after: true });
   });
 });

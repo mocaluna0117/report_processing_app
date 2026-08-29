@@ -6,35 +6,41 @@
 // - 保存先はこのブラウザ (この端末・このオリジン) の中だけ。サーバーへは送らない
 // - 顧客情報を含むため、「保存データを消去」で明示的に消せるようにしている
 import type { PairView } from "@/components/pair-table";
+import type { AfterCase } from "@/lib/after/types";
 import type { ResultRow, UploadedFile } from "@/lib/process";
-import { normalizeReportOptions } from "@/lib/report/model";
+import { AFTER_REPORT_OPTIONS, normalizeReportOptions } from "@/lib/report/model";
 import { COLUMNS } from "@/lib/tsv";
 
 const DB_NAME = "folio";
-const DB_VERSION = 1;
+/** v2: アフターメンテナンスの顧客データ (customers) を追加 */
+const DB_VERSION = 2;
 /** アップロードしたPDF (id → UploadedFile。File は structured clone でそのまま保存できる) */
 const STORE_FILES = "files";
 /** 結合PDF (pairId → Blob)。大きいので結果JSONとは別に、処理完了時に1回だけ書く */
 const STORE_MERGED = "merged";
-/** その他 (pairs / results のJSON) */
+/** その他 (pairs / results / 受付一覧 のJSON) */
 const STORE_META = "meta";
+/** アフターメンテナンスの顧客データ (id → Customer)。件数が多いので専用ストアに置く */
+export const STORE_CUSTOMERS = "customers";
 const META_PAIRS = "pairs";
 const META_RESULTS = "results";
+/** アフターメンテナンスの受付一覧 */
+const META_AFTER_CASES = "afterCases";
+
 /**
- * 「保存データを消去」でも残す設定のキー (顧客データではないもの)。
- * ここに挙げたキーだけが残るので、顧客情報を含む値は絶対に追加しないこと。
- * 現在は完了報告書PDFの書体登録 (利用者が自分の端末のフォントを登録したもの) だけ。
+ * 「保存データを消去」(定期点検) で消す meta キー。
+ * アフターメンテナンスの顧客データ・受付一覧はここに含めない
+ * (それぞれ専用のボタンで消す。定期点検の作業終了で顧客データまで消えないようにする)。
+ */
+const INSPECTION_META_KEYS: readonly string[] = [META_PAIRS, META_RESULTS];
+/**
+ * 完了報告書PDFの書体登録 (利用者が自分の端末のフォントを登録したもの)。
+ * 設定なので「保存データを消去」では消さない (専用のボタンで消す)。
+ * 顧客情報を含む値をこれらのキーで保存してはいけない。
  */
 export const SETTING_KEY_FONT_INFO = "report:fontInfo";
 export const SETTING_KEY_FONT_REGULAR = "report:fontRegular";
 export const SETTING_KEY_FONT_BOLD = "report:fontBold";
-const SETTING_KEYS: ReadonlySet<string> = new Set([
-  SETTING_KEY_FONT_INFO,
-  SETTING_KEY_FONT_REGULAR,
-  SETTING_KEY_FONT_BOLD,
-]);
-const isSettingKey = (key: unknown): boolean =>
-  typeof key === "string" && SETTING_KEYS.has(key);
 
 export function isStorageAvailable(): boolean {
   return typeof indexedDB !== "undefined";
@@ -73,6 +79,10 @@ function openDb(): Promise<IDBDatabase> {
         }
         if (!db.objectStoreNames.contains(STORE_MERGED)) db.createObjectStore(STORE_MERGED);
         if (!db.objectStoreNames.contains(STORE_META)) db.createObjectStore(STORE_META);
+        if (!db.objectStoreNames.contains(STORE_CUSTOMERS)) {
+          const store = db.createObjectStore(STORE_CUSTOMERS, { keyPath: "id" });
+          store.createIndex("source", "source");
+        }
       };
       req.onsuccess = () => {
         const db = req.result;
@@ -102,8 +112,11 @@ function openDb(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
-/** 1トランザクションで store を操作する。fn は複数の put/delete を発行してよい */
-async function withStore<T>(
+/**
+ * 1トランザクションで store を操作する。fn は複数の put/delete を発行してよい。
+ * fn の中で IndexedDB 以外の await を挟むとトランザクションが閉じてしまうので注意。
+ */
+export async function withStore<T>(
   store: string,
   mode: IDBTransactionMode,
   fn: (s: IDBObjectStore) => Promise<T> | T,
@@ -131,7 +144,7 @@ async function withStore<T>(
   });
 }
 
-function request<T>(req: IDBRequest<T>): Promise<T> {
+export function request<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -168,9 +181,8 @@ export async function loadFiles(): Promise<UploadedFile[]> {
 
 /**
  * 設定などを meta ストアに置く。完了報告書のフォント登録に使う。
- * ここに置いた値は既定で「保存データを消去」の対象になる。
- * 消去しても残したい設定は SETTING_KEYS に挙げること
- * (逆に、顧客情報を含む値を SETTING_KEYS のキーで保存してはいけない)。
+ * 「保存データを消去」で消えるのは INSPECTION_META_KEYS に挙げたキーだけなので、
+ * ここに置いた値は明示的に消さない限り残る (顧客情報を置くなら消す導線も用意すること)。
  */
 export async function saveMeta<T>(key: string, value: T): Promise<void> {
   await withStore(STORE_META, "readwrite", (s) => {
@@ -329,43 +341,70 @@ export async function loadSession(): Promise<RestoredSession> {
   return { files, pairs, results, partialErrors };
 }
 
-/** 保存データが1件でも残っているか (画面の状態とは独立に判定する) */
+/**
+ * 定期点検の保存データが1件でも残っているか (画面の状態とは独立に判定する)。
+ * アフターメンテナンスの顧客データ・受付一覧は数えない (別のボタンで消すため)。
+ */
 export async function hasStoredData(): Promise<boolean> {
   for (const store of [STORE_FILES, STORE_MERGED]) {
     const n = await withStore(store, "readonly", (s) => request(s.count()));
     if (n > 0) return true;
   }
-  // 設定 (書体の登録など) と、消去後に書き戻される空の記録は「保存データあり」と数えない
-  const entries = await withStore(STORE_META, "readonly", async (s) => ({
-    keys: await request(s.getAllKeys()),
-    values: await request(s.getAll()),
-  }));
-  return entries.keys.some((key, i) => {
-    if (isSettingKey(key)) return false;
-    const value = entries.values[i];
-    return !(Array.isArray(value) && value.length === 0);
-  });
+  // 消去後に書き戻される空の記録は「保存データあり」と数えない
+  const values = await withStore(STORE_META, "readonly", async (s) =>
+    Promise.all(INSPECTION_META_KEYS.map((key) => request(s.get(key)))),
+  );
+  return values.some((value) => Array.isArray(value) && value.length > 0);
 }
 
 /**
- * 保存データを消す (「保存データを消去」ボタン)。
- * 顧客データ (PDF・ペアリング・抽出結果) を消し、設定 (完了報告書の書体登録) は残す。
- * 設定も消したい場合は includeSettings を指定する。
+ * 定期点検の保存データを消す (「保存データを消去」ボタン)。
+ * 消すのは 写真報告書・点検報告書・結合PDF・ペアリング・抽出結果 だけで、
+ * アフターメンテナンスの顧客データ・受付一覧と、書体の登録は残す
+ * (それぞれ専用のボタンで消す)。
  */
-export async function clearAll(options: { includeSettings?: boolean } = {}): Promise<void> {
+export async function clearAll(): Promise<void> {
   for (const store of [STORE_FILES, STORE_MERGED]) {
     await withStore(store, "readwrite", (s) => {
       s.clear();
     });
   }
+  await withStore(STORE_META, "readwrite", (s) => {
+    for (const key of INSPECTION_META_KEYS) s.delete(key);
+  });
+}
+
+// ---------- アフターメンテナンスの受付一覧 ----------
+
+/** 受付一覧を保存する (結果と同じく、空配列で既存を消してしまわないようにする) */
+export async function saveAfterCases(cases: AfterCase[]): Promise<void> {
   await withStore(STORE_META, "readwrite", async (s) => {
-    if (options.includeSettings) {
-      s.clear();
-      return;
+    if (cases.length === 0) {
+      const existing = await request(s.get(META_AFTER_CASES));
+      if (Array.isArray(existing) && existing.length > 0) return;
     }
-    const keys = await request(s.getAllKeys());
-    for (const key of keys) {
-      if (!isSettingKey(key)) s.delete(key);
-    }
+    s.put(cases, META_AFTER_CASES);
+  });
+}
+
+export async function loadAfterCases(): Promise<AfterCase[]> {
+  const raw = await withStore(STORE_META, "readonly", (s) => request(s.get(META_AFTER_CASES)));
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isResultRowLike).map((r) => {
+    const row = r as unknown as AfterCase;
+    return {
+      ...row,
+      kind: "after" as const,
+      mail: row.mail ?? { ownerKana: "", kanaConfidence: "fail", kanaAlternatives: [], contacts: [] },
+      report: normalizeReportOptions(row.report, AFTER_REPORT_OPTIONS),
+      merged: null,
+    };
+  });
+}
+
+/** 受付一覧だけを消す (「受付一覧を消去」ボタン) */
+export async function clearAfterCases(): Promise<void> {
+  await withStore(STORE_META, "readwrite", (s) => {
+    s.delete(META_AFTER_CASES);
   });
 }

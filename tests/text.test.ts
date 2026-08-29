@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { mapTextItems } from "@/lib/pdf/tokens";
-import { toDateNoPad, toDateZeroPad, toFullWidthSpace, toHalfWidthAlnum } from "@/lib/text";
+import {
+  toDateNoPad,
+  toDateZeroPad,
+  toFullWidthKatakana,
+  toFullWidthSpace,
+  toHalfWidthAlnum,
+  trimWide,
+} from "@/lib/text";
 
 describe("toHalfWidthAlnum", () => {
   it("全角英数字を半角に変換する", () => {
@@ -67,5 +74,27 @@ describe("mapTextItems", () => {
       1,
     );
     expect(tokens[0].str).toBe("SECUREA架空町3丁目A号地");
+  });
+});
+
+describe("toFullWidthKatakana", () => {
+  it("半角カナを全角にする (濁点も合成)", () => {
+    expect(toFullWidthKatakana("ｾｷｭﾚｱ")).toBe("セキュレア");
+    expect(toFullWidthKatakana("ﾋﾞﾙ")).toBe("ビル");
+  });
+
+  it("丸数字・漢字・全角英数はそのまま", () => {
+    expect(toFullWidthKatakana("①セキュレア文京")).toBe("①セキュレア文京");
+  });
+});
+
+describe("trimWide", () => {
+  it("前後の全角スペース・タブ・改行を落とす", () => {
+    expect(trimWide("　山田　太郎　")).toBe("山田　太郎");
+    expect(trimWide("\t架空台1丁目 \n")).toBe("架空台1丁目");
+  });
+
+  it("内部の空白は残す", () => {
+    expect(trimWide(" A B ")).toBe("A B");
   });
 });

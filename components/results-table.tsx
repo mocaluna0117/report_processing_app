@@ -15,7 +15,7 @@ function cellClass(c: Confidence): string {
 const COL_WIDTH: Record<string, string> = {
   物件数: "w-16",
   PJ: "w-32",
-  受付種別: "w-20",
+  受付種別: "w-28",
   受付日: "w-28",
   受付者: "w-20",
   担当: "w-16",
@@ -33,7 +33,16 @@ const COL_WIDTH: Record<string, string> = {
 
 const EMPTY_CATEGORY: WorkCategoryEntry = { value: "", confidence: "ok" };
 
-export function ResultsTable({
+/** 決まった値から選ばせる列 (アフターメンテナンスの受付種別・受付者) */
+export interface SelectColumn {
+  options: readonly string[];
+  /** 未選択の表示 */
+  emptyLabel?: string;
+  /** 未選択のときに要確認 (黄色) にする */
+  warnEmpty?: boolean;
+}
+
+export function ResultsTable<R extends ResultRow>({
   results,
   onCellChange,
   onDownloadRow,
@@ -45,20 +54,38 @@ export function ResultsTable({
   onOpenMail,
   onOpenReport,
   onPrefetchReport,
+  onDeleteRow,
+  hiddenColumns,
+  selectColumns,
+  showPdf = true,
+  rowLabel = "施主",
 }: {
-  results: ResultRow[];
+  results: R[];
   onCellChange: (pairId: string, col: number, value: string) => void;
-  onDownloadRow: (row: ResultRow) => void;
-  onCopyRow: (row: ResultRow) => void;
+  /** showPdf を false にした画面では使わない */
+  onDownloadRow?: (row: R) => void;
+  onCopyRow: (row: R) => void;
   copiedRowId: string | null;
   onCategoryChange: (pairId: string, index: number, value: string) => void;
   onCategoryAdd: (pairId: string) => void;
   onCategoryRemove: (pairId: string, index: number) => void;
-  onOpenMail: (row: ResultRow) => void;
-  onOpenReport: (row: ResultRow) => void;
+  onOpenMail: (row: R) => void;
+  onOpenReport: (row: R) => void;
   /** 完了報告書のテンプレート・フォントを先読みする (ボタンにカーソルを乗せた時) */
   onPrefetchReport: () => void;
+  /** 行の削除 (アフターメンテナンスの受付取り消し)。渡さなければボタンを出さない */
+  onDeleteRow?: (row: R) => void;
+  /** 表示しない列 (アフターメンテナンスの備考欄) */
+  hiddenColumns?: ReadonlySet<number>;
+  /** プルダウンにする列 */
+  selectColumns?: Record<number, SelectColumn>;
+  /** 結合PDFのダウンロード欄を出すか */
+  showPdf?: boolean;
+  /** 左端の固定列の見出し */
+  rowLabel?: string;
 }) {
+  const isHidden = (col: number) => hiddenColumns?.has(col) ?? false;
+  const visibleColumnCount = COLUMNS.length - (hiddenColumns?.size ?? 0);
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
       <table className="w-full min-w-[2600px] text-sm">
@@ -66,16 +93,18 @@ export function ResultsTable({
           <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
             {/* 施主列は左端に固定し、横スクロールの対象外にする (コピー対象外のUI見出し) */}
             <th className="sticky left-0 z-10 w-28 whitespace-nowrap border-r border-slate-200 bg-slate-50 px-2 py-2">
-              施主
+              {rowLabel}
             </th>
-            {COLUMNS.map((c) => (
-              <th
-                key={c}
-                className={`whitespace-nowrap px-2 py-2 ${COL_WIDTH[c] ?? "w-20"}`}
-              >
-                {c}
-              </th>
-            ))}
+            {COLUMNS.map((c, i) =>
+              isHidden(i) ? null : (
+                <th
+                  key={c}
+                  className={`whitespace-nowrap px-2 py-2 ${COL_WIDTH[c] ?? "w-20"}`}
+                >
+                  {c}
+                </th>
+              ),
+            )}
             {/* 操作列は右端に固定し、横スクロールの対象外にする */}
             <th className="sticky right-0 z-10 w-32 whitespace-nowrap border-l border-slate-200 bg-slate-50 px-2 py-2">
               操作
@@ -108,13 +137,14 @@ export function ResultsTable({
 
                 {row.error
                   ? k === 0 && (
-                      <td colSpan={COLUMNS.length} rowSpan={span} className="px-2 py-2">
+                      <td colSpan={visibleColumnCount} rowSpan={span} className="px-2 py-2">
                         <span className="text-red-600">
                           {row.ownerDisplay}: 処理に失敗しました — {row.error}
                         </span>
                       </td>
                     )
                   : row.cells.map((value, col) => {
+                      if (isHidden(col)) return null;
                       if (col === WORK_COL) {
                         return (
                           <td key={COLUMNS[col]} className="px-1 py-1.5">
@@ -179,6 +209,25 @@ export function ResultsTable({
                                 </span>
                               )}
                             </div>
+                          ) : selectColumns?.[col] ? (
+                            <select
+                              value={value}
+                              onChange={(e) => onCellChange(row.pairId, col, e.target.value)}
+                              className={`w-full rounded border px-1 py-1 text-sm ${cellClass(
+                                selectColumns[col].warnEmpty && !value ? "warn" : row.confidences[col],
+                              )}`}
+                            >
+                              <option value="">{selectColumns[col].emptyLabel ?? "－"}</option>
+                              {selectColumns[col].options.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                              {/* 保存済みの値が選択肢に無い場合も消さずに残す */}
+                              {value && !selectColumns[col].options.includes(value) && (
+                                <option value={value}>{value}</option>
+                              )}
+                            </select>
                           ) : (
                             <input
                               value={value}
@@ -209,17 +258,18 @@ export function ResultsTable({
                           {copiedRowId === row.pairId ? "コピー済 ✓" : "行をコピー"}
                         </button>
                       )}
-                      {row.merged ? (
+                      {showPdf &&
+                        (row.merged ? (
                         <button
                           type="button"
-                          onClick={() => onDownloadRow(row)}
+                          onClick={() => onDownloadRow?.(row)}
                           className="whitespace-nowrap rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
                         >
                           PDFをDL
                         </button>
-                      ) : (
-                        <span className="text-xs text-slate-400">PDFなし</span>
-                      )}
+                        ) : (
+                          <span className="text-xs text-slate-400">PDFなし</span>
+                        ))}
                       {!row.error && (
                         <button
                           type="button"
@@ -251,6 +301,15 @@ export function ResultsTable({
                           工事区分 {row.categories.length}件
                           {row.categoryEngine === "gemini" ? " (Gemini判定)" : " (手動)"}
                         </span>
+                      )}
+                      {onDeleteRow && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteRow(row)}
+                          className="whitespace-nowrap rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                        >
+                          削除
+                        </button>
                       )}
                     </div>
                   </td>

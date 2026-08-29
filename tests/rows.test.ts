@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { expandRow } from "@/lib/rows";
+import { dropColumns, expandRow } from "@/lib/rows";
 import { COLUMNS, WORK_COL } from "@/lib/tsv";
 
 const base = COLUMNS.map((c) => (c === "PJ" ? "9900110101" : c === "工事区分" ? "" : `v:${c}`));
@@ -22,5 +22,17 @@ describe("expandRow", () => {
         if (i !== WORK_COL) expect(v).toBe(base[i]);
       });
     }
+  });
+});
+
+describe("dropColumns", () => {
+  it("指定した列を落とす (アフターの備考欄)", () => {
+    const rows = [["a", "b", "c"], ["d", "e", "f"]];
+    expect(dropColumns(rows, new Set([2]))).toEqual([["a", "b"], ["d", "e"]]);
+  });
+
+  it("空の指定なら元の配列をそのまま返す", () => {
+    const rows = [["a", "b"]];
+    expect(dropColumns(rows, new Set())).toBe(rows);
   });
 });

@@ -25,3 +25,15 @@ export function formatRemarksJst(date: Date = new Date()): string {
   const { month, day } = jstMonthDay(date);
   return `${month}/${day}　点検報告書作成`;
 }
+
+/** 受付日など: 例「8/30」ではなく「2026/8/30」(ゼロ埋めなし) */
+export function formatDateNoPadJst(date: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(date);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return `${get("year")}/${get("month")}/${get("day")}`;
+}

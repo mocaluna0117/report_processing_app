@@ -14,6 +14,9 @@ next-env.d.ts
 写真報告書_例/
 点検報告書_例/
 完了報告書_例/
+アフターメンテナンス顧客データ/
 tests/fixtures/
 *.pdf
 *.PDF
+# 顧客データの取り込み用ファイル (xlsx は public/report/ のテンプレートがあるので個別指定)
+*.csv
