@@ -11,6 +11,7 @@ export function AfterIntake({
   onSubmit,
   busy,
   error,
+  notice,
 }: {
   customer: Customer | null;
   value: string;
@@ -18,6 +19,8 @@ export function AfterIntake({
   onSubmit: () => void;
   busy: boolean;
   error: string | null;
+  /** 登録できたが確認が要る場合の案内 (要約が空だった等) */
+  notice?: string | null;
 }) {
   const ready = customer !== null && value.trim() !== "" && !busy;
   return (
@@ -25,7 +28,7 @@ export function AfterIntake({
       <h2 className="text-lg font-semibold">
         受付内容
         <span className="ml-2 text-xs font-normal text-slate-500">
-          コールセンターの記録を貼り付けると、不具合の事象だけを要約します
+          コールセンターの記録を貼り付けると、不具合の事象を要約します (事象が無い依頼はそのまま残します)
         </span>
       </h2>
 
@@ -73,6 +76,11 @@ export function AfterIntake({
       {error && (
         <p className="mt-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
           {error}
+        </p>
+      )}
+      {notice && (
+        <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {notice}
         </p>
       )}
     </section>

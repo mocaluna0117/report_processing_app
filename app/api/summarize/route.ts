@@ -94,6 +94,24 @@ function buildPrompt(req: SummarizeRequest): string {
   return lines.join("\n");
 }
 
+/** 受付メモ用。事象が無くても依頼内容で埋められるように分けて受け取る */
+const INQUIRY_RESPONSE_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    phenomena: {
+      type: Type.ARRAY,
+      description: "不具合の事象。1要素に1事象",
+      items: { type: Type.STRING },
+    },
+    requests: {
+      type: Type.ARRAY,
+      description: "不具合ではない依頼 (設備の追加希望など)。1要素に1件",
+      items: { type: Type.STRING },
+    },
+  },
+  required: ["phenomena", "requests"],
+};
+
 const RESPONSE_SCHEMA = {
   type: Type.OBJECT,
   properties: {
@@ -106,7 +124,17 @@ const RESPONSE_SCHEMA = {
   required: ["phenomena"],
 };
 
-async function callGemini(apiKey: string, prompt: string): Promise<string[]> {
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((x): x is string => typeof x === "string" && x.trim() !== "")
+    : [];
+}
+
+async function callGemini(
+  apiKey: string,
+  prompt: string,
+  schema: object = RESPONSE_SCHEMA,
+): Promise<Record<string, unknown>> {
   const ai = new GoogleGenAI({ apiKey });
   const { result } = await callWithModelChain(
     GEMINI_SUMMARY_CHAIN,
@@ -118,16 +146,16 @@ async function callGemini(apiKey: string, prompt: string): Promise<string[]> {
         config: {
           temperature: 0.2,
           responseMimeType: "application/json",
-          responseSchema: RESPONSE_SCHEMA,
+          responseSchema: schema,
           httpOptions: { timeout: timeoutMs },
           ...(thinkingConfig ? { thinkingConfig } : {}),
         },
       });
       const text = res.text?.trim();
       if (!text) throw new Error("Geminiが空の応答を返しました");
-      const parsed = JSON.parse(text) as { phenomena?: unknown };
+      const parsed = JSON.parse(text) as Record<string, unknown>;
       if (!Array.isArray(parsed.phenomena)) throw new Error("Geminiの応答形式が不正です");
-      return parsed.phenomena.filter((x): x is string => typeof x === "string" && x.trim() !== "");
+      return parsed;
     },
   );
   return result;
@@ -153,12 +181,19 @@ export async function POST(request: Request): Promise<NextResponse<SummarizeResp
       return NextResponse.json({ summary: ruleBasedInquirySummary(inquiryText), engine: "rule" });
     }
     try {
-      const phenomena = await callGemini(apiKey, buildInquiryPrompt(redactPii(inquiryText)));
+      const parsed = await callGemini(
+        apiKey,
+        buildInquiryPrompt(redactPii(inquiryText)),
+        INQUIRY_RESPONSE_SCHEMA,
+      );
+      const phenomena = stringArray(parsed.phenomena);
+      // 不具合が無い問い合わせ (設備の追加希望など) は、依頼内容をそのまま受付内容にする
+      const items = phenomena.length > 0 ? phenomena : stringArray(parsed.requests);
       return NextResponse.json({
-        summary: formatPhenomena(phenomena, [], { emptyText: "" }),
+        summary: formatPhenomena(items, [], { emptyText: "" }),
         engine: "gemini",
-        ...(phenomena.length === 0
-          ? { error: "受付メモから事象を取り出せませんでした。手入力してください" }
+        ...(items.length === 0
+          ? { error: "受付メモから内容を取り出せませんでした。受付一覧で直接入力してください" }
           : {}),
       });
     } catch (e) {
@@ -176,7 +211,7 @@ export async function POST(request: Request): Promise<NextResponse<SummarizeResp
   }
 
   try {
-    const phenomena = await callGemini(apiKey, buildPrompt(body));
+    const phenomena = stringArray((await callGemini(apiKey, buildPrompt(body))).phenomena);
     // 番号付け・改行はサーバー側で行い、モデルの表記揺れに左右されないようにする
     const notes = body.standaloneNotes.map((n) => stripRequests(n)).filter(Boolean);
     return NextResponse.json({

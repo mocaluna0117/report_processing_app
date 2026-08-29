@@ -77,10 +77,15 @@ describe("ruleBasedInquirySummary", () => {
     expect(ruleBasedInquirySummary("浴室の換気扇から異音がする")).toBe("浴室の換気扇から異音がする");
   });
 
-  it("事象が取れなければ空にする (点検の定型文は出さない)", () => {
+  it("段取りの文しか無ければ、落とす前の文をそのまま残す (空欄で登録しない)", () => {
     const summary = ruleBasedInquirySummary("折り返しご連絡します。よろしくお願いします。");
-    expect(summary).toBe("");
+    expect(summary).not.toBe("");
     expect(summary).not.toContain(NO_DEFECT_TEXT);
+    expect(summary).toContain("折り返しご連絡します");
+  });
+
+  it("短すぎて文が取れないときだけ空になる", () => {
+    expect(ruleBasedInquirySummary("水漏れ")).toBe("");
   });
 
   it("長い文は切り詰める", () => {
@@ -91,11 +96,14 @@ describe("ruleBasedInquirySummary", () => {
 });
 
 describe("buildInquiryPrompt", () => {
-  it("受付メモを本文に含め、事象だけを求める指示を書く", () => {
+  it("受付メモを本文に含め、事象と依頼を分けて求める", () => {
     const prompt = buildInquiryPrompt("浴室の換気扇から異音");
     expect(prompt).toContain("浴室の換気扇から異音");
     expect(prompt).toContain("受付メモ");
-    expect(prompt).toContain("要望は入れない");
+    // 事象が無い依頼も拾えるようにする (空欄で登録されないため)
+    expect(prompt).toContain("phenomena");
+    expect(prompt).toContain("requests");
+    expect(prompt).toContain("対応方針・訪問日程・折り返しの約束は入れない");
   });
 
   it("長さの上限が決まっている", () => {

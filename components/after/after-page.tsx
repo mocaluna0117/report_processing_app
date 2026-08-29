@@ -57,6 +57,7 @@ export function AfterPage() {
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
+  const [registerNotice, setRegisterNotice] = useState<string | null>(null);
   const [mailCaseId, setMailCaseId] = useState<string | null>(null);
   const [reportCaseId, setReportCaseId] = useState<string | null>(null);
 
@@ -199,6 +200,7 @@ export function AfterPage() {
     if (!selected || !inquiryText.trim()) return;
     setRegistering(true);
     setRegisterError(null);
+    setRegisterNotice(null);
     try {
       const result = await summarizeInquiry(inquiryText, selected);
       const row = createAfterCase({
@@ -212,6 +214,14 @@ export function AfterPage() {
       });
       setCases((prev) => [...prev, row]);
       setInquiryText("");
+      if (!result.summary) {
+        // 受付メモに不具合も依頼も書かれていなかった場合。空欄のまま気づかれないと困るのでここでも知らせる
+        setRegisterNotice(
+          result.warning
+            ? `「アフター受付内容」が空欄です — ${result.warning.replace(/^要約API:\s*/, "")}`
+            : "受付内容を要約できなかったため「アフター受付内容」が空欄です。受付一覧の欄に直接入力してください",
+        );
+      }
     } catch (e) {
       setRegisterError(
         `受付を登録できませんでした (${e instanceof Error ? e.message : String(e)})`,
@@ -325,6 +335,7 @@ export function AfterPage() {
             onSubmit={register}
             busy={registering}
             error={registerError}
+            notice={registerNotice}
           />
         )}
       </div>
