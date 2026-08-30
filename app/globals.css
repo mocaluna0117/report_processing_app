@@ -4,6 +4,27 @@
   color-scheme: light;
 }
 
+/*
+ * Tailwind 4 の初期化はブラウザ既定に合わせてボタンのカーソルを変えないので、
+ * 押せるものには指のポインタを出す (Tailwind 3 までと同じ挙動)。
+ */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  select:not(:disabled),
+  summary,
+  label:has(> input[type="checkbox"]:not(:disabled)),
+  input[type="checkbox"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  input:disabled {
+    cursor: not-allowed;
+  }
+}
+
 body {
   font-family:
     "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo,
