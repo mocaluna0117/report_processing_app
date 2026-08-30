@@ -75,22 +75,48 @@ export interface KanaResult {
 }
 
 /**
- * 連名の区切り (「サトウ　ハナコ・サトウ　ジロウ」)。
- * カナとしては正しい書き方なので、要確認にはしない。
+ * 連名の区切り。「サトウ　ハナコ・サトウ　ジロウ」と「・」で並べるほか、
+ * 「サワダ　イサム（タチバナ　ミキコ）」のように2人目を括弧で添える書き方もある。
+ * どちらもカナとしては正しい書き方なので、要確認にはしない。
+ * (分割した区切りも残すため丸ごと捕捉する)
  */
-const JOINT_SEPARATOR = /[・､、]/;
+const JOINT_SEPARATOR = /([・､、（）()])/;
+
+/** 区切りの表記を揃える (読点・半角中黒は「・」に、括弧は全角に) */
+const SEPARATOR_FORMS = new Map([
+  ["・", "・"],
+  ["､", "・"],
+  ["、", "・"],
+  ["（", "（"],
+  ["(", "（"],
+  ["）", "）"],
+  [")", "）"],
+]);
 
 /** カナ読み: 半角カナ・ひらがなをカタカナに寄せ、姓名間は全角スペース1つにする */
 export function normalizeOwnerKana(raw: string, corporate = false): KanaResult {
   const value = trimWide(raw);
   if (!value) return { kana: "" };
-  // 連名は1人ずつ整えてから「・」でつなぎ直す
-  const parts = hiraganaToKatakana(toFullWidthKatakana(value))
-    .split(JOINT_SEPARATOR)
-    .map((part) => normalizeKana(part))
-    .filter((part) => part.kana !== "");
-  const kana = parts.map((part) => part.kana).join("・");
-  if (parts.length > 0 && parts.every((part) => part.valid)) return { kana };
+  // 連名は1人ずつ整えてからつなぎ直す (区切りは書かれていた形のまま残す)
+  const names: { kana: string; valid: boolean }[] = [];
+  let kana = "";
+  for (const piece of hiraganaToKatakana(toFullWidthKatakana(value)).split(JOINT_SEPARATOR)) {
+    const separator = SEPARATOR_FORMS.get(piece);
+    if (separator !== undefined) {
+      kana += separator;
+      continue;
+    }
+    const part = normalizeKana(piece);
+    if (part.kana === "") continue;
+    names.push(part);
+    kana += part.kana;
+  }
+  // 中身が無いまま残った区切りを落とす (「サトウ　ハナコ・」「（）」)
+  kana = kana
+    .replace(/（[\s　]*）/g, "")
+    .replace(/・+/g, "・")
+    .replace(/^・+|・+$/g, "");
+  if (names.length > 0 && names.every((part) => part.valid)) return { kana };
   if (corporate) return { kana };
   return { kana, issue: "カナにカタカナ以外が含まれます (要確認)" };
 }

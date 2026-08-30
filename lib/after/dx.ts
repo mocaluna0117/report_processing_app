@@ -13,7 +13,7 @@ import {
 import { parseBukkenNumber } from "@/lib/after/pj";
 import type { RowResult } from "@/lib/after/suketto";
 import type { Customer, CustomerFields, CustomerIssue } from "@/lib/after/types";
-import { trimWide } from "@/lib/text";
+import { toHalfWidthAlnum, trimWide } from "@/lib/text";
 import type { Contact } from "@/lib/types";
 
 /** 正規化後のヘッダー名 (lib/after/table.ts の normalizeHeader を通した形) */
@@ -37,13 +37,20 @@ export const DX_HEADERS = {
 /**
  * 備考に書かれた「エンド引渡日：2025/3/10」。
  * 備考には「引渡日：」を含む別の記録 (メール文の控えなど) も入るので、この見出しだけを拾う。
+ * 年と月の間の区切りは、打ち間違いで抜けていることがある (「202310/30」)。
+ * 月と日の間の区切りは必須にしてあるので、区切りが1つでも日付の切れ目は一意に決まる。
  */
-const END_HANDOVER = /エンド引渡日\s*[:：]?\s*([0-9０-９]{4}\s*[/／.\-年]\s*[0-9０-９]{1,2}\s*[/／.\-月]\s*[0-9０-９]{1,2})/;
+const END_HANDOVER =
+  /エンド引渡日\s*[:：]?\s*([0-9０-９]{4})\s*[/／.\-年]?\s*([0-9０-９]{1,2})\s*[/／.\-月]\s*([0-9０-９]{1,2})/;
 
 const END_HANDOVER_LABEL = /エンド引渡日/;
 
+/** 備考から「エンド引渡日」を取り出し、yyyy/m/d に組み直す (実在する日付かは呼び出し側で見る) */
 export function extractEndHandover(memo: string): string | null {
-  return END_HANDOVER.exec(memo)?.[1]?.replace(/\s+/g, "") ?? null;
+  const found = END_HANDOVER.exec(memo);
+  if (!found) return null;
+  const [year, month, day] = found.slice(1, 4).map((part) => toHalfWidthAlnum(part));
+  return `${year}/${month}/${day}`;
 }
 
 /** 台帳の書き出しに混ざる技術行 (列キーが値として入っている行) */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyEdits, effectiveFields, mergeImported, openIssues, resetEdits, searchCustomers } from "@/lib/after/customer";
-import { CustomerImportError, countNeedsReview, findPjCollisions, parseCustomerFile } from "@/lib/after/import";
+import { CustomerImportError, countNeedsReview, parseCustomerFile } from "@/lib/after/import";
 import { buildXlsx } from "./helpers/xlsx-fixture";
 
 // 助っ人クラウド (旧システム) の列。実ファイルは個人情報を含むため使わない
@@ -163,18 +163,19 @@ describe("parseCustomerFile (助っ人クラウド)", () => {
     ]);
   });
 
-  it("管理IDがDXの行は取り込まない", () => {
+  it("管理IDがDXの行も取り込む (PJは空欄＋要確認)", () => {
+    // 点検保守台帳にも載っていれば lib/after/dedup.ts が消す。ここで落とすと、
+    // 台帳側が「×使用禁止×」だった顧客がどちらのファイルからも消えてしまう
     const result = parseCustomerFile(
-      suketFile([suketRow(), suketRow({ managementId: "DX" })]),
+      suketFile([suketRow(), suketRow({ managementId: "DX", sei: "架空　", mei: "花子" })]),
       "f.xlsx",
       1,
     );
-    expect(result.customers).toHaveLength(1);
-    expect(result.skipped).toContainEqual({
-      reason: "管理IDがDX (点検保守台帳側で管理)",
-      count: 1,
-      rows: [3],
-    });
+    expect(result.customers).toHaveLength(2);
+    const fromDx = result.customers[1];
+    expect(effectiveFields(fromDx).pj).toBeNull();
+    expect(openIssues(fromDx).map((i) => i.field)).toContain("pj");
+    expect(result.skipped).toEqual([]);
   });
 
   it("内容が完全に同じ行は1件にまとめる", () => {
@@ -378,9 +379,42 @@ describe("parseCustomerFile (点検保守台帳)", () => {
     expect(effectiveFields(result.customers[0]).handoverDate).toBeNull();
   });
 
+  it("年と月の区切りが抜けていても読む (実データの打ち間違い)", () => {
+    // 「エンド引渡日：202310/30」のように区切りが1つ抜けた行がある。
+    // 月と日の区切りは残っているので、日付の切れ目は一意に決まる
+    const result = parseCustomerFile(
+      dxFile([dxRow({ memo: "アフターサービス申込書回収：2025/3/10\nエンド引渡日：202503/10" })]),
+      "DX.xlsx",
+      1,
+    );
+    const customer = result.customers[0];
+    expect(effectiveFields(customer).handoverDate).toBe("2025/03/10");
+    expect(openIssues(customer).some((i) => i.field === "handoverDate")).toBe(false);
+  });
+
+  it("和暦・全角数字の「エンド引渡日」も読む", () => {
+    const yearFirst = parseCustomerFile(
+      dxFile([dxRow({ memo: "エンド引渡日：２０２５年３月１０日" })]),
+      "DX.xlsx",
+      1,
+    );
+    expect(effectiveFields(yearFirst.customers[0]).handoverDate).toBe("2025/03/10");
+  });
+
   it("「エンド引渡日」の見出しはあるが日付として読めなければ要確認にする", () => {
     const result = parseCustomerFile(
-      dxFile([dxRow({ memo: "エンド引渡日：202503/10" })]),
+      dxFile([dxRow({ memo: "エンド引渡日：未定" })]),
+      "DX.xlsx",
+      1,
+    );
+    const customer = result.customers[0];
+    expect(effectiveFields(customer).handoverDate).toBeNull();
+    expect(openIssues(customer).some((i) => i.field === "handoverDate")).toBe(true);
+  });
+
+  it("読めない日付 (2月30日など) は引渡日にしない", () => {
+    const result = parseCustomerFile(
+      dxFile([dxRow({ memo: "エンド引渡日：2025/2/30" })]),
       "DX.xlsx",
       1,
     );
@@ -419,14 +453,11 @@ describe("parseCustomerFile (共通)", () => {
   });
 
   it("スキップの報告に顧客名を含めない (行番号だけ)", () => {
-    const result = parseCustomerFile(
-      suketFile([suketRow({ managementId: "DX" })]),
-      "f.xlsx",
-      1,
-    );
+    // 内容が同じ行 (3行目) がまとめられる
+    const result = parseCustomerFile(suketFile([suketRow(), suketRow()]), "f.xlsx", 1);
     const json = JSON.stringify(result.skipped);
     expect(json).not.toContain("山田");
-    expect(json).toContain("2");
+    expect(json).toContain("3");
   });
 });
 
@@ -501,18 +532,5 @@ describe("searchCustomers", () => {
     const result = searchCustomers(customers, "架空", 1);
     expect(result.matched).toHaveLength(1);
     expect(result.total).toBe(2);
-  });
-});
-
-describe("findPjCollisions", () => {
-  it("助っ人クラウドと点検保守台帳で同じPJがあれば拾う", () => {
-    const suketto = parseCustomerFile(
-      suketFile([suketRow({ managementId: "1234-5" })]),
-      "f.xlsx",
-      1,
-    ).customers;
-    const dx = parseCustomerFile(dxFile([dxRow({ bukken: "1012340101" })]), "DX.xlsx", 1).customers;
-    const collisions = findPjCollisions([...suketto, ...dx]);
-    expect([...collisions.keys()]).toEqual(["1012340101"]);
   });
 });

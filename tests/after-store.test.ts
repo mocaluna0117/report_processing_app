@@ -9,6 +9,7 @@ import {
   saveCustomerEdits,
   saveImport,
 } from "@/lib/after/customer-store";
+import { DUPLICATE_ISSUE } from "@/lib/after/dedup";
 import type { ParsedImport } from "@/lib/after/import";
 import type { Customer, CustomerFields, CustomerSource } from "@/lib/after/types";
 import {
@@ -52,6 +53,14 @@ const customer = (
   importedAt: 1,
   editedAt: null,
 });
+
+/** 既定の fixture と重ならない別物件 (重複判定に引っかからないようにする) */
+const OTHER_PROPERTY: Partial<CustomerFields> = {
+  pj: "2109990101",
+  propertyName: "架空谷9丁目 Z号棟",
+  ownerName: "架空　次郎",
+  address: "北海道架空市南町9-9-9",
+};
 
 const parsed = (source: CustomerSource, customers: Customer[]): ParsedImport => ({
   source,
@@ -98,7 +107,8 @@ describe("顧客データの保存", () => {
 
   it("入れ替えても別の取り込み元 (点検保守台帳) の顧客は消さない", async () => {
     await saveImport(parsed("dx", [customer("dx:1")]));
-    await saveImport(parsed("suketto", [customer("sk:1", "suketto")]));
+    // 重複と判定されないよう、別の物件にしておく
+    await saveImport(parsed("suketto", [customer("sk:1", "suketto", OTHER_PROPERTY)]));
     await saveImport(parsed("suketto", []));
     expect((await loadCustomers()).map((c) => c.id)).toEqual(["dx:1"]);
   });
@@ -129,6 +139,114 @@ describe("顧客データの保存", () => {
     await saveImport(parsed("dx", [customer("dx:1")]));
     await clearCustomers();
     expect(await loadCustomers()).toHaveLength(0);
+  });
+});
+
+// 「点検保守台帳 (DX) を正とし、同じ物件の助っ人クラウドは消す」
+describe("取り込み元をまたいだ重複の解消", () => {
+  /** 同じ物件を指す2件 (助っ人クラウドには引渡日があり、台帳には無い) */
+  const pair = () => ({
+    suketto: customer("sk:1", "suketto", { pj: null, handoverDate: "2023/03/31" }),
+    dx: customer("dx:1", "dx", { handoverDate: null }),
+  });
+
+  it("点検保守台帳を後から取り込むと、重複した助っ人クラウドを消す", async () => {
+    const { suketto, dx } = pair();
+    await saveImport(parsed("suketto", [suketto]));
+    const report = await saveImport(parsed("dx", [dx]));
+    expect(report).toMatchObject({ added: 1, dedupRemoved: 1, supplemented: 1 });
+    expect((await loadCustomers()).map((c) => c.id)).toEqual(["dx:1"]);
+  });
+
+  it("助っ人クラウドを後から取り込むと、重複した行は取り込まない", async () => {
+    const { suketto, dx } = pair();
+    await saveImport(parsed("dx", [dx]));
+    const report = await saveImport(parsed("suketto", [suketto]));
+    expect(report).toMatchObject({ added: 0, dedupRemoved: 1, supplemented: 1 });
+    expect((await loadCustomers()).map((c) => c.id)).toEqual(["dx:1"]);
+  });
+
+  it("台帳の空欄 (引渡日) を助っ人クラウドから補う", async () => {
+    const { suketto, dx } = pair();
+    await saveImport(parsed("suketto", [suketto]));
+    await saveImport(parsed("dx", [dx]));
+    const saved = (await loadCustomers())[0];
+    expect(saved.imported.handoverDate).toBeNull();
+    expect(effectiveFields(saved).handoverDate).toBe("2023/03/31");
+  });
+
+  it("元の助っ人クラウドが消えた後に取り込み直しても補完が残る", async () => {
+    const { suketto, dx } = pair();
+    await saveImport(parsed("suketto", [suketto]));
+    await saveImport(parsed("dx", [dx]));
+    // 台帳だけをもう一度取り込む (補完のもとになった助っ人クラウドの行はもう無い)
+    await saveImport(parsed("dx", [customer("dx:1", "dx", { handoverDate: null })]));
+    expect(effectiveFields((await loadCustomers())[0]).handoverDate).toBe("2023/03/31");
+  });
+
+  it("台帳に引渡日が入ったら補完は外れる (台帳が正)", async () => {
+    const { suketto, dx } = pair();
+    await saveImport(parsed("suketto", [suketto]));
+    await saveImport(parsed("dx", [dx]));
+    await saveImport(parsed("dx", [customer("dx:1", "dx", { handoverDate: "2024/01/15" })]));
+    const saved = (await loadCustomers())[0];
+    expect(saved.supplements?.handoverDate).toBeUndefined();
+    expect(effectiveFields(saved).handoverDate).toBe("2024/01/15");
+  });
+
+  it("取り込み順を変えても同じ結果になる", async () => {
+    const snapshot = async () =>
+      (await loadCustomers())
+        .map((c) => `${c.id}:${JSON.stringify(effectiveFields(c))}`)
+        .sort()
+        .join("\n");
+    const { suketto, dx } = pair();
+    await saveImport(parsed("suketto", [suketto]));
+    await saveImport(parsed("dx", [dx]));
+    const first = await snapshot();
+
+    await clearCustomers();
+    await saveImport(parsed("dx", [pair().dx]));
+    await saveImport(parsed("suketto", [pair().suketto]));
+    expect(await snapshot()).toBe(first);
+  });
+
+  it("重複か決め切れないもの (住所が違う) は消さずに要確認にする", async () => {
+    const suketto = customer("sk:1", "suketto", { pj: null, address: "北海道架空市南町9-9-9" });
+    const report = await saveImport(parsed("suketto", [suketto]));
+    expect(report.dedupUncertain).toBe(0);
+    const after = await saveImport(parsed("dx", [customer("dx:1")]));
+    expect(after).toMatchObject({ dedupRemoved: 0, dedupUncertain: 1 });
+    const kept = (await loadCustomers()).find((c) => c.id === "sk:1");
+    expect(kept?.issues.map((i) => i.message)).toContain(DUPLICATE_ISSUE);
+  });
+
+  it("台帳側が消えたら重複の知らせも消える", async () => {
+    const suketto = customer("sk:1", "suketto", { pj: null, address: "北海道架空市南町9-9-9" });
+    await saveImport(parsed("suketto", [suketto]));
+    await saveImport(parsed("dx", [customer("dx:1")]));
+    await clearCustomers();
+    await saveImport(parsed("suketto", [suketto]));
+    const kept = (await loadCustomers())[0];
+    expect(kept.issues).toHaveLength(0);
+  });
+
+  it("台帳側が「×使用禁止×」で落ちた顧客が、助っ人クラウド側に残る", async () => {
+    // 台帳の行は「×使用禁止×」で取り込まれず、助っ人クラウドの行は管理IDが「DX」。
+    // どちらも相手に譲ると顧客が1件も残らなくなるので、助っ人クラウド側は落とさない
+    const orphan = customer("sk:1", "suketto", { pj: null, ...OTHER_PROPERTY });
+    const report = await saveImport(parsed("suketto", [orphan]));
+    expect(report.dedupRemoved).toBe(0);
+    await saveImport(parsed("dx", [customer("dx:1")]));
+    expect((await loadCustomers()).map((c) => c.id).sort()).toEqual(["dx:1", "sk:1"]);
+  });
+
+  it("重複していない顧客はどちらの取り込み元でも残る", async () => {
+    await saveImport(parsed("dx", [customer("dx:1")]));
+    await saveImport(parsed("suketto", [customer("sk:1", "suketto", OTHER_PROPERTY)]));
+    const report = await saveImport(parsed("dx", [customer("dx:1")]));
+    expect(report.dedupRemoved).toBe(0);
+    expect((await loadCustomers()).map((c) => c.id).sort()).toEqual(["dx:1", "sk:1"]);
   });
 });
 

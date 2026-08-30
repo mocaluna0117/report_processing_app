@@ -42,6 +42,11 @@ export interface Customer {
   sourceRow: number;
   /** 取り込んだ値 (再取込で置き換わる) */
   imported: CustomerFields;
+  /**
+   * 点検保守台帳が空欄だったので助っ人クラウドから補った値 (取り込み値より優先、修正より下)。
+   * 台帳側に値が入ったら外れる。古い保存データには無いので任意。
+   */
+  supplements?: Partial<CustomerFields>;
   /** 利用者の修正 (再取込でも残す) */
   edits: Partial<CustomerFields>;
   issues: CustomerIssue[];

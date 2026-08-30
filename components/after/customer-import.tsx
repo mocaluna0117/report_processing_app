@@ -122,6 +122,19 @@ export function CustomerImport({
             {report.editsPreserved > 0 && ` / 手直しを引き継ぎ ${report.editsPreserved}件`}
             {report.needsReview > 0 && ` / 要確認 ${report.needsReview}件`}
           </p>
+          {report.dedupRemoved > 0 && (
+            <p className="mt-1">
+              点検保守台帳 (DX) を正として、同じ物件の {SOURCE_LABEL.suketto} {report.dedupRemoved}件
+              を{report.source === "suketto" ? "取り込みませんでした" : "削除しました"}
+              {report.supplemented > 0 &&
+                ` (台帳が空欄だった ${report.supplemented}件 は ${SOURCE_LABEL.suketto} から補いました)`}
+            </p>
+          )}
+          {report.dedupUncertain > 0 && (
+            <p className="mt-1">
+              重複か判断できなかった {SOURCE_LABEL.suketto} {report.dedupUncertain}件 は、消さずに要確認にしました
+            </p>
+          )}
           {report.skipped.length > 0 && (
             <ul className="mt-1 list-inside list-disc">
               {report.skipped.map((s) => (

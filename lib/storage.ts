@@ -12,8 +12,11 @@ import { AFTER_REPORT_OPTIONS, normalizeReportOptions } from "@/lib/report/model
 import { COLUMNS } from "@/lib/tsv";
 
 const DB_NAME = "folio";
-/** v2: アフターメンテナンスの顧客データ (customers) を追加 */
-const DB_VERSION = 2;
+/**
+ * v2: アフターメンテナンスの顧客データ (customers) を追加
+ * v3: customers の使っていない source 索引を外す
+ */
+const DB_VERSION = 3;
 /** アップロードしたPDF (id → UploadedFile。File は structured clone でそのまま保存できる) */
 const STORE_FILES = "files";
 /** 結合PDF (pairId → Blob)。大きいので結果JSONとは別に、処理完了時に1回だけ書く */
@@ -80,8 +83,13 @@ function openDb(): Promise<IDBDatabase> {
         if (!db.objectStoreNames.contains(STORE_MERGED)) db.createObjectStore(STORE_MERGED);
         if (!db.objectStoreNames.contains(STORE_META)) db.createObjectStore(STORE_META);
         if (!db.objectStoreNames.contains(STORE_CUSTOMERS)) {
-          const store = db.createObjectStore(STORE_CUSTOMERS, { keyPath: "id" });
-          store.createIndex("source", "source");
+          // 取り込み元での絞り込みは読み込んだ後にJSで行うので、索引は張らない
+          db.createObjectStore(STORE_CUSTOMERS, { keyPath: "id" });
+        } else if (req.transaction) {
+          // v2 で作った source 索引は使っていない。付いたままだと顧客データを取り込み直すたび
+          // (数千件の書き戻し) に索引の作り直しが走って遅くなるので外す
+          const store = req.transaction.objectStore(STORE_CUSTOMERS);
+          if (store.indexNames.contains("source")) store.deleteIndex("source");
         }
       };
       req.onsuccess = () => {

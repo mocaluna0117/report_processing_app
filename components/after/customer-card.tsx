@@ -31,6 +31,9 @@ export function CustomerCard({
   const issues = openIssues(customer);
   const issueOf = (key: keyof CustomerFields) => issues.find((i) => i.field === key)?.message;
   const edited = (key: keyof CustomerFields) => key in customer.edits;
+  // 点検保守台帳が空欄だったので助っ人クラウドから補った項目
+  const supplemented = (key: keyof CustomerFields) =>
+    !edited(key) && key in (customer.supplements ?? {});
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4">
@@ -59,6 +62,9 @@ export function CustomerCard({
             <label key={key} className="block text-sm">
               <span className="font-medium">{label}</span>
               {edited(key) && <span className="ml-1 text-[10px] text-blue-700">手直し済み</span>}
+              {supplemented(key) && (
+                <span className="ml-1 text-[10px] text-slate-500">助っ人クラウドから補完</span>
+              )}
               <input
                 value={(fields[key] as string | null) ?? ""}
                 placeholder={placeholder}

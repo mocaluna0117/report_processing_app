@@ -2,7 +2,6 @@
 // 純関数 (IndexedDB には触らない) なのでテストしやすく、取り込み結果を画面で確認してから保存できる。
 import { decodeCsvBytes, parseCsv } from "@/lib/after/csv-read";
 import { dxRowToCustomer } from "@/lib/after/dx";
-import { effectiveFields } from "@/lib/after/customer";
 import { suketToCustomer } from "@/lib/after/suketto";
 import { detectSource, isEmptyRow, rowToRecord } from "@/lib/after/table";
 import type { Customer, CustomerSource } from "@/lib/after/types";
@@ -120,15 +119,4 @@ export function parseCustomerFile(
 /** 取り込み結果のうち、確認が必要な件数 */
 export function countNeedsReview(customers: Customer[]): number {
   return customers.filter((c) => c.issues.length > 0).length;
-}
-
-/** 助っ人クラウドと点検保守台帳で同じPJを持つ顧客 (画面で注意を出す) */
-export function findPjCollisions(customers: Customer[]): Map<string, Customer[]> {
-  const byPj = new Map<string, Customer[]>();
-  for (const c of customers) {
-    const pj = effectiveFields(c).pj;
-    if (!pj) continue;
-    byPj.set(pj, [...(byPj.get(pj) ?? []), c]);
-  }
-  return new Map([...byPj].filter(([, list]) => new Set(list.map((c) => c.source)).size > 1));
 }

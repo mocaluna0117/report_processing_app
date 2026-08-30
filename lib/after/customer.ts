@@ -2,15 +2,25 @@
 import { buildSearchKey, normalizeQuery } from "@/lib/after/normalize";
 import type { Customer, CustomerFields, CustomerIssue } from "@/lib/after/types";
 
-/** 表示・出力に使う値 (取り込み値に利用者の修正を重ねたもの) */
-export function effectiveFields(customer: Customer): CustomerFields {
-  return { ...customer.imported, ...customer.edits };
+/**
+ * 取り込み値に補完を重ねたもの (利用者の修正は含まない)。
+ * 補完は「点検保守台帳が空欄だったので助っ人クラウドから補った値」なので、取り込み値の一部として扱う。
+ */
+export function baseFields(customer: Customer): CustomerFields {
+  return { ...customer.imported, ...customer.supplements };
 }
 
-/** まだ直されていない要確認だけを返す (その項目を編集したら解消とみなす) */
+/** 表示・出力に使う値 (取り込み値・補完・利用者の修正をこの順に重ねたもの) */
+export function effectiveFields(customer: Customer): CustomerFields {
+  return { ...customer.imported, ...customer.supplements, ...customer.edits };
+}
+
+/** まだ直されていない要確認だけを返す (その項目を編集・補完したら解消とみなす) */
 export function openIssues(customer: Customer): CustomerIssue[] {
   return customer.issues.filter(
-    (issue) => issue.field === null || !(issue.field in customer.edits),
+    (issue) =>
+      issue.field === null ||
+      !(issue.field in customer.edits || issue.field in (customer.supplements ?? {})),
   );
 }
 
@@ -20,45 +30,69 @@ export function needsReview(customer: Customer): boolean {
 
 const sameValue = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
+const isEmptyValue = (value: unknown): boolean =>
+  value === null || value === "" || (Array.isArray(value) && value.length === 0);
+
+/**
+ * 補完を差し替える (助っ人クラウドから補った値)。
+ * 取り込み値に入っている項目は補完しない — 点検保守台帳が正なので、台帳の値が常に勝つ。
+ */
+export function withSupplements(customer: Customer, values: Partial<CustomerFields>): Customer {
+  const supplements: Partial<CustomerFields> = {};
+  for (const [key, value] of Object.entries(values) as [keyof CustomerFields, unknown][]) {
+    if (isEmptyValue(value) || !isEmptyValue(customer.imported[key])) continue;
+    Object.assign(supplements, { [key]: value });
+  }
+  // 変化が無ければ同じオブジェクトを返す (保存が要るかを参照の比較で判定できるように)
+  if (sameValue(supplements, customer.supplements ?? {})) return customer;
+  const next: Customer = { ...customer, supplements };
+  if (Object.keys(supplements).length === 0) delete next.supplements;
+  return { ...next, searchKey: buildSearchKey(effectiveFields(next)) };
+}
+
 /**
  * 利用者の修正を反映する。
- * 取り込み値と同じに戻した項目は修正から外す (再取込で最新の値を受け取れるように)。
+ * 取り込み値 (補完を含む) と同じに戻した項目は修正から外す (再取込で最新の値を受け取れるように)。
  */
 export function applyEdits(
   customer: Customer,
   patch: Partial<CustomerFields>,
   now: number,
 ): Customer {
+  const base = baseFields(customer);
   const edits: Partial<CustomerFields> = { ...customer.edits };
   for (const [key, value] of Object.entries(patch) as [keyof CustomerFields, unknown][]) {
-    if (sameValue(value, customer.imported[key])) delete edits[key];
+    if (sameValue(value, base[key])) delete edits[key];
     else Object.assign(edits, { [key]: value });
   }
   const next: Customer = { ...customer, edits, editedAt: now };
   return { ...next, searchKey: buildSearchKey(effectiveFields(next)) };
 }
 
-/** 取り込み値に戻す (修正をすべて捨てる) */
+/** 取り込み値 (補完を含む) に戻す (修正をすべて捨てる) */
 export function resetEdits(customer: Customer, now: number): Customer {
   return {
     ...customer,
     edits: {},
     editedAt: now,
-    searchKey: buildSearchKey(customer.imported),
+    searchKey: buildSearchKey(baseFields(customer)),
   };
 }
 
 /**
- * 再取込のときに、前の修正を新しい取り込み値へ引き継ぐ。
- * 取り込み値の方が修正と同じになったものは修正から外す。
+ * 再取込のときに、前の修正・補完を新しい取り込み値へ引き継ぐ。
+ * 取り込み値の方が修正・補完と同じ役目を果たすようになったものは外す。
  */
 export function mergeImported(previous: Customer, incoming: Customer): Customer {
+  // 補完は「取り込み値が空欄のときだけ」なので、値が入ったものはここで落ちる
+  const supplemented = withSupplements(incoming, previous.supplements ?? {});
+  const base = baseFields(supplemented);
   const edits: Partial<CustomerFields> = {};
   for (const [key, value] of Object.entries(previous.edits) as [keyof CustomerFields, unknown][]) {
-    if (!sameValue(value, incoming.imported[key])) Object.assign(edits, { [key]: value });
+    if (!sameValue(value, base[key])) Object.assign(edits, { [key]: value });
   }
   const merged: Customer = {
-    ...incoming,
+    ...supplemented,
     edits,
     editedAt: previous.editedAt,
   };

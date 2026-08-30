@@ -44,9 +44,10 @@ export function suketToCustomer(
 ): RowResult {
   const get = (key: string) => record[key] ?? "";
   const managementId = trimWide(get(SUKETTO_HEADERS.managementId));
+  // 管理IDが「DX」の行 (点検保守台帳へ移した印) もそのまま取り込む。
+  // 台帳にも載っていれば lib/after/dedup.ts が消すので、ここで落とすと
+  // 台帳側が「×使用禁止×」だった顧客がどちらからも消えてしまう
   const conversion = managementIdToPj(managementId);
-  // 管理IDが「DX」の行は点検保守台帳側にあるので取り込まない
-  if (conversion.skip === "dx") return { ok: false, skipReason: "管理IDがDX (点検保守台帳側で管理)" };
 
   const issues: CustomerIssue[] = [];
   if (conversion.issue) issues.push({ field: "pj", message: conversion.issue });

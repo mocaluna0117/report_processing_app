@@ -32,13 +32,11 @@ describe("managementIdToPj", () => {
     expect(managementIdToPj("b12-3").pj).toBe("2100120301");
   });
 
-  it("DXの行は取り込まない", () => {
-    expect(managementIdToPj("DX").skip).toBe("dx");
-    expect(managementIdToPj("dx").skip).toBe("dx");
-  });
-
   it("規則に無い形式はPJ空欄＋要確認にする", () => {
-    for (const id of ["123-45", "123", "1234", "B1-2", "架空町3丁目", "NEXT1"]) {
+    // 「DX」(点検保守台帳へ移した印) も落とさず取り込む。台帳にも載っていれば
+    // lib/after/dedup.ts が消すので、ここで落とすと台帳側が「×使用禁止×」の顧客が
+    // どちらのファイルからも消えてしまう
+    for (const id of ["123-45", "123", "1234", "B1-2", "架空町3丁目", "NEXT1", "DX", "dx"]) {
       const result = managementIdToPj(id);
       expect(result.pj, id).toBeNull();
       expect(result.issue, id).toBeTruthy();
@@ -213,6 +211,29 @@ describe("normalizeOwnerKana", () => {
 
   it("連名でも片方にカタカナ以外が混ざれば要確認", () => {
     expect(normalizeOwnerKana("サトウ　ハナコ・サトウ　次郎").issue).toBeTruthy();
+  });
+
+  it("2人目を括弧で添える連名も正しい書き方として扱う", () => {
+    // 氏名が「澤田　敢（橘　幹子）」のように括弧付きのとき、カナも同じ形で入る
+    const result = normalizeOwnerKana("サワダ　イサム（タチバナ　ミキコ）");
+    expect(result.kana).toBe("サワダ　イサム（タチバナ　ミキコ）");
+    expect(result.issue).toBeUndefined();
+    expect(normalizeOwnerKana("キタオカ　ケイイチ（ケイコ）").issue).toBeUndefined();
+  });
+
+  it("括弧は全角にそろえる", () => {
+    expect(normalizeOwnerKana("サワダ　イサム(タチバナ　ミキコ)").kana).toBe(
+      "サワダ　イサム（タチバナ　ミキコ）",
+    );
+  });
+
+  it("括弧の中にカタカナ以外が混ざれば要確認", () => {
+    expect(normalizeOwnerKana("サワダ　イサム（橘　幹子）").issue).toBeTruthy();
+  });
+
+  it("中身の無い区切りは落とす", () => {
+    expect(normalizeOwnerKana("サトウ　ハナコ（）").kana).toBe("サトウ　ハナコ");
+    expect(normalizeOwnerKana("サトウ　ハナコ・").kana).toBe("サトウ　ハナコ");
   });
 });
 

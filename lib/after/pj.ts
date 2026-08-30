@@ -11,8 +11,6 @@ function canonical(raw: string): string {
 
 export interface PjConversion {
   pj: string | null;
-  /** dx: この行は点検保守台帳側にあるので取り込まない */
-  skip?: "dx";
   issue?: string;
 }
 
@@ -31,7 +29,6 @@ const RULES: readonly [RegExp, (m: RegExpExecArray) => string][] = [
 export function managementIdToPj(raw: string): PjConversion {
   const id = canonical(raw);
   if (!id) return { pj: null, issue: "管理IDが空のためPJを特定できません" };
-  if (id === "DX") return { pj: null, skip: "dx" };
   for (const [pattern, build] of RULES) {
     const m = pattern.exec(id);
     if (m) return { pj: build(m) };
