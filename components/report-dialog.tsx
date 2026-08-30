@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ModalShell } from "@/components/modal-shell";
 import { downloadBytes } from "@/lib/download";
 import type { ResultRow } from "@/lib/process";
 import { SUMMARY_COL } from "@/lib/tsv";
@@ -75,15 +76,10 @@ export function ReportDialog({
       .catch(() => setFontInfo(null));
   }, []);
 
-  // Escで閉じられるようにする (他のダイアログと同じ操作感)
+  // 開いたら閉じるボタンに合わせる (Esc・外側クリックでの終了は ModalShell が受け持つ)
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
     closeRef.current?.focus();
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
   const data = useMemo(() => buildReportData(row, row.report), [row]);
   // 指示内容はアフター受付内容そのものなので、編集したらセルに書き戻す
@@ -161,13 +157,11 @@ export function ReportDialog({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`完了報告書 ${row.ownerDisplay}`}
-        className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
-      >
+    <ModalShell
+      label={`完了報告書 ${row.ownerDisplay}`}
+      onClose={onClose}
+      panelClassName="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+    >
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="font-semibold">完了報告書 — {row.ownerDisplay}</h3>
@@ -420,7 +414,6 @@ export function ReportDialog({
             {busy === "pdf" ? "作成中…" : done === "pdf" ? "保存しました ✓" : "PDFをダウンロード"}
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

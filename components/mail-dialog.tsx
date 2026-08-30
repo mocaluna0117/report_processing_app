@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ModalShell } from "@/components/modal-shell";
 import { buildMailText } from "@/lib/email";
 import type { ResultRow } from "@/lib/process";
 import { ADDRESS_COL, HANDOVER_COL, OWNER_COL, PROPERTY_COL, SUMMARY_COL } from "@/lib/tsv";
@@ -24,14 +25,10 @@ export function MailDialog({
   const closeRef = useRef<HTMLButtonElement>(null);
   const fromDatabase = row.kind === "after";
 
+  // 開いたら閉じるボタンに合わせる (Esc・外側クリックでの終了は ModalShell が受け持つ)
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
     closeRef.current?.focus();
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
   const text = useMemo(
     () =>
@@ -68,13 +65,11 @@ export function MailDialog({
   const uncertainContacts = row.mail.contacts.some((c) => c.confidence === "warn");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`メール文 ${row.ownerDisplay}`}
-        className="w-full max-w-3xl rounded-xl bg-white p-5 shadow-xl"
-      >
+    <ModalShell
+      label={`メール文 ${row.ownerDisplay}`}
+      onClose={onClose}
+      panelClassName="w-full max-w-3xl rounded-xl bg-white p-5 shadow-xl"
+    >
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="font-semibold">メール文 — {row.ownerDisplay}</h3>
@@ -151,7 +146,6 @@ export function MailDialog({
             {copied ? "コピーしました ✓" : "メール文をコピー"}
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

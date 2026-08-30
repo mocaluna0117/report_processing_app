@@ -1,28 +1,23 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { ModalShell } from "@/components/modal-shell";
 
 /** クリップボードにアクセスできない環境で、手動コピーしてもらうためのダイアログ */
 export function FallbackTsvDialog({ text, onClose }: { text: string; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
 
+  // 開いたら閉じるボタンに合わせる (Esc・外側クリックでの終了は ModalShell が受け持つ)
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
     closeRef.current?.focus();
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="クリップボードにアクセスできませんでした"
-        className="w-full max-w-3xl rounded-xl bg-white p-5 shadow-xl"
-      >
+    <ModalShell
+      label="クリップボードにアクセスできませんでした"
+      onClose={onClose}
+      panelClassName="w-full max-w-3xl rounded-xl bg-white p-5 shadow-xl"
+    >
         <h3 className="font-semibold">クリップボードにアクセスできませんでした</h3>
         <p className="mt-1 text-sm text-slate-600">
           下のテキストを全選択 (Ctrl/Cmd+A) してコピーし、Excelに貼り付けてください。
@@ -44,7 +39,6 @@ export function FallbackTsvDialog({ text, onClose }: { text: string; onClose: ()
             閉じる
           </button>
         </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }
