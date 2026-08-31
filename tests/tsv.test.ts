@@ -72,24 +72,52 @@ describe("toTsv", () => {
     expect(toTsv([["A", "B"], ["C", "D"]])).toBe("A\tB\r\nC\tD");
   });
 
-  it("改行を含むセルはクオートで包む", () => {
-    expect(toTsv([["a\nb", "c"]])).toBe('"a\nb"\tc');
+  it("セル内の改行は半角スペースに畳む (貼り付け先で行が増えないように)", () => {
+    expect(toTsv([["①玄関ドアのこすれ\n②外壁のひび", "c"]])).toBe(
+      "①玄関ドアのこすれ ②外壁のひび\tc",
+    );
+    // CRLF・連続改行・行頭行末の空白もまとめて1つのスペースにする
+    expect(toTsv([["a\r\n\r\nb"]])).toBe("a b");
+    expect(toTsv([["a \n  b"]])).toBe("a b");
+    expect(toTsv([["a\n"]])).toBe("a");
   });
 
-  it("引用符は二重化する", () => {
-    expect(toTsv([['幅"1m"程度']])).toBe('"幅""1m""程度"');
+  it("引用符はそのまま残す (Excelの貼り付けはクオートを解釈しないため)", () => {
+    expect(toTsv([['幅"1m"程度']])).toBe('幅"1m"程度');
   });
 
   it("セル内タブはスペースに置換 (列崩れ防止)", () => {
     expect(toTsv([["a\tb"]])).toBe("a b");
+  });
+
+  it("全角スペースは壊さない (氏名の姓名区切り)", () => {
+    expect(toTsv([["山田　太郎", "点検\n内容"]])).toBe("山田　太郎\t点検 内容");
+  });
+
+  it("どのセルに改行があっても行数と列数は元のまま", () => {
+    const rows = [
+      ["a\nb", "c", "d\r\ne"],
+      ["f", "g\n\nh", "i"],
+    ];
+    const lines = toTsv(rows).split("\r\n");
+    expect(lines).toHaveLength(rows.length);
+    for (const line of lines) {
+      expect(line).not.toMatch(/[\r\n]/);
+      expect(line.split("\t")).toHaveLength(3);
+    }
   });
 });
 
 describe("toHtmlTable", () => {
   it("セル内改行は<br>になり、HTML特殊文字はエスケープされる", () => {
     const html = toHtmlTable([["a\nb", "<x> & y"]]);
-    expect(html).toBe(
-      "<table><tr><td>a<br>b</td><td>&lt;x&gt; &amp; y</td></tr></table>",
-    );
+    expect(html).toContain("<td style=\"mso-data-placement:same-cell;white-space:pre-wrap\">a<br>b</td>");
+    expect(html).toContain("&lt;x&gt; &amp; y");
+    expect(html.startsWith("<table><tr>")).toBe(true);
+  });
+
+  it("Excelがセル内改行として扱うための指定が全セルに付く", () => {
+    const html = toHtmlTable([["a\nb", "c"], ["d", "e"]]);
+    expect(html.match(/mso-data-placement:same-cell/g)).toHaveLength(4);
   });
 });

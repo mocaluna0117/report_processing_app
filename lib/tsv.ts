@@ -62,11 +62,17 @@ export const LAST_UPDATED_COL = COLUMNS.indexOf("最終更新日");
 /** 備考欄。アフターメンテナンスではこの列を貼り付けない */
 export const REMARKS_COL = COLUMNS.indexOf("備考欄");
 
+/**
+ * 1セル分のテキストを、貼り付けても行がずれない形にする。
+ * Excel の「貼り付け」はクリップボードのプレーンテキストを単純に改行で行・タブで列に切るだけで、
+ * CSV のようなクオート ("...") は解釈しない。改行を残すとその分だけ行が増えてしまうので、
+ * タブ・改行は半角スペースに畳んで1行にする (改行を保ったまま1セルに収めるのは text/html 側の役割)。
+ */
 function escapeTsvCell(v: string): string {
-  let s = v.replace(/\t/g, " ");
-  // 改行・引用符を含むセルはCSV流のクオートで包む (Excelの貼り付けで解釈される)
-  if (/[\n\r"]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
-  return s;
+  return v
+    .replace(/[ \t]*(?:\r\n|\r|\n)+[ \t]*/g, " ")
+    .replace(/\t/g, " ")
+    .replace(/^ +| +$/g, "");
 }
 
 export function toTsv(rows: string[][]): string {
@@ -77,12 +83,23 @@ function escapeHtml(v: string): string {
   return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/** Excelはtext/htmlを優先して読む。<td>内の<br>はセル内改行として貼り付く */
+/**
+ * Excel・Googleスプレッドシートは text/html を優先して読む。こちらは改行を保てる。
+ * ただし <br> だけだと Excel が行を分けてしまうので、
+ * 「この改行はセル内のもの」と伝える mso-data-placement:same-cell を必ず付ける。
+ */
+const CELL_STYLE = "mso-data-placement:same-cell;white-space:pre-wrap";
+
 export function toHtmlTable(rows: string[][]): string {
   const body = rows
     .map(
       (r) =>
-        `<tr>${r.map((c) => `<td>${escapeHtml(c).replace(/\r?\n/g, "<br>")}</td>`).join("")}</tr>`,
+        `<tr>${r
+          .map(
+            (c) =>
+              `<td style="${CELL_STYLE}">${escapeHtml(c).replace(/\r?\n/g, "<br>")}</td>`,
+          )
+          .join("")}</tr>`,
     )
     .join("");
   return `<table>${body}</table>`;
