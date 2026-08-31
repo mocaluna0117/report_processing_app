@@ -85,10 +85,11 @@ function escapeHtml(v: string): string {
 
 /**
  * Excel・Googleスプレッドシートは text/html を優先して読む。こちらは改行を保てる。
- * ただし <br> だけだと Excel が行を分けてしまうので、
- * 「この改行はセル内のもの」と伝える mso-data-placement:same-cell を必ず付ける。
+ * ただし素の <br> だと Excel は改行ごとにセルを分けてしまう。
+ * これを防ぐ指定は <td> ではなく <br> 自身に付ける必要がある (Microsoft のフォーラムの回答)。
+ * https://learn.microsoft.com/en-us/archive/msdn-technet-forums/d80a2ce8-997a-4507-b80e-4f6b9a17bcaa
  */
-const CELL_STYLE = "mso-data-placement:same-cell;white-space:pre-wrap";
+const SAME_CELL_BR = '<br style="mso-data-placement:same-cell">';
 
 export function toHtmlTable(rows: string[][]): string {
   const body = rows
@@ -97,7 +98,7 @@ export function toHtmlTable(rows: string[][]): string {
         `<tr>${r
           .map(
             (c) =>
-              `<td style="${CELL_STYLE}">${escapeHtml(c).replace(/\r?\n/g, "<br>")}</td>`,
+              `<td style="white-space:pre-wrap">${escapeHtml(c).replace(/\r?\n/g, SAME_CELL_BR)}</td>`,
           )
           .join("")}</tr>`,
     )

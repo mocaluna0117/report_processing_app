@@ -111,13 +111,15 @@ describe("toTsv", () => {
 describe("toHtmlTable", () => {
   it("セル内改行は<br>になり、HTML特殊文字はエスケープされる", () => {
     const html = toHtmlTable([["a\nb", "<x> & y"]]);
-    expect(html).toContain("<td style=\"mso-data-placement:same-cell;white-space:pre-wrap\">a<br>b</td>");
+    expect(html).toContain('a<br style="mso-data-placement:same-cell">b');
     expect(html).toContain("&lt;x&gt; &amp; y");
     expect(html.startsWith("<table><tr>")).toBe(true);
   });
 
-  it("Excelがセル内改行として扱うための指定が全セルに付く", () => {
-    const html = toHtmlTable([["a\nb", "c"], ["d", "e"]]);
-    expect(html.match(/mso-data-placement:same-cell/g)).toHaveLength(4);
+  it("Excelがセル内改行として扱うための指定は <br> 自身に付く (td では効かない)", () => {
+    const html = toHtmlTable([["a\nb\nc", "d"], ["e", "f"]]);
+    // 改行の数だけ付く (td には付けない)
+    expect(html.match(/<br style="mso-data-placement:same-cell">/g)).toHaveLength(2);
+    expect(html).not.toContain('<td style="mso-data-placement');
   });
 });
