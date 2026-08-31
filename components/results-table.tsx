@@ -1,7 +1,7 @@
 "use client";
 
 import type { ResultRow } from "@/lib/process";
-import { COLUMNS, SUMMARY_COL, WORK_COL } from "@/lib/tsv";
+import { COLUMNS, SUMMARY_COL, TREATMENT_COL, WORK_COL } from "@/lib/tsv";
 import type { Confidence, WorkCategoryEntry } from "@/lib/types";
 import { WORK_CATEGORIES } from "@/lib/work-categories";
 
@@ -27,9 +27,17 @@ const COL_WIDTH: Record<string, string> = {
   完了報告書取得日: "w-28",
   工事区分: "w-48",
   アフター受付内容: "w-[24rem]",
+  処置: "w-[24rem]",
   最終更新日: "w-24",
   備考欄: "w-44",
 };
+
+/**
+ * アフター受付内容・処置の入力欄。
+ * 表は内容に合わせて列幅を配るので、w-full だと同じ列幅指定でも2列の実寸がずれる。
+ * どちらも同じ大きさに見せるため、見出しの列幅 (w-[24rem]) と揃えた固定幅にする。
+ */
+const BIG_CELL_CLASS = "w-96 rounded border px-2 py-1 text-sm leading-snug";
 
 const EMPTY_CATEGORY: WorkCategoryEntry = { value: "", confidence: "ok" };
 
@@ -189,15 +197,15 @@ export function ResultsTable<R extends ResultRow>({
                       if (k !== 0) return null;
                       return (
                         <td key={COLUMNS[col]} rowSpan={span} className="px-1 py-1.5">
-                          {col === SUMMARY_COL ? (
+                          {col === SUMMARY_COL || col === TREATMENT_COL ? (
                             <div>
                               <textarea
                                 value={value}
                                 rows={6}
                                 onChange={(e) => onCellChange(row.pairId, col, e.target.value)}
-                                className={`w-full rounded border px-2 py-1 text-sm leading-snug ${cellClass(row.confidences[col])}`}
+                                className={`${BIG_CELL_CLASS} ${cellClass(row.confidences[col])}`}
                               />
-                              {row.engine && (
+                              {col === SUMMARY_COL && row.engine && (
                                 <span
                                   className={`mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
                                     row.engine === "gemini"

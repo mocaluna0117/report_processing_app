@@ -32,6 +32,9 @@ export const SUMMARY_COL = COLUMNS.indexOf("アフター受付内容");
 /** 工事区分の列番号 (工事区分の数だけ行を展開する) */
 export const WORK_COL = COLUMNS.indexOf("工事区分");
 
+/** 処置の列番号 (アフター受付内容と同じ大きさの入力欄にする) */
+export const TREATMENT_COL = COLUMNS.indexOf("処置");
+
 /** メール文・完了報告書の組み立てに使う列番号 (テーブルで編集した値をそのまま使うため) */
 export const PJ_COL = COLUMNS.indexOf("PJ");
 export const RECEPTION_TYPE_COL = COLUMNS.indexOf("受付種別");
