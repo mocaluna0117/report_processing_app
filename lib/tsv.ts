@@ -35,6 +35,19 @@ export const WORK_COL = COLUMNS.indexOf("工事区分");
 /** 処置の列番号 (アフター受付内容と同じ大きさの入力欄にする) */
 export const TREATMENT_COL = COLUMNS.indexOf("処置");
 
+/**
+ * 定期点検で使う列名の読み替え (転記先シートの見出しに合わせる)。
+ * COLUMNS 自体は cells の位置を決める内部の名前なので変えず、表示と貼り付けのヘッダーだけ差し替える。
+ */
+export const INSPECTION_COLUMN_LABELS: Readonly<Record<number, string>> = {
+  [SUMMARY_COL]: "点検内容",
+};
+
+/** 貼り付け用のヘッダー行 (読み替えを当てた列名) */
+export function columnHeaders(labels?: Readonly<Record<number, string>>): string[] {
+  return COLUMNS.map((c, i) => labels?.[i] ?? c);
+}
+
 /** メール文・完了報告書の組み立てに使う列番号 (テーブルで編集した値をそのまま使うため) */
 export const PJ_COL = COLUMNS.indexOf("PJ");
 export const RECEPTION_TYPE_COL = COLUMNS.indexOf("受付種別");

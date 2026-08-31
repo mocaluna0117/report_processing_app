@@ -55,7 +55,7 @@ export function ReportDialog({
   row: ResultRow;
   onOptionsChange: (pairId: string, options: ReportOptions) => void;
   onKanaChange: (pairId: string, kana: string) => void;
-  /** 指示内容の編集。アフター受付内容 (結果テーブルのセル) に書き戻す */
+  /** 指示内容の編集。要約の列 (結果テーブルのセル) に書き戻す */
   onSummaryChange: (pairId: string, summary: string) => void;
   onClose: () => void;
 }) {
@@ -81,8 +81,11 @@ export function ReportDialog({
     closeRef.current?.focus();
   }, []);
 
+  /** 指示内容の取り出し元の列名 (画面によって呼び名が違う) */
+  const summaryLabel = row.kind === "after" ? "アフター受付内容" : "点検内容";
+
   const data = useMemo(() => buildReportData(row, row.report), [row]);
-  // 指示内容はアフター受付内容そのものなので、編集したらセルに書き戻す
+  // 指示内容は要約の列そのものなので、編集したらセルに書き戻す
   // (メモ・「指摘なし」の定型文は落とさずに保つ)
   const summaryParts = useMemo(() => splitSummary(row.cells[SUMMARY_COL] ?? ""), [row]);
   /**
@@ -238,7 +241,7 @@ export function ReportDialog({
             <p className="text-sm font-medium">
               指示内容
               <span className="ml-2 text-xs font-normal text-slate-500">
-                ここで直すと結果テーブルの「アフター受付内容」にも反映されます
+                ここで直すと結果テーブルの「{summaryLabel}」にも反映されます
               </span>
             </p>
             <button
@@ -252,7 +255,7 @@ export function ReportDialog({
 
           {items.length === 0 ? (
             <p className="mt-1 text-sm text-amber-800">
-              指示内容が空です。「項目を追加」で入力するか、アフター受付内容を入力してから作成してください
+              指示内容が空です。「項目を追加」で入力するか、{summaryLabel}を入力してから作成してください
             </p>
           ) : (
             <ul className="mt-1.5 space-y-1.5">

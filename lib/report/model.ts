@@ -224,7 +224,11 @@ export function buildReportData(row: ReportSource, options: ReportOptions): Repo
     return text ? { no: circledNumber(i + 1), text } : { no: "", text: "" };
   });
 
-  if (items.length === 0) warnings.push("指示内容が空です (アフター受付内容から項目を取れませんでした)");
+  if (items.length === 0) {
+    // 呼び名は画面に合わせる (定期点検は「点検内容」、アフターメンテナンスは「アフター受付内容」)
+    const summaryLabel = row.kind === "after" ? "アフター受付内容" : "点検内容";
+    warnings.push(`指示内容が空です (${summaryLabel}から項目を取れませんでした)`);
+  }
   if (!ownerKana) warnings.push("施主名のカナが未入力です (カナ無しで出力します)");
 
   const appendix: ReportAppendix | null = useAppendix

@@ -174,7 +174,7 @@ export async function processPair(
       } catch (e) {
         summaryFailed = true;
         warnings.push(
-          `要約の取得に失敗しました (${errorMessage(e)})。アフター受付内容は手動で入力してください`,
+          `要約の取得に失敗しました (${errorMessage(e)})。点検内容は手動で入力してください`,
         );
       }
     };

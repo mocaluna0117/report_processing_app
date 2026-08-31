@@ -3,9 +3,11 @@ import {
   ADDRESS_COL,
   COLUMNS,
   HANDOVER_COL,
+  INSPECTION_COLUMN_LABELS,
   OWNER_COL,
   PROPERTY_COL,
   SUMMARY_COL,
+  columnHeaders,
   toHtmlTable,
   toTsv,
 } from "@/lib/tsv";
@@ -44,6 +46,24 @@ describe("COLUMNS", () => {
     expect(OWNER_COL).toBe(8);
     expect(ADDRESS_COL).toBe(9);
     expect(HANDOVER_COL).toBe(10);
+  });
+});
+
+describe("columnHeaders", () => {
+  it("読み替えなしなら COLUMNS のまま (アフターメンテナンス)", () => {
+    expect(columnHeaders()).toEqual([...COLUMNS]);
+  });
+
+  it("定期点検はアフター受付内容を「点検内容」として貼り付ける", () => {
+    const headers = columnHeaders(INSPECTION_COLUMN_LABELS);
+    expect(headers[SUMMARY_COL]).toBe("点検内容");
+    expect(headers).toHaveLength(COLUMNS.length);
+    // 読み替えるのは要約の列だけ (他の列名は変えない)
+    expect(headers.filter((h, i) => h !== COLUMNS[i])).toEqual(["点検内容"]);
+  });
+
+  it("cells の位置を決める COLUMNS 自体は変えない", () => {
+    expect(COLUMNS[SUMMARY_COL]).toBe("アフター受付内容");
   });
 });
 

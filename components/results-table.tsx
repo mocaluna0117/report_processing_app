@@ -65,6 +65,7 @@ export function ResultsTable<R extends ResultRow>({
   onDeleteRow,
   hiddenColumns,
   selectColumns,
+  columnLabels,
   showPdf = true,
   rowLabel = "施主",
 }: {
@@ -87,6 +88,8 @@ export function ResultsTable<R extends ResultRow>({
   hiddenColumns?: ReadonlySet<number>;
   /** プルダウンにする列 */
   selectColumns?: Record<number, SelectColumn>;
+  /** 画面ごとの列名の読み替え (定期点検の「点検内容」など) */
+  columnLabels?: Readonly<Record<number, string>>;
   /** 結合PDFのダウンロード欄を出すか */
   showPdf?: boolean;
   /** 左端の固定列の見出し */
@@ -95,101 +98,107 @@ export function ResultsTable<R extends ResultRow>({
   const isHidden = (col: number) => hiddenColumns?.has(col) ?? false;
   const visibleColumnCount = COLUMNS.length - (hiddenColumns?.size ?? 0);
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-      <table className="w-full min-w-[2600px] text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
-            {/* 施主列は左端に固定し、横スクロールの対象外にする (コピー対象外のUI見出し) */}
-            <th className="sticky left-0 z-10 w-28 whitespace-nowrap border-r border-slate-200 bg-slate-50 px-2 py-2">
-              {rowLabel}
-            </th>
-            {COLUMNS.map((c, i) =>
-              isHidden(i) ? null : (
-                <th
-                  key={c}
-                  className={`whitespace-nowrap px-2 py-2 ${COL_WIDTH[c] ?? "w-20"}`}
-                >
-                  {c}
-                </th>
-              ),
-            )}
-            {/* 操作列は右端に固定し、横スクロールの対象外にする */}
-            <th className="sticky right-0 z-10 w-32 whitespace-nowrap border-l border-slate-200 bg-slate-50 px-2 py-2">
-              操作
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {results.map((row) => {
-            // 同じ報告書の行は工事区分の数だけ展開し、共通列は rowSpan でまとめて表示する
-            const cats = row.categories.length > 0 ? row.categories : [EMPTY_CATEGORY];
-            const span = cats.length;
-            return cats.map((cat, k) => (
-              <tr
-                key={`${row.pairId}-${k}`}
-                className={`align-top ${k === 0 ? "border-t-2 border-slate-300" : ""}`}
-              >
-                {k === 0 && (
-                  <td
-                    rowSpan={span}
-                    className="sticky left-0 z-10 border-r border-slate-200 bg-white px-2 py-2"
+    // 枠線・角丸は外側に持たせ、スクロールするのは表だけにする
+    // (警告の一覧を枠の外に置いて、行が増えても必ず表の下に見えるようにする)。
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      {/* 行が増えても横スクロールバーに届くよう、表の高さを区切ってこの中でスクロールさせる。
+          縦もこの中でスクロールするので、見出しの sticky が画面内に残る。
+          scroll-p* は Tab移動でセルが固定した見出し・左右の列の下に潜らないための余白。 */}
+      <div className="max-h-[70vh] scroll-pt-10 scroll-pl-28 scroll-pr-32 overflow-auto">
+        <table className="w-full min-w-[2600px] text-sm">
+          <thead>
+            <tr className="text-left text-xs text-slate-500">
+              {/* 施主列は左端に固定し、横スクロールの対象外にする (コピー対象外のUI見出し) */}
+              <th className="sticky left-0 top-0 z-30 w-28 whitespace-nowrap border-r border-b border-slate-200 bg-slate-50 px-2 py-2">
+                {rowLabel}
+              </th>
+              {COLUMNS.map((c, i) =>
+                isHidden(i) ? null : (
+                  <th
+                    key={c}
+                    className={`sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50 px-2 py-2 ${COL_WIDTH[c] ?? "w-20"}`}
                   >
-                    <p className="max-w-28 truncate text-sm font-medium" title={row.ownerDisplay}>
-                      {row.ownerDisplay || "－"}
-                    </p>
-                    {span > 1 && (
-                      <p className="text-[10px] text-slate-400">{span}行に展開</p>
-                    )}
-                  </td>
-                )}
+                    {columnLabels?.[i] ?? c}
+                  </th>
+                ),
+              )}
+              {/* 操作列は右端に固定し、横スクロールの対象外にする */}
+              <th className="sticky right-0 top-0 z-30 w-32 whitespace-nowrap border-l border-b border-slate-200 bg-slate-50 px-2 py-2">
+                操作
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {results.map((row) => {
+              // 同じ報告書の行は工事区分の数だけ展開し、共通列は rowSpan でまとめて表示する
+              const cats = row.categories.length > 0 ? row.categories : [EMPTY_CATEGORY];
+              const span = cats.length;
+              return cats.map((cat, k) => (
+                <tr
+                  key={`${row.pairId}-${k}`}
+                  className={`align-top ${k === 0 ? "border-t-2 border-slate-300" : ""}`}
+                >
+                  {k === 0 && (
+                    <td
+                      rowSpan={span}
+                      className="sticky left-0 z-10 border-r border-slate-200 bg-white px-2 py-2"
+                    >
+                      <p className="max-w-28 truncate text-sm font-medium" title={row.ownerDisplay}>
+                        {row.ownerDisplay || "－"}
+                      </p>
+                      {span > 1 && (
+                        <p className="text-[10px] text-slate-400">{span}行に展開</p>
+                      )}
+                    </td>
+                  )}
 
-                {row.error
-                  ? k === 0 && (
-                      <td colSpan={visibleColumnCount} rowSpan={span} className="px-2 py-2">
-                        <span className="text-red-600">
-                          {row.ownerDisplay}: 処理に失敗しました — {row.error}
-                        </span>
-                      </td>
-                    )
-                  : row.cells.map((value, col) => {
-                      if (isHidden(col)) return null;
-                      if (col === WORK_COL) {
-                        return (
-                          <td key={COLUMNS[col]} className="px-1 py-1.5">
-                            <div className="flex items-center gap-1">
-                              <select
-                                value={cat.value}
-                                title={cat.item ? `シート上の項目: ${cat.item}` : undefined}
-                                onChange={(e) => onCategoryChange(row.pairId, k, e.target.value)}
-                                className={`w-full rounded border px-1 py-1 text-sm ${cellClass(cat.confidence)}`}
-                              >
-                                <option value="">－</option>
-                                {WORK_CATEGORIES.map((c) => (
-                                  <option key={c} value={c}>
-                                    {c}
-                                  </option>
-                                ))}
-                              </select>
-                              {row.categories.length > 0 && (
-                                <button
-                                  type="button"
-                                  title="この工事区分の行を削除"
-                                  onClick={() => onCategoryRemove(row.pairId, k)}
-                                  className="rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-red-600"
+                  {row.error
+                    ? k === 0 && (
+                        <td colSpan={visibleColumnCount} rowSpan={span} className="px-2 py-2">
+                          <span className="text-red-600">
+                            {row.ownerDisplay}: 処理に失敗しました — {row.error}
+                          </span>
+                        </td>
+                      )
+                    : row.cells.map((value, col) => {
+                        if (isHidden(col)) return null;
+                        if (col === WORK_COL) {
+                          return (
+                            <td key={COLUMNS[col]} className="px-1 py-1.5">
+                              <div className="flex items-center gap-1">
+                                <select
+                                  value={cat.value}
+                                  title={cat.item ? `シート上の項目: ${cat.item}` : undefined}
+                                  onChange={(e) => onCategoryChange(row.pairId, k, e.target.value)}
+                                  className={`w-full rounded border px-1 py-1 text-sm ${cellClass(cat.confidence)}`}
                                 >
-                                  ✕
-                                </button>
-                              )}
-                              {k === span - 1 && (
-                                <button
-                                  type="button"
-                                  title="工事区分の行を追加"
-                                  onClick={() => onCategoryAdd(row.pairId)}
-                                  className="rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
-                                >
-                                  ＋
-                                </button>
-                              )}
+                                  <option value="">－</option>
+                                  {WORK_CATEGORIES.map((c) => (
+                                    <option key={c} value={c}>
+                                      {c}
+                                    </option>
+                                  ))}
+                                </select>
+                                {row.categories.length > 0 && (
+                                  <button
+                                    type="button"
+                                    title="この工事区分の行を削除"
+                                    onClick={() => onCategoryRemove(row.pairId, k)}
+                                    className="rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-red-600"
+                                  >
+                                    ✕
+                                  </button>
+                                )}
+                                {k === span - 1 && (
+                                  <button
+                                    type="button"
+                                    title="工事区分の行を追加"
+                                    onClick={() => onCategoryAdd(row.pairId)}
+                                    className="rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
+                                  >
+                                    ＋
+                                  </button>
+                                )}
                             </div>
                           </td>
                         );
@@ -326,7 +335,8 @@ export function ResultsTable<R extends ResultRow>({
             ));
           })}
         </tbody>
-      </table>
+        </table>
+      </div>
       {results.some((r) => r.warnings.length > 0) && (
         <div className="border-t border-slate-200 bg-amber-50/50 px-3 py-2 text-xs text-amber-900">
           {results

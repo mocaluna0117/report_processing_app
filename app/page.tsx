@@ -28,7 +28,7 @@ import {
   savePairs,
   saveResults,
 } from "@/lib/storage";
-import { COLUMNS, SUMMARY_COL } from "@/lib/tsv";
+import { INSPECTION_COLUMN_LABELS, SUMMARY_COL, columnHeaders } from "@/lib/tsv";
 import { useExcelCopy } from "@/lib/use-excel-copy";
 import { usePersistence } from "@/lib/use-persistence";
 import { useRowEditors } from "@/lib/use-row-editors";
@@ -240,7 +240,9 @@ export default function Home() {
   // 工事区分の数だけ行を展開した貼り付け用データ
   const dataRows = () => {
     const data = rows.filter((r) => !r.error).flatMap(rowsOf);
-    return copyState.includeHeader ? [[...COLUMNS], ...data] : data;
+    return copyState.includeHeader
+      ? [columnHeaders(INSPECTION_COLUMN_LABELS), ...data]
+      : data;
   };
 
   const zipAll = async () => {
@@ -400,6 +402,7 @@ export default function Home() {
             onOpenMail={(row) => setMailPairId(row.pairId)}
             onOpenReport={(row) => setReportPairId(row.pairId)}
             onPrefetchReport={prefetchReportAssets}
+            columnLabels={INSPECTION_COLUMN_LABELS}
           />
         </section>
       )}
