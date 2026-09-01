@@ -20,3 +20,4 @@ tests/fixtures/
 *.PDF
 # 顧客データの取り込み用ファイル (xlsx は public/report/ のテンプレートがあるので個別指定)
 *.csv
+.vercel
