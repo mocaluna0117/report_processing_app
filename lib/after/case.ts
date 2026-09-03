@@ -15,6 +15,8 @@ export interface CreateAfterCaseInput {
   inquiryText: string;
   /** アフター受付内容 (要約結果) */
   summary: string;
+  /** 要約APIへ送った伏せ字済みの受付メモ (学習用) */
+  redactedInquiry?: string;
   engine: "gemini" | "rule" | null;
   /** 要約が取れなかった (手入力してもらう) */
   summaryFailed?: boolean;
@@ -63,6 +65,8 @@ export function createAfterCase(input: CreateAfterCaseInput): AfterCase {
     customerId: input.customer.id,
     customerSource: input.customer.source,
     inquiryText: input.inquiryText,
+    redactedInquiry: input.redactedInquiry,
+    originalSummary: input.summary,
     createdAt: now.getTime(),
     ownerDisplay: ownerName || fields.propertyName,
     cells,

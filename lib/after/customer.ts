@@ -69,6 +69,30 @@ export function applyEdits(
   return { ...next, searchKey: buildSearchKey(effectiveFields(next)) };
 }
 
+/**
+ * 写真報告書 (定期点検) の引渡日を利用者の修正として反映し、出どころを残す。
+ * 修正として書くので、顧客データを取り込み直しても残る。
+ */
+export function applyReportHandoverDate(
+  customer: Customer,
+  date: string,
+  pj: string | null,
+  now: number,
+): Customer {
+  return {
+    ...applyEdits(customer, { handoverDate: date }, now),
+    reportSync: { handoverDate: date, at: now, pj },
+  };
+}
+
+/** 引渡日が写真報告書から反映されたものか (顧客カードの表示に使う) */
+export function isReportHandover(customer: Customer): boolean {
+  return (
+    customer.reportSync !== undefined &&
+    customer.edits.handoverDate === customer.reportSync.handoverDate
+  );
+}
+
 /** 取り込み値 (補完を含む) に戻す (修正をすべて捨てる) */
 export function resetEdits(customer: Customer, now: number): Customer {
   return {
@@ -95,6 +119,8 @@ export function mergeImported(previous: Customer, incoming: Customer): Customer 
     ...supplemented,
     edits,
     editedAt: previous.editedAt,
+    // 引渡日の出どころ (報告書から反映) は取り込み直しても残す
+    reportSync: previous.reportSync,
   };
   return { ...merged, searchKey: buildSearchKey(effectiveFields(merged)) };
 }

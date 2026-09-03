@@ -55,6 +55,22 @@ export interface Customer {
   searchKey: string;
   importedAt: number;
   editedAt: number | null;
+  /**
+   * 定期点検の写真報告書から引渡日を反映した記録 (画面に出どころを出すため)。
+   * edits.handoverDate と同じ値のときだけ有効とみなす。
+   * 手で別の値に直した・取り込んだ内容に戻した・再取込で同じ値になった、
+   * いずれの場合も自然に無効になるので消す処理は要らない。
+   */
+  reportSync?: ReportSync;
+}
+
+/** 写真報告書から引渡日を反映した記録 (個人情報は持たない) */
+export interface ReportSync {
+  handoverDate: string;
+  /** 反映した日時 */
+  at: number;
+  /** 元になった報告書のPJ (表示用) */
+  pj: string | null;
 }
 
 /** 受付一覧の1件。ResultRow 互換にして結果テーブル・メール文・完了報告書をそのまま使う */
@@ -64,5 +80,9 @@ export type AfterCase = ResultRow & {
   customerSource: CustomerSource;
   /** 貼り付けた受付メモ (ブラウザ内のみ) */
   inquiryText: string;
+  /** 要約APIへ送った伏せ字済みの受付メモ (学習用)。古い保存データには無い */
+  redactedInquiry?: string;
+  /** 登録した時点の要約 (手直し前)。学習ボタンで「手直し済みか」を出すのに使う */
+  originalSummary?: string;
   createdAt: number;
 };

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ModalShell } from "@/components/modal-shell";
 import { downloadBytes } from "@/lib/download";
 import type { ResultRow } from "@/lib/process";
-import { SUMMARY_COL } from "@/lib/tsv";
+import { isSummarySplit, recordSummary } from "@/lib/summary";
 import { loadReportAssets, resolveReportFonts } from "@/lib/report/assets";
 import {
   canQueryLocalFonts,
@@ -87,7 +87,13 @@ export function ReportDialog({
   const data = useMemo(() => buildReportData(row, row.report), [row]);
   // 指示内容は要約の列そのものなので、編集したらセルに書き戻す
   // (メモ・「指摘なし」の定型文は落とさずに保つ)
-  const summaryParts = useMemo(() => splitSummary(row.cells[SUMMARY_COL] ?? ""), [row]);
+  const summaryParts = useMemo(() => splitSummary(recordSummary(row)), [row]);
+  /**
+   * 点検内容を工事区分ごとに分けているときは、ここで直せない。
+   * どの区分の項目かが分からず、書き戻し先を決められないため
+   * (結果テーブルの各行で直してもらう)。
+   */
+  const splitByCategory = isSummarySplit(row);
   /**
    * 編集中の項目。書き戻すときに空欄は落とすので、入力途中の空欄はここで保つ
    * (「項目を追加」した直後の空欄が消えないようにする)。
@@ -241,21 +247,27 @@ export function ReportDialog({
             <p className="text-sm font-medium">
               指示内容
               <span className="ml-2 text-xs font-normal text-slate-500">
-                ここで直すと結果テーブルの「{summaryLabel}」にも反映されます
+                {splitByCategory
+                  ? `「${summaryLabel}」は工事区分ごとに分けて編集中です。直すときは結果テーブルの各行で編集してください`
+                  : `ここで直すと結果テーブルの「${summaryLabel}」にも反映されます`}
               </span>
             </p>
-            <button
-              type="button"
-              onClick={() => editItems([...items, ""])}
-              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
-            >
-              項目を追加
-            </button>
+            {!splitByCategory && (
+              <button
+                type="button"
+                onClick={() => editItems([...items, ""])}
+                className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
+              >
+                項目を追加
+              </button>
+            )}
           </div>
 
           {items.length === 0 ? (
             <p className="mt-1 text-sm text-amber-800">
-              指示内容が空です。「項目を追加」で入力するか、{summaryLabel}を入力してから作成してください
+              {splitByCategory
+                ? `指示内容が空です。結果テーブルの各行の${summaryLabel}を入力してから作成してください`
+                : `指示内容が空です。「項目を追加」で入力するか、${summaryLabel}を入力してから作成してください`}
             </p>
           ) : (
             <ul className="mt-1.5 space-y-1.5">
@@ -268,20 +280,25 @@ export function ReportDialog({
                   </span>
                   <input
                     value={item}
+                    readOnly={splitByCategory}
                     onChange={(e) =>
                       editItems(items.map((v, j) => (j === i ? e.target.value : v)))
                     }
                     placeholder="1階洋室 天井クロス：クロス表面に凹凸あり"
-                    className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                    className={`w-full rounded border border-slate-300 px-2 py-1.5 text-sm ${
+                      splitByCategory ? "bg-slate-50 text-slate-600" : "bg-white"
+                    }`}
                   />
-                  <button
-                    type="button"
-                    title="この項目を削除"
-                    onClick={() => editItems(items.filter((_, j) => j !== i))}
-                    className="shrink-0 rounded px-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                  >
-                    ✕
-                  </button>
+                  {!splitByCategory && (
+                    <button
+                      type="button"
+                      title="この項目を削除"
+                      onClick={() => editItems(items.filter((_, j) => j !== i))}
+                      className="shrink-0 cursor-pointer rounded px-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>

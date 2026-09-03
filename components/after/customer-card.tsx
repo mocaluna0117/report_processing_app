@@ -1,6 +1,6 @@
 "use client";
 
-import { effectiveFields, openIssues } from "@/lib/after/customer";
+import { effectiveFields, isReportHandover, openIssues } from "@/lib/after/customer";
 import type { Customer, CustomerFields } from "@/lib/after/types";
 import { parsePhoneCell } from "@/lib/after/normalize";
 
@@ -61,7 +61,14 @@ export function CustomerCard({
           return (
             <label key={key} className="block text-sm">
               <span className="font-medium">{label}</span>
-              {edited(key) && <span className="ml-1 text-[10px] text-blue-700">手直し済み</span>}
+              {edited(key) &&
+                (key === "handoverDate" && isReportHandover(customer) ? (
+                  <span className="ml-1 text-[10px] text-blue-700">
+                    定期点検の報告書から更新
+                  </span>
+                ) : (
+                  <span className="ml-1 text-[10px] text-blue-700">手直し済み</span>
+                ))}
               {supplemented(key) && (
                 <span className="ml-1 text-[10px] text-slate-500">助っ人クラウドから補完</span>
               )}

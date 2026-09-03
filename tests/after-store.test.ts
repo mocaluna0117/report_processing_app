@@ -1,15 +1,23 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createAfterCase } from "@/lib/after/case";
-import { applyEdits, effectiveFields } from "@/lib/after/customer";
+import { applyEdits, effectiveFields, isReportHandover } from "@/lib/after/customer";
 import {
   clearCustomers,
   countCustomers,
   loadCustomers,
   saveCustomerEdits,
   saveImport,
+  saveReportHandoverDates,
 } from "@/lib/after/customer-store";
 import { DUPLICATE_ISSUE } from "@/lib/after/dedup";
+import {
+  clearInquiryExamples,
+  deleteInquiryExample,
+  loadInquiryExamples,
+  mergeInquiryExamples,
+  upsertInquiryExample,
+} from "@/lib/after/examples-store";
 import type { ParsedImport } from "@/lib/after/import";
 import type { Customer, CustomerFields, CustomerSource } from "@/lib/after/types";
 import {
@@ -75,6 +83,7 @@ beforeEach(async () => {
   await clearAll();
   await clearCustomers();
   await clearAfterCases();
+  await clearInquiryExamples();
 });
 
 describe("顧客データの保存", () => {
@@ -325,5 +334,147 @@ describe("applyEdits", () => {
     const edited = applyEdits(customer("dx:1"), { developer: "大和ハウス工業" }, 5);
     expect(edited.edits).toEqual({ developer: "大和ハウス工業" });
     expect(edited.editedAt).toBe(5);
+  });
+});
+
+describe("学習した書き方の保存", () => {
+  const example = (id: string, output = "浴室の換気扇から異音", updatedAt = 1_000) => ({
+    id,
+    input: "（お客様）より入電。浴室の換気扇から異音",
+    output,
+    createdAt: 1_000,
+    updatedAt,
+  });
+
+  it("学習を保存して読み戻せる", async () => {
+    await upsertInquiryExample(example("c-1"));
+    await upsertInquiryExample(example("c-2"));
+    const saved = await loadInquiryExamples();
+    expect(saved).toHaveLength(2);
+    expect(saved.map((e) => e.id)).toEqual(["c-1", "c-2"]);
+  });
+
+  it("同じ受付を学習し直すと差し替わる", async () => {
+    await upsertInquiryExample(example("c-1"));
+    await upsertInquiryExample(example("c-1", "直した本文", 2_000));
+    const saved = await loadInquiryExamples();
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ output: "直した本文", createdAt: 1_000, updatedAt: 2_000 });
+  });
+
+  it("1件だけ消せる / 最後の1件も消せる", async () => {
+    await upsertInquiryExample(example("c-1"));
+    await upsertInquiryExample(example("c-2"));
+    expect(await deleteInquiryExample("c-1")).toHaveLength(1);
+    expect(await loadInquiryExamples()).toHaveLength(1);
+    await deleteInquiryExample("c-2");
+    expect(await loadInquiryExamples()).toEqual([]);
+  });
+
+  it("書き出したものを取り込める (同じ id は新しい方)", async () => {
+    await upsertInquiryExample(example("c-1", "古い本文", 1_000));
+    await mergeInquiryExamples([
+      example("c-1", "新しい本文", 3_000),
+      example("c-9", "別の受付", 3_000),
+    ]);
+    const saved = await loadInquiryExamples();
+    expect(saved).toHaveLength(2);
+    expect(saved.find((e) => e.id === "c-1")?.output).toBe("新しい本文");
+  });
+
+  it("「保存データを消去」「受付一覧を消去」では消えない (設定扱い)", async () => {
+    await upsertInquiryExample(example("c-1"));
+    await clearAfterCases();
+    await clearAll();
+    expect(await loadInquiryExamples()).toHaveLength(1);
+    // 学習だけがある状態では「前回の内容」とはみなさない
+    expect(await hasStoredData()).toBe(false);
+  });
+
+  it("すべて消去できる", async () => {
+    await upsertInquiryExample(example("c-1"));
+    await clearInquiryExamples();
+    expect(await loadInquiryExamples()).toEqual([]);
+  });
+
+  it("受付の伏せ字メモも保存・復元される", async () => {
+    const row = createAfterCase({
+      id: "c-1",
+      customer: customer("dx:1"),
+      inquiryText: "原文のメモ",
+      redactedInquiry: "伏せ字のメモ",
+      summary: "浴室の換気扇から異音",
+      engine: "gemini",
+    });
+    await saveAfterCases([row]);
+    const [loaded] = await loadAfterCases();
+    expect(loaded.redactedInquiry).toBe("伏せ字のメモ");
+    expect(loaded.originalSummary).toBe("浴室の換気扇から異音");
+  });
+});
+
+describe("報告書の引渡日の反映", () => {
+  it("修正として書き、出どころを残す", async () => {
+    await saveImport(parsed("dx", [customer("dx:1", "dx", { handoverDate: null })]));
+    const saved = await saveReportHandoverDates([
+      { id: "dx:1", date: "2025/09/26", pj: "2101230101" },
+    ]);
+    expect(saved).toHaveLength(1);
+    const [stored] = await loadCustomers();
+    expect(effectiveFields(stored).handoverDate).toBe("2025/09/26");
+    expect(stored.edits.handoverDate).toBe("2025/09/26");
+    expect(stored.reportSync).toMatchObject({ handoverDate: "2025/09/26", pj: "2101230101" });
+    expect(isReportHandover(stored)).toBe(true);
+  });
+
+  it("見つからないIDは飛ばし、複数件を1回で書ける", async () => {
+    await saveImport(
+      parsed("dx", [
+        customer("dx:1", "dx", { handoverDate: null }),
+        customer("dx:2", "dx", { ...OTHER_PROPERTY, handoverDate: null }),
+      ]),
+    );
+    const saved = await saveReportHandoverDates([
+      { id: "dx:1", date: "2025/09/26", pj: "2101230101" },
+      { id: "dx:2", date: "2024/04/01", pj: "2109990101" },
+      { id: "dx:missing", date: "2020/01/01", pj: null },
+    ]);
+    expect(saved).toHaveLength(2);
+    const stored = await loadCustomers();
+    expect(stored.map((c) => effectiveFields(c).handoverDate).sort()).toEqual([
+      "2024/04/01",
+      "2025/09/26",
+    ]);
+  });
+
+  it("顧客データを取り込み直しても残る", async () => {
+    const imported = () => parsed("dx", [customer("dx:1", "dx", { handoverDate: null })]);
+    await saveImport(imported());
+    await saveReportHandoverDates([{ id: "dx:1", date: "2025/09/26", pj: "2101230101" }]);
+    const report = await saveImport(imported());
+    expect(report.editsPreserved).toBe(1);
+    const [stored] = await loadCustomers();
+    expect(effectiveFields(stored).handoverDate).toBe("2025/09/26");
+    expect(isReportHandover(stored)).toBe(true);
+  });
+
+  it("取り込んだ値が同じになれば修正は外れ、出どころの表示も消える", async () => {
+    await saveImport(parsed("dx", [customer("dx:1", "dx", { handoverDate: null })]));
+    await saveReportHandoverDates([{ id: "dx:1", date: "2025/09/26", pj: "2101230101" }]);
+    await saveImport(parsed("dx", [customer("dx:1", "dx", { handoverDate: "2025/09/26" })]));
+    const [stored] = await loadCustomers();
+    expect(stored.edits.handoverDate).toBeUndefined();
+    expect(effectiveFields(stored).handoverDate).toBe("2025/09/26");
+    expect(isReportHandover(stored)).toBe(false);
+  });
+
+  it("元に戻すと取り込んだ値に戻る", async () => {
+    await saveImport(parsed("dx", [customer("dx:1", "dx", { handoverDate: "2024/04/01" })]));
+    await saveReportHandoverDates([{ id: "dx:1", date: "2025/09/26", pj: "2101230101" }]);
+    await saveCustomerEdits("dx:1", { handoverDate: "2024/04/01" });
+    const [stored] = await loadCustomers();
+    expect(stored.edits.handoverDate).toBeUndefined();
+    expect(effectiveFields(stored).handoverDate).toBe("2024/04/01");
+    expect(isReportHandover(stored)).toBe(false);
   });
 });

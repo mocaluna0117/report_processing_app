@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { NextResponse } from "next/server";
 import { GEMINI_SUMMARY_CHAIN, callWithModelChain } from "@/lib/gemini-model";
+import { redactExamples, sanitizeExamples } from "@/lib/summarize/examples";
 import { redactPii } from "@/lib/summarize/redact";
 import { formatPhenomena } from "@/lib/summarize/format";
 import { INQUIRY_TEXT_MAX, buildInquiryPrompt, ruleBasedInquirySummary } from "@/lib/summarize/inquiry";
@@ -49,6 +50,8 @@ function sanitizeRequest(raw: unknown): SummarizeRequest {
     noAbnormality: obj.noAbnormality === true,
     // 制御文字はプロンプトを壊すので落とす
     inquiryText: str(obj.inquiryText, INQUIRY_TEXT_MAX).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, ""),
+    // 学習した書き方 (件数・長さ・制御文字をここで抑える)
+    examples: sanitizeExamples(obj.examples),
   };
 }
 
@@ -183,7 +186,8 @@ export async function POST(request: Request): Promise<NextResponse<SummarizeResp
     try {
       const parsed = await callGemini(
         apiKey,
-        buildInquiryPrompt(redactPii(inquiryText)),
+        // 手本も伏せ字を掛け直してから渡す (保存時に伏せた上での保険)
+        buildInquiryPrompt(redactPii(inquiryText), redactExamples(body.examples ?? [])),
         INQUIRY_RESPONSE_SCHEMA,
       );
       const phenomena = stringArray(parsed.phenomena);

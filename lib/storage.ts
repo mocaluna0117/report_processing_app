@@ -22,7 +22,7 @@ const STORE_FILES = "files";
 /** 結合PDF (pairId → Blob)。大きいので結果JSONとは別に、処理完了時に1回だけ書く */
 const STORE_MERGED = "merged";
 /** その他 (pairs / results / 受付一覧 のJSON) */
-const STORE_META = "meta";
+export const STORE_META = "meta";
 /** アフターメンテナンスの顧客データ (id → Customer)。件数が多いので専用ストアに置く */
 export const STORE_CUSTOMERS = "customers";
 const META_PAIRS = "pairs";
@@ -44,6 +44,12 @@ const INSPECTION_META_KEYS: readonly string[] = [META_PAIRS, META_RESULTS];
 export const SETTING_KEY_FONT_INFO = "report:fontInfo";
 export const SETTING_KEY_FONT_REGULAR = "report:fontRegular";
 export const SETTING_KEY_FONT_BOLD = "report:fontBold";
+/**
+ * アフター受付内容の「学習した書き方」(伏せ字済みの受付メモ → 利用者が書いた本文)。
+ * 設定の一種なので「保存データを消去」「受付一覧を消去」では消さない (専用のボタンで消す)。
+ * 伏せ字にした本文だけを置くこと (氏名・電話番号・住所をこのキーで保存してはいけない)。
+ */
+export const META_INQUIRY_EXAMPLES = "inquiryExamples";
 
 export function isStorageAvailable(): boolean {
   return typeof indexedDB !== "undefined";
@@ -278,6 +284,41 @@ export async function clearResults(pairIds?: string[]): Promise<void> {
   });
 }
 
+/**
+ * 1報告書分の保存データを消す (アップロードしたPDF・結合PDF・ペアリング・抽出結果)。
+ *
+ * 抽出結果だけを消してペアリングを残すと、次の「処理実行」で同じ報告書が戻ってきてしまう。
+ * また、ペアリングだけ消してファイルを残すと、次にファイルを足したときの再ペアリングで復活する。
+ * そのため1件の削除ではこの4つをまとめて消す。
+ * (保存関数側には「空配列で既存を消さない」保護があるため、最後の1件はここで消す必要がある)
+ */
+export async function deleteReport(
+  pairId: string,
+  fileIds: readonly string[] = [],
+): Promise<void> {
+  if (fileIds.length > 0) {
+    await withStore(STORE_FILES, "readwrite", (s) => {
+      for (const id of fileIds) s.delete(id);
+    });
+  }
+  await withStore(STORE_MERGED, "readwrite", (s) => {
+    s.delete(pairId);
+  });
+  await withStore(STORE_META, "readwrite", async (s) => {
+    for (const [key, matches] of [
+      [META_PAIRS, (v: { id?: unknown }) => v?.id === pairId],
+      [META_RESULTS, (v: { pairId?: unknown }) => v?.pairId === pairId],
+    ] as const) {
+      const stored = await request(s.get(key));
+      if (!Array.isArray(stored)) continue;
+      const rest = stored.filter((v) => !matches(v));
+      if (rest.length === stored.length) continue;
+      if (rest.length === 0) s.delete(key);
+      else s.put(rest, key);
+    }
+  });
+}
+
 /** 結果に紐づかない結合PDF (前回セッションの残り) を掃除して容量を戻す */
 export async function collectGarbage(livePairIds: Set<string>): Promise<void> {
   const keys = await withStore(STORE_MERGED, "readonly", (s) => request(s.getAllKeys()));
@@ -311,6 +352,8 @@ export async function loadResults(): Promise<ResultRow[]> {
     // 古い保存データに無いフィールドは既定値で埋める
     mail: r.mail ?? { ownerKana: "", kanaConfidence: "fail", kanaAlternatives: [], contacts: [] },
     report: normalizeReportOptions(r.report),
+    // 壊れた値で分割表示にならないよう、真偽値に丸める
+    splitSummary: r.splitSummary === true,
     merged: (merged.get(r.pairId) as Blob | undefined) ?? null,
   }));
 }
@@ -405,6 +448,7 @@ export async function loadAfterCases(): Promise<AfterCase[]> {
       kind: "after" as const,
       mail: row.mail ?? { ownerKana: "", kanaConfidence: "fail", kanaAlternatives: [], contacts: [] },
       report: normalizeReportOptions(row.report, AFTER_REPORT_OPTIONS),
+      splitSummary: row.splitSummary === true,
       merged: null,
     };
   });

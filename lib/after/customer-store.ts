@@ -3,7 +3,13 @@
 // 顧客データの保存 (IndexedDB の customers ストア)。
 // 顧客情報はこの端末の中だけに置き、サーバーへは送らない。
 // 「保存データを消去」(定期点検) では消えず、「顧客データを削除」で明示的に消す。
-import { applyEdits, mergeImported, needsReview, withSupplements } from "@/lib/after/customer";
+import {
+  applyEdits,
+  applyReportHandoverDate,
+  mergeImported,
+  needsReview,
+  withSupplements,
+} from "@/lib/after/customer";
 import { resolveDuplicates, withDuplicateIssue } from "@/lib/after/dedup";
 import type { ParsedImport, SkippedGroup } from "@/lib/after/import";
 import type { Customer, CustomerFields, CustomerSource } from "@/lib/after/types";
@@ -167,6 +173,37 @@ export async function saveCustomerEdits(
     store.put(next);
   });
   return next;
+}
+
+/** 写真報告書から反映する引渡日1件分 */
+export interface ReportHandoverUpdate {
+  id: string;
+  /** yyyy/mm/dd (ゼロ埋め) */
+  date: string;
+  /** 元になった報告書のPJ (表示用) */
+  pj: string | null;
+}
+
+/**
+ * 定期点検の報告書の引渡日を顧客データへ反映する (まとめて1トランザクションで書く)。
+ * 見つからないIDは飛ばし、実際に書いた顧客を返す。
+ */
+export async function saveReportHandoverDates(
+  updates: readonly ReportHandoverUpdate[],
+  now: number = Date.now(),
+): Promise<Customer[]> {
+  const saved: Customer[] = [];
+  if (updates.length === 0) return saved;
+  await withStore(STORE_CUSTOMERS, "readwrite", async (store) => {
+    for (const update of updates) {
+      const current = (await request(store.get(update.id))) as Customer | undefined;
+      if (!current) continue;
+      const next = applyReportHandoverDate(current, update.date, update.pj, now);
+      store.put(next);
+      saved.push(next);
+    }
+  });
+  return saved;
 }
 
 /** 顧客データをまるごと消す (「顧客データを削除」ボタン) */

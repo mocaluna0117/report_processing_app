@@ -104,6 +104,43 @@ export function normalizeWorkCategory(raw: string): WorkCategory | null {
   return best;
 }
 
+/** 区分名と、その区分に対応付けている別名 (本文中の語を探すときの手がかり) */
+export function categoryKeywords(category: string): string[] {
+  const keywords = category ? [category] : [];
+  for (const [alias, c] of Object.entries(ALIASES)) {
+    if (c === category) keywords.push(alias);
+  }
+  return keywords;
+}
+
+/**
+ * 本文の中に候補の工事区分 (名称・別名) が現れるかを見る。該当なしは null。
+ *
+ * 複数当たる場合は本文中で「最後に」現れた語の区分を採る。
+ * 「浴室の換気扇から異音」のように「場所の部位に症状」の語順では、
+ * 直したい部位が後ろに来るため (浴室 < 換気扇 → 換気システム)。同じ位置なら長い語を優先する。
+ *
+ * 候補はその報告書が持つ区分だけに絞る (normalizeWorkCategory は全30区分が対象で、
+ * 本文が区分名の一部でも当たってしまうため、自由文の振り分けには使えない)。
+ */
+export function findCategoryInText(text: string, candidates: readonly string[]): string | null {
+  const s = clean(text);
+  if (!s) return null;
+  let best: { category: string; pos: number; length: number } | null = null;
+  for (const category of candidates) {
+    // 空欄と「その他」は振り分けの受け皿なので、キーワード一致の対象にしない
+    if (!category || category === "その他") continue;
+    for (const keyword of categoryKeywords(category)) {
+      const pos = s.lastIndexOf(clean(keyword));
+      if (pos === -1) continue;
+      if (!best || pos > best.pos || (pos === best.pos && keyword.length > best.length)) {
+        best = { category, pos, length: keyword.length };
+      }
+    }
+  }
+  return best?.category ?? null;
+}
+
 /** 工事区分の一覧順に並べ替えるためのインデックス */
 export function workCategoryOrder(c: string): number {
   const i = (WORK_CATEGORIES as readonly string[]).indexOf(c);

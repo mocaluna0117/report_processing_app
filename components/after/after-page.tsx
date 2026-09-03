@@ -5,6 +5,7 @@ import { AfterIntake } from "@/components/after/after-intake";
 import { CustomerCard } from "@/components/after/customer-card";
 import { CustomerImport, type CustomerSummary } from "@/components/after/customer-import";
 import { CustomerSearch } from "@/components/after/customer-search";
+import { InquiryExamplesDialog } from "@/components/after/inquiry-examples-dialog";
 import { FallbackTsvDialog } from "@/components/fallback-tsv-dialog";
 import { MailDialog } from "@/components/mail-dialog";
 import { ReportDialog } from "@/components/report-dialog";
@@ -19,16 +20,25 @@ import {
   saveImport,
   type ImportReport,
 } from "@/lib/after/customer-store";
+import {
+  clearInquiryExamples,
+  deleteInquiryExample,
+  loadInquiryExamples,
+  mergeInquiryExamples,
+  upsertInquiryExample,
+} from "@/lib/after/examples-store";
 import { parseCustomerFile } from "@/lib/after/import";
 import {
   AFTER_HIDDEN_COLUMNS,
   AFTER_SELECT_COLUMNS,
 } from "@/lib/after/reception";
-import { summarizeInquiry } from "@/lib/after/summarize-inquiry";
+import { inquiryExampleOf, summarizeInquiry } from "@/lib/after/summarize-inquiry";
 import type { AfterCase, Customer, CustomerFields } from "@/lib/after/types";
 import { setNavigationGuard } from "@/lib/navigation-guard";
 import { prefetchReportAssets } from "@/lib/report/assets";
-import { dropColumns, expandRow } from "@/lib/rows";
+import { dropColumns, expandResultRow } from "@/lib/rows";
+import { recordSummary } from "@/lib/summary";
+import { type InquiryExample, upsertExample } from "@/lib/summarize/examples";
 import {
   clearAfterCases,
   isStorageAvailable,
@@ -52,6 +62,9 @@ export function AfterPage() {
   const [reviewOnly, setReviewOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [inquiryText, setInquiryText] = useState("");
+  /** 学習した書き方 (伏せ字済みの受付メモ → 利用者が書いた本文) */
+  const [examples, setExamples] = useState<InquiryExample[]>([]);
+  const [examplesOpen, setExamplesOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
@@ -73,6 +86,11 @@ export function AfterPage() {
         setCases(await loadAfterCases());
       } catch (e) {
         partialErrors.push(`受付一覧: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      try {
+        setExamples(await loadInquiryExamples());
+      } catch (e) {
+        partialErrors.push(`学習した書き方: ${e instanceof Error ? e.message : String(e)}`);
       }
       return { partialErrors };
     },
@@ -202,11 +220,12 @@ export function AfterPage() {
     setRegisterError(null);
     setRegisterNotice(null);
     try {
-      const result = await summarizeInquiry(inquiryText, selected);
+      const result = await summarizeInquiry(inquiryText, selected, { examples });
       const row = createAfterCase({
         id: `c-${uid()}`,
         customer: selected,
         inquiryText,
+        redactedInquiry: result.redacted,
         summary: result.summary,
         engine: result.engine,
         summaryFailed: !result.summary,
@@ -229,6 +248,98 @@ export function AfterPage() {
     } finally {
       setRegistering(false);
     }
+  };
+
+  const exampleById = useMemo(
+    () => new Map(examples.map((e) => [e.id, e])),
+    [examples],
+  );
+
+  /** 保存に失敗しても作業は止めず、画面内の状態だけは進める */
+  const applyExamples = async (
+    run: () => Promise<InquiryExample[]>,
+    fallback: (list: InquiryExample[]) => InquiryExample[],
+  ) => {
+    if (!isStorageAvailable()) {
+      setExamples(fallback);
+      return;
+    }
+    try {
+      setExamples(await run());
+      storage.refreshUsage();
+    } catch (e) {
+      storage.setStorageError(
+        `学習した書き方を保存できませんでした (${e instanceof Error ? e.message : String(e)})`,
+      );
+    }
+  };
+
+  /** 今のアフター受付内容を「この書き方」として覚える (本文・メモとも伏せ字にして保存する) */
+  const learn = async (row: AfterCase) => {
+    const { input, output } = inquiryExampleOf(row);
+    if (!output || !input) return;
+    const now = Date.now();
+    const example: InquiryExample = {
+      id: row.pairId,
+      input,
+      output,
+      createdAt: exampleById.get(row.pairId)?.createdAt ?? now,
+      updatedAt: now,
+    };
+    await applyExamples(
+      () => upsertInquiryExample(example),
+      (list) => upsertExample(list, example),
+    );
+  };
+
+  const deleteExample = (id: string) =>
+    applyExamples(
+      () => deleteInquiryExample(id),
+      (list) => list.filter((e) => e.id !== id),
+    );
+
+  const importExamples = (incoming: InquiryExample[]) =>
+    applyExamples(
+      () => mergeInquiryExamples(incoming),
+      (list) => list,
+    );
+
+  const clearExamples = async () => {
+    if (!confirm(`学習した書き方 ${examples.length}件 をすべて消去します。よろしいですか？`)) {
+      return;
+    }
+    try {
+      await clearInquiryExamples();
+    } catch {
+      // 消せなくても画面からは外す (次の保存で上書きされる)
+    }
+    setExamples([]);
+    setExamplesOpen(false);
+    storage.refreshUsage();
+  };
+
+  /** 学習ボタンの状態 (未学習 / 学習済み / 手直しがあって再学習できる) */
+  const learnState = (row: AfterCase) => {
+    const { output } = inquiryExampleOf(row);
+    if (!output) {
+      return { label: "この書き方を学習", disabled: true, title: "アフター受付内容が空欄です" };
+    }
+    const saved = exampleById.get(row.pairId);
+    if (!saved) {
+      // 要約をそのまま使っている行も、確認として学習できる
+      const edited = row.originalSummary !== undefined && row.originalSummary !== recordSummary(row);
+      return {
+        label: "この書き方を学習",
+        disabled: false,
+        title: edited
+          ? "手直しした書き方を、次回以降の要約の手本にします"
+          : "この受付内容の書き方を、次回以降の要約の手本にします (要約のまま)",
+      };
+    }
+    if (saved.output === output) {
+      return { label: "学習済み ✓", disabled: true, title: "この書き方を手本にしています" };
+    }
+    return { label: "再学習", disabled: false, title: "直したあとの書き方で覚え直します" };
   };
 
   const deleteCase = (row: AfterCase) => {
@@ -257,11 +368,7 @@ export function AfterPage() {
   };
 
   // 備考欄 (定期点検専用) を除いて貼り付ける
-  const rowsOf = (row: AfterCase) =>
-    dropColumns(
-      expandRow(row.cells, row.categories.map((c) => c.value)),
-      AFTER_HIDDEN_COLUMNS,
-    );
+  const rowsOf = (row: AfterCase) => dropColumns(expandResultRow(row), AFTER_HIDDEN_COLUMNS);
 
   const copyAll = async () => {
     const missing = cases.filter((c) => !c.cells[RECEPTION_TYPE_COL]).length;
@@ -338,6 +445,22 @@ export function AfterPage() {
             notice={registerNotice}
           />
         )}
+        {customers.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <span>要約の書き方を学習: {examples.length}件</span>
+            <button
+              type="button"
+              onClick={() => setExamplesOpen(true)}
+              className="cursor-pointer rounded-md border border-slate-300 bg-white px-2 py-0.5 font-medium text-slate-700 hover:bg-slate-50"
+            >
+              一覧・消去
+            </button>
+            <span>
+              受付一覧の「この書き方を学習」で覚えた文体を、次の要約の手本として送ります
+              (伏せ字にした本文だけ。キー未設定時の定型要約には使われません)
+            </span>
+          </div>
+        )}
       </div>
 
       {cases.length > 0 && (
@@ -386,10 +509,30 @@ export function AfterPage() {
             onCategoryChange={editors.onCategoryChange}
             onCategoryAdd={editors.onCategoryAdd}
             onCategoryRemove={editors.onCategoryRemove}
+            onCategorySummaryChange={editors.onCategorySummaryChange}
+            onSplitSummaryChange={editors.onSplitSummaryChange}
             onOpenMail={(row) => setMailCaseId(row.pairId)}
             onOpenReport={(row) => setReportCaseId(row.pairId)}
             onPrefetchReport={prefetchReportAssets}
             onDeleteRow={deleteCase}
+            renderRowActions={(row) => {
+              const state = learnState(row);
+              return (
+                <button
+                  type="button"
+                  disabled={state.disabled}
+                  title={state.title}
+                  onClick={() => void learn(row)}
+                  className={`whitespace-nowrap rounded-md border px-2.5 py-1 text-xs font-medium ${
+                    state.disabled
+                      ? "cursor-default border-slate-200 bg-slate-50 text-slate-400"
+                      : "cursor-pointer border-violet-300 bg-violet-50 text-violet-800 hover:bg-violet-100"
+                  }`}
+                >
+                  {state.label}
+                </button>
+              );
+            }}
           />
         </section>
       )}
@@ -421,14 +564,24 @@ export function AfterPage() {
         <FallbackTsvDialog text={copyState.fallbackTsv} onClose={copyState.closeFallback} />
       )}
 
-      {(customers.length > 0 || cases.length > 0 || storage.fontInfo) && (
+      {examplesOpen && (
+        <InquiryExamplesDialog
+          examples={examples}
+          onDelete={(id) => void deleteExample(id)}
+          onClearAll={() => void clearExamples()}
+          onImport={(list) => void importExamples(list)}
+          onClose={() => setExamplesOpen(false)}
+        />
+      )}
+
+      {(customers.length > 0 || cases.length > 0 || examples.length > 0 || storage.fontInfo) && (
         <StorageBanner
           description={
             storage.canPersist
-              ? "顧客データと受付一覧はこのブラウザ内に保存され、再読み込みしても残ります (サーバーには送信されません)。顧客データは定期点検の「保存データを消去」では消えません。"
+              ? "顧客データと受付一覧はこのブラウザ内に保存され、再読み込みしても残ります (サーバーには送信されません)。顧客データは定期点検の「保存データを消去」では消えません。学習した書き方は伏せ字にした本文だけを保存し、「受付一覧を消去」では消えません。"
               : "このタブでは保存を停止しています (再読み込みすると復元を試み直せます)。"
           }
-          detail={`顧客データ ${summary.total.toLocaleString()}件 / 受付 ${cases.length}件`}
+          detail={`顧客データ ${summary.total.toLocaleString()}件 / 受付 ${cases.length}件 / 学習した書き方 ${examples.length}件`}
           usageBytes={storage.usageBytes}
           fontInfo={storage.fontInfo}
           disabled={importing || registering}
@@ -439,6 +592,9 @@ export function AfterPage() {
             ...(customers.length > 0
               ? [{ label: "顧客データを削除", onClick: deleteCustomers, danger: true }]
               : []),
+            ...(examples.length > 0
+              ? [{ label: "学習した書き方を消去", onClick: () => void clearExamples(), danger: true }]
+              : []),
           ]}
           onClearFont={storage.clearFont}
         />
@@ -447,7 +603,7 @@ export function AfterPage() {
       <footer className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-400">
         顧客データの取り込み・完了報告書 (Excel・PDF) の作成はすべてブラウザ内で行われます。Gemini
         APIへ送るのは、お客様の氏名・電話番号・住所・メールアドレスを伏せ字にした受付内容だけです
-        (キー未設定時は定型の要約になります)。
+        (キー未設定時は定型の要約になります)。学習した書き方 (伏せ字済み) も手本として一緒に送ります。
       </footer>
     </main>
   );

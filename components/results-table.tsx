@@ -1,6 +1,8 @@
 "use client";
 
+import type { ReactNode } from "react";
 import type { ResultRow } from "@/lib/process";
+import { isSummarySplit } from "@/lib/summary";
 import { COLUMNS, SUMMARY_COL, TREATMENT_COL, WORK_COL } from "@/lib/tsv";
 import type { Confidence, WorkCategoryEntry } from "@/lib/types";
 import { WORK_CATEGORIES } from "@/lib/work-categories";
@@ -59,10 +61,14 @@ export function ResultsTable<R extends ResultRow>({
   onCategoryChange,
   onCategoryAdd,
   onCategoryRemove,
+  onCategorySummaryChange,
+  onSplitSummaryChange,
   onOpenMail,
   onOpenReport,
   onPrefetchReport,
   onDeleteRow,
+  deleteTitle,
+  renderRowActions,
   hiddenColumns,
   selectColumns,
   columnLabels,
@@ -78,12 +84,20 @@ export function ResultsTable<R extends ResultRow>({
   onCategoryChange: (pairId: string, index: number, value: string) => void;
   onCategoryAdd: (pairId: string) => void;
   onCategoryRemove: (pairId: string, index: number) => void;
+  /** 工事区分ごとに分けているときの、その区分の点検内容 */
+  onCategorySummaryChange: (pairId: string, index: number, value: string) => void;
+  /** 点検内容を工事区分ごとに分ける / 1つにまとめる */
+  onSplitSummaryChange: (pairId: string, enabled: boolean) => void;
   onOpenMail: (row: R) => void;
   onOpenReport: (row: R) => void;
   /** 完了報告書のテンプレート・フォントを先読みする (ボタンにカーソルを乗せた時) */
   onPrefetchReport: () => void;
-  /** 行の削除 (アフターメンテナンスの受付取り消し)。渡さなければボタンを出さない */
+  /** 行の削除 (アフターメンテナンスの受付取り消し・定期点検の1件削除)。渡さなければボタンを出さない */
   onDeleteRow?: (row: R) => void;
+  /** 削除ボタンの説明 (何が消えるかが画面によって違う) */
+  deleteTitle?: string;
+  /** 画面ごとの追加ボタン (アフターメンテナンスの「この書き方を学習」) */
+  renderRowActions?: (row: R) => ReactNode;
   /** 表示しない列 (アフターメンテナンスの備考欄) */
   hiddenColumns?: ReadonlySet<number>;
   /** プルダウンにする列 */
@@ -133,6 +147,40 @@ export function ResultsTable<R extends ResultRow>({
               // 同じ報告書の行は工事区分の数だけ展開し、共通列は rowSpan でまとめて表示する
               const cats = row.categories.length > 0 ? row.categories : [EMPTY_CATEGORY];
               const span = cats.length;
+              // 工事区分が2件以上ある報告書だけ、点検内容を区分ごとに分けられる
+              const split = isSummarySplit(row);
+              const canSplit = !row.error && row.categories.length >= 2;
+              const summaryLabel = columnLabels?.[SUMMARY_COL] ?? COLUMNS[SUMMARY_COL];
+              // 点検内容の下の注記 (要約エンジンのバッジと「分ける / まとめる」の切り替え)
+              const summaryFooter = (
+                <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                  {row.engine && (
+                    <span
+                      className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                        row.engine === "gemini"
+                          ? "bg-blue-100 text-blue-800"
+                          : "bg-slate-200 text-slate-600"
+                      }`}
+                    >
+                      {row.engine === "gemini" ? "Gemini要約" : "定型要約"}
+                    </span>
+                  )}
+                  {canSplit && (
+                    <button
+                      type="button"
+                      title={
+                        split
+                          ? `各行の${summaryLabel}を1つにまとめて共通の欄に戻します`
+                          : `${summaryLabel}を工事区分ごとに別の文にします`
+                      }
+                      onClick={() => onSplitSummaryChange(row.pairId, !split)}
+                      className="cursor-pointer rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50"
+                    >
+                      {split ? "1つにまとめる" : "工事区分ごとに分ける"}
+                    </button>
+                  )}
+                </div>
+              );
               return cats.map((cat, k) => (
                 <tr
                   key={`${row.pairId}-${k}`}
@@ -183,7 +231,16 @@ export function ResultsTable<R extends ResultRow>({
                                   <button
                                     type="button"
                                     title="この工事区分の行を削除"
-                                    onClick={() => onCategoryRemove(row.pairId, k)}
+                                    onClick={() => {
+                                      if (
+                                        split &&
+                                        (cat.summary ?? "").trim() &&
+                                        !confirm(`この行に書いた${summaryLabel}も削除します。よろしいですか？`)
+                                      ) {
+                                        return;
+                                      }
+                                      onCategoryRemove(row.pairId, k);
+                                    }}
                                     className="rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-red-600"
                                   >
                                     ✕
@@ -203,6 +260,25 @@ export function ResultsTable<R extends ResultRow>({
                           </td>
                         );
                       }
+                      // 工事区分ごとに分けているときは、点検内容も行ごとの入力欄にする
+                      if (col === SUMMARY_COL && split) {
+                        return (
+                          <td key={COLUMNS[col]} className="px-1 py-1.5">
+                            <textarea
+                              value={cat.summary ?? ""}
+                              rows={4}
+                              placeholder={
+                                cat.value ? `${cat.value}の${summaryLabel}` : summaryLabel
+                              }
+                              onChange={(e) =>
+                                onCategorySummaryChange(row.pairId, k, e.target.value)
+                              }
+                              className={`${BIG_CELL_CLASS} ${cellClass(row.confidences[col])}`}
+                            />
+                            {k === 0 && summaryFooter}
+                          </td>
+                        );
+                      }
                       if (k !== 0) return null;
                       return (
                         <td key={COLUMNS[col]} rowSpan={span} className="px-1 py-1.5">
@@ -214,17 +290,7 @@ export function ResultsTable<R extends ResultRow>({
                                 onChange={(e) => onCellChange(row.pairId, col, e.target.value)}
                                 className={`${BIG_CELL_CLASS} ${cellClass(row.confidences[col])}`}
                               />
-                              {col === SUMMARY_COL && row.engine && (
-                                <span
-                                  className={`mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                                    row.engine === "gemini"
-                                      ? "bg-blue-100 text-blue-800"
-                                      : "bg-slate-200 text-slate-600"
-                                  }`}
-                                >
-                                  {row.engine === "gemini" ? "Gemini要約" : "定型要約"}
-                                </span>
-                              )}
+                              {col === SUMMARY_COL && summaryFooter}
                             </div>
                           ) : selectColumns?.[col] ? (
                             <select
@@ -306,6 +372,7 @@ export function ResultsTable<R extends ResultRow>({
                           完了報告書
                         </button>
                       )}
+                      {!row.error && renderRowActions?.(row)}
                       {!row.error && (
                         <span
                           title={row.categoryModel ? `判定モデル: ${row.categoryModel}` : undefined}
@@ -322,8 +389,9 @@ export function ResultsTable<R extends ResultRow>({
                       {onDeleteRow && (
                         <button
                           type="button"
+                          title={deleteTitle}
                           onClick={() => onDeleteRow(row)}
-                          className="whitespace-nowrap rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                          className="cursor-pointer whitespace-nowrap rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
                         >
                           削除
                         </button>

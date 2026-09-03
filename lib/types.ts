@@ -50,6 +50,11 @@ export interface WorkCategoryEntry {
   confidence: Confidence;
   /** 画像認識が読み取った元の項目名 (参考) */
   item?: string;
+  /**
+   * 点検内容を工事区分ごとに分けているときの、この区分の本文。
+   * 分けていないときは undefined (共通の cells[SUMMARY_COL] を使う)。
+   */
+  summary?: string;
 }
 
 /**

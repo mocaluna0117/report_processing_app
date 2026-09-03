@@ -6,6 +6,7 @@ import { DEFAULT_REPORT_OPTIONS } from "@/lib/report/model";
 import {
   clearAll,
   clearResults,
+  deleteReport,
   collectGarbage,
   hasStoredData,
   isQuotaError,
@@ -44,6 +45,27 @@ beforeEach(async () => {
 });
 
 describe("storage", () => {
+  it("工事区分ごとに分けた点検内容も保存・復元できる", async () => {
+    const split: ResultRow = {
+      ...row("p-split"),
+      splitSummary: true,
+      categories: [
+        { value: "クロス", confidence: "ok", summary: "クロスに凹凸" },
+        { value: "サッシ", confidence: "ok", summary: "サッシの結露" },
+      ],
+    };
+    await saveResults([split]);
+    const [loaded] = (await loadSession()).results;
+    expect(loaded.splitSummary).toBe(true);
+    expect(loaded.categories.map((c) => c.summary)).toEqual(["クロスに凹凸", "サッシの結露"]);
+  });
+
+  it("分けていない結果は splitSummary が false で復元される", async () => {
+    await saveResults([row("p-plain")]);
+    const [loaded] = (await loadSession()).results;
+    expect(loaded.splitSummary).toBe(false);
+  });
+
   it("何も保存していなければ空のセッション", async () => {
     expect(await loadSession()).toEqual({ files: [], pairs: [], results: [], partialErrors: [] });
   });
@@ -208,5 +230,71 @@ describe("保存データの有無の判定", () => {
     await savePairs([]);
     await saveResults([]);
     expect(await hasStoredData()).toBe(false);
+  });
+});
+
+describe("1件だけ削除する (deleteReport)", () => {
+  const setup = async () => {
+    const photo = pdf("20260101 【写真報告書】架空　太郎様邸.PDF", 100);
+    const inspection = pdf("20260101 【点検報告書】架空　太郎様邸.PDF", 80);
+    const other = pdf("20260202 【写真報告書】架空　次郎様邸.PDF", 60);
+    await saveFiles([photo, inspection, other]);
+    await savePairs([
+      {
+        id: "p-1",
+        photoId: photo.id,
+        inspectionId: inspection.id,
+        date: "20260101",
+        ownerDisplay: "架空 太郎",
+        needsReview: false,
+      },
+      {
+        id: "p-2",
+        photoId: other.id,
+        inspectionId: null,
+        date: "20260202",
+        ownerDisplay: "架空 次郎",
+        needsReview: false,
+      },
+    ] as PairView[]);
+    await saveResults([row("p-1"), row("p-2")]);
+    await saveMergedPdf("p-1", new Blob([new Uint8Array(10)]));
+    await saveMergedPdf("p-2", new Blob([new Uint8Array(10)]));
+    return { photo, inspection, other };
+  };
+
+  it("その報告書のPDF・ペアリング・抽出結果・結合PDFだけを消す", async () => {
+    const { photo, inspection, other } = await setup();
+    await deleteReport("p-1", [photo.id, inspection.id]);
+    const session = await loadSession();
+    expect(session.files.map((f) => f.id)).toEqual([other.id]);
+    expect(session.pairs.map((p) => p.id)).toEqual(["p-2"]);
+    expect(session.results.map((r) => r.pairId)).toEqual(["p-2"]);
+    // 残った方の結合PDFは巻き込まない
+    expect(session.results[0].merged).toBeInstanceOf(Blob);
+  });
+
+  it("最後の1件を消すと保存データが残らない (再読み込みで戻らない)", async () => {
+    const { photo, inspection, other } = await setup();
+    await deleteReport("p-1", [photo.id, inspection.id]);
+    await deleteReport("p-2", [other.id]);
+    expect(await loadSession()).toEqual({ files: [], pairs: [], results: [], partialErrors: [] });
+    expect(await hasStoredData()).toBe(false);
+  });
+
+  it("他のペアが使っているファイルは呼び出し側が渡さない限り消えない", async () => {
+    const { photo, inspection, other } = await setup();
+    await deleteReport("p-1", [photo.id, inspection.id]);
+    const { files } = await loadSession();
+    expect(files.map((f) => f.id)).toContain(other.id);
+  });
+
+  it("無い pairId を渡しても他のデータを壊さない", async () => {
+    await setup();
+    await deleteReport("p-missing", []);
+    const session = await loadSession();
+    expect(session.pairs).toHaveLength(2);
+    expect(session.results).toHaveLength(2);
+    expect(session.files).toHaveLength(3);
   });
 });

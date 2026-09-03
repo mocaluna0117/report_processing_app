@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ModalShell } from "@/components/modal-shell";
 import { buildMailText } from "@/lib/email";
 import type { ResultRow } from "@/lib/process";
-import { ADDRESS_COL, HANDOVER_COL, OWNER_COL, PROPERTY_COL, SUMMARY_COL } from "@/lib/tsv";
+import { recordSummary } from "@/lib/summary";
+import { ADDRESS_COL, HANDOVER_COL, OWNER_COL, PROPERTY_COL } from "@/lib/tsv";
 
 /**
  * メール本文に貼るテキストの確認・コピー用ダイアログ。
@@ -39,7 +40,8 @@ export function MailDialog({
         ownerKana: row.mail.ownerKana,
         address: row.cells[ADDRESS_COL],
         contacts: row.mail.contacts,
-        summary: row.cells[SUMMARY_COL],
+        // 工事区分ごとに分けているときは、全区分をまとめて①②③を振り直したもの
+        summary: recordSummary(row),
       }),
     [row],
   );

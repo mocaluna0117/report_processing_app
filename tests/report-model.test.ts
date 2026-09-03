@@ -263,3 +263,55 @@ describe("splitSummary / joinSummary", () => {
     expect(joinSummary({ ...parts, items: ["壁のひび", ""] })).toBe("壁のひび");
   });
 });
+
+describe("工事区分ごとに分けた点検内容からの指示内容", () => {
+  it("区分の順に並べ、①②③を振り直して指示内容にする", () => {
+    const data = buildReportData(
+      {
+        ...source({ [SUMMARY_COL]: "分ける前の本文" }),
+        splitSummary: true,
+        categories: [
+          { value: "クロス", summary: "①1階洋室のクロスに凹凸\n②2階の壁紙に浮き" },
+          { value: "サッシ", summary: "玄関サッシの建付け不良" },
+        ],
+      },
+      DEFAULT_REPORT_OPTIONS,
+    );
+    expect(data.items).toEqual([
+      "1階洋室のクロスに凹凸",
+      "2階の壁紙に浮き",
+      "玄関サッシの建付け不良",
+    ]);
+    expect(data.main[2]?.no).toBe("③");
+    expect(data.useAppendix).toBe(false);
+  });
+
+  it("分けた合計が6件以上なら別紙に回す", () => {
+    const data = buildReportData(
+      {
+        ...source(),
+        splitSummary: true,
+        categories: [
+          { value: "クロス", summary: "①クロスA\n②クロスB\n③クロスC" },
+          { value: "サッシ", summary: "①サッシA\n②サッシB\n③サッシC" },
+        ],
+      },
+      DEFAULT_REPORT_OPTIONS,
+    );
+    expect(data.items).toHaveLength(6);
+    expect(data.useAppendix).toBe(true);
+    expect(data.main[0]?.text).toBe(APPENDIX_REFERENCE_TEXT);
+  });
+
+  it("工事区分が1件だけならセルの本文を使う", () => {
+    const data = buildReportData(
+      {
+        ...source({ [SUMMARY_COL]: "セルの本文" }),
+        splitSummary: true,
+        categories: [{ value: "クロス", summary: "分けた本文" }],
+      },
+      DEFAULT_REPORT_OPTIONS,
+    );
+    expect(data.items).toEqual(["セルの本文"]);
+  });
+});

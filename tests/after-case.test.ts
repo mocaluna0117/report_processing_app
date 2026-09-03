@@ -5,7 +5,7 @@ import { AFTER_HIDDEN_COLUMNS, DEFAULT_RECEPTIONIST, RECEPTIONISTS, RECEPTION_TY
 import type { Customer, CustomerFields } from "@/lib/after/types";
 import { buildMailText } from "@/lib/email";
 import { AFTER_APPENDIX_TITLE, AFTER_REPORT_OPTIONS, buildReportData } from "@/lib/report/model";
-import { dropColumns, expandRow } from "@/lib/rows";
+import { dropColumns, expandResultRow, expandRow } from "@/lib/rows";
 import {
   ADDRESS_COL,
   COLUMNS,
@@ -152,6 +152,25 @@ describe("createAfterCase", () => {
   });
 });
 
+describe("学習用のフィールド", () => {
+  it("伏せ字メモと登録時の要約を持つ", () => {
+    const row = createAfterCase({
+      id: "c-9",
+      customer: customer(),
+      inquiryText: "原文のメモ",
+      redactedInquiry: "伏せ字のメモ",
+      summary: "浴室の換気扇から異音",
+      engine: "gemini",
+    });
+    expect(row.redactedInquiry).toBe("伏せ字のメモ");
+    expect(row.originalSummary).toBe("浴室の換気扇から異音");
+  });
+
+  it("伏せ字メモを渡さなければ undefined (古い受付と同じ扱い)", () => {
+    expect(build().redactedInquiry).toBeUndefined();
+  });
+});
+
 describe("受付一覧の貼り付け", () => {
   it("備考欄を除いた23列になる", () => {
     const row = build();
@@ -164,8 +183,27 @@ describe("受付一覧の貼り付け", () => {
 
   it("工事区分を足すと件数分の行に展開される", () => {
     const row = build();
-    const rows = dropColumns(expandRow(row.cells, ["内装", "設備"]), AFTER_HIDDEN_COLUMNS);
+    const rows = dropColumns(
+      expandRow(row.cells, [{ value: "内装" }, { value: "設備" }]),
+      AFTER_HIDDEN_COLUMNS,
+    );
     expect(rows).toHaveLength(2);
+  });
+
+  it("工事区分ごとに分けると行ごとに別のアフター受付内容が入る", () => {
+    const row = {
+      ...build(),
+      splitSummary: true,
+      categories: [
+        { value: "換気システム", confidence: "ok" as const, summary: "浴室の換気扇から異音" },
+        { value: "サッシ", confidence: "ok" as const, summary: "2階洋室の窓が閉まりにくい" },
+      ],
+    };
+    const rows = dropColumns(expandResultRow(row), AFTER_HIDDEN_COLUMNS);
+    expect(rows.map((r) => r[SUMMARY_COL])).toEqual([
+      "浴室の換気扇から異音",
+      "2階洋室の窓が閉まりにくい",
+    ]);
   });
 
   it("受付種別の選択肢が仕様どおり", () => {

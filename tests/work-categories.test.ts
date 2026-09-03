@@ -75,3 +75,41 @@ describe("normalizeHits (画像認識出力の正規化)", () => {
     ]);
   });
 });
+
+describe("categoryKeywords / findCategoryInText", () => {
+  it("区分名と別名を手がかりとして返す", async () => {
+    const { categoryKeywords } = await import("@/lib/work-categories");
+    expect(categoryKeywords("ユニットバス")).toEqual(
+      expect.arrayContaining(["ユニットバス", "浴室", "UB"]),
+    );
+    expect(categoryKeywords("クロス")).toEqual(expect.arrayContaining(["クロス", "壁紙"]));
+    expect(categoryKeywords("")).toEqual([]);
+  });
+
+  it("本文中で後に現れた語の区分を採る (場所より部位を優先)", async () => {
+    const { findCategoryInText } = await import("@/lib/work-categories");
+    expect(findCategoryInText("浴室の換気扇から異音", ["ユニットバス", "換気システム"])).toBe(
+      "換気システム",
+    );
+    expect(findCategoryInText("浴室の床がぶかぶかする", ["ユニットバス", "クロス"])).toBe(
+      "ユニットバス",
+    );
+  });
+
+  it("空欄と「その他」は当てない", async () => {
+    const { findCategoryInText } = await import("@/lib/work-categories");
+    expect(findCategoryInText("その他の不具合", ["", "その他"])).toBeNull();
+    expect(findCategoryInText("1階洋室のクロスに凹凸", ["", "その他", "クロス"])).toBe("クロス");
+  });
+
+  it("全角・空白は無視して一致させる", async () => {
+    const { findCategoryInText } = await import("@/lib/work-categories");
+    expect(findCategoryInText("２階 ＵＢ の扉が閉まらない", ["ユニットバス"])).toBe("ユニットバス");
+  });
+
+  it("手がかりが無ければ null", async () => {
+    const { findCategoryInText } = await import("@/lib/work-categories");
+    expect(findCategoryInText("2階階段ササラ仕上げの剥がれ", ["クロス", "サッシ"])).toBeNull();
+    expect(findCategoryInText("", ["クロス"])).toBeNull();
+  });
+});

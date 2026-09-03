@@ -36,6 +36,13 @@ export interface ResultRow {
   confidences: Confidence[];
   /** 工事区分 (点検報告書で「有」に丸が付いた項目)。0件なら工事区分空欄の1行を出力 */
   categories: WorkCategoryEntry[];
+  /**
+   * 点検内容 (SUMMARY_COL) を工事区分ごとに分けて持つか。
+   * true のとき展開した行 k は categories[k].summary を使い、
+   * cells[SUMMARY_COL] は「分ける前の本文」として残す。
+   * 工事区分が2件未満なら分ける意味が無いので、読み側は isSummarySplit() で判定する。
+   */
+  splitSummary?: boolean;
   categoryEngine: "gemini" | "none";
   /** 工事区分の判定に使えたモデル名 (表示用) */
   categoryModel?: string;

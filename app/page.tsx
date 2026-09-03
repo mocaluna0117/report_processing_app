@@ -15,9 +15,14 @@ import { pairFiles, parseFileName } from "@/lib/pairing";
 import { warmUpPdfjs } from "@/lib/pdf/extract";
 import { processPair, type ResultRow, type UploadedFile } from "@/lib/process";
 import { prefetchReportAssets } from "@/lib/report/assets";
-import { expandRow } from "@/lib/rows";
+import { expandResultRow } from "@/lib/rows";
+import { effectiveFields } from "@/lib/after/customer";
+import { loadCustomers, saveReportHandoverDates } from "@/lib/after/customer-store";
+import { buildHandoverSync } from "@/lib/after/match-report";
+import { HandoverSync } from "@/components/handover-sync";
 import {
   clearAll as clearStorage,
+  deleteReport,
   clearResults as clearStoredResults,
   collectGarbage,
   hasStoredData,
@@ -61,7 +66,17 @@ export default function Home() {
   // ダイアログは pairId で開く (results は再生成されるので行オブジェクトを直接持たない)
   const [mailPairId, setMailPairId] = useState<string | null>(null);
   const [reportPairId, setReportPairId] = useState<string | null>(null);
+  /**
+   * 処理完了時に引渡日を自動で更新した顧客 (pairId → 更新前の顧客データの引渡日)。
+   * 「元に戻す」で戻す値を持つため、更新前の値を覚えておく。
+   */
+  const [autoHandover, setAutoHandover] = useState<Map<string, string | null> | null>(null);
   const fileMap = useRef(new Map<string, UploadedFile>());
+  /**
+   * 最新の抽出結果。処理中でもセルは編集できるので、
+   * 引渡日の反映では「処理が終わった時点の行」ではなく直したあとの値を使う。
+   */
+  const resultsRef = useRef<(ResultRow | null)[]>([]);
 
   const storage = usePersistence({
     restore: async () => {
@@ -97,6 +112,11 @@ export default function Home() {
     );
     return () => setNavigationGuard(null);
   }, [processing]);
+
+  // 引渡日の反映で最新の値を使えるようにする (state は非同期処理の中では古いため)
+  useEffect(() => {
+    resultsRef.current = results;
+  }, [results]);
 
   // ペアリングと結果は変更のたびに保存する (PDF本体は取り込み時に1回だけ保存)
   useEffect(() => {
@@ -188,6 +208,7 @@ export default function Home() {
     if (targets.length === 0) return;
     setProcessing(true);
     setResults([]);
+    setAutoHandover(null);
     // 今回処理する分の結合PDFだけを消す (他タブ・前回セッションの分を巻き込まない)
     storage.persist(() => clearStoredResults(targets.map((p) => p.id)));
     let done = 0;
@@ -205,11 +226,15 @@ export default function Home() {
       };
     });
 
+    // 引渡日の反映に使う (state は非同期処理の中では古い値のままなので、ここで集める)
+    const completed: ResultRow[] = [];
+
     await runLimited(
       tasks,
       { concurrency: PAIR_CONCURRENCY, byteBudget: BYTE_BUDGET },
       (row, index) => {
         done++;
+        completed.push(row);
         setProgress({ done, total: targets.length, current: row.ownerDisplay });
         // 結合PDFは大きいので、ここで1回だけ保存する (結果JSONとは別ストア)
         if (row.merged) {
@@ -228,14 +253,55 @@ export default function Home() {
       },
     );
 
+    await syncHandoverDates(completed);
+
     setProgress(undefined);
     setProcessing(false);
+  };
+
+  /**
+   * 顧客データの引渡日を、報告書の値で自動更新する (報告書の方が確かなため)。
+   * 照合が確実なものだけを書き、要確認のものは画面のボタンで確認してもらう。
+   */
+  const syncHandoverDates = async (completed: ResultRow[]) => {
+    if (!isStorageAvailable()) return;
+    const customers = await loadCustomers().catch(() => []);
+    if (customers.length === 0) return;
+    // 処理中に直されたセル (引渡日・氏名・住所・PJ) を反映するため、最新の行に差し替える
+    const latest = resultsRef.current;
+    const current = completed.map(
+      (row) => latest.find((r) => r?.pairId === row.pairId) ?? row,
+    );
+    const targets = buildHandoverSync(current, customers).filter((i) => i.autoApplicable);
+    if (targets.length === 0) return;
+    try {
+      await saveReportHandoverDates(
+        targets.flatMap((i) =>
+          i.match.customer && i.reportDate
+            ? [{ id: i.match.customer.id, date: i.reportDate, pj: i.pj }]
+            : [],
+        ),
+      );
+      // 「元に戻す」用に、更新前の引渡日を覚えておく
+      setAutoHandover(
+        new Map(
+          targets.map((i) => [
+            i.pairId,
+            i.match.customer ? (effectiveFields(i.match.customer).handoverDate ?? null) : null,
+          ]),
+        ),
+      );
+    } catch (e) {
+      storage.setStorageError(
+        `引渡日を顧客データへ反映できませんでした (${e instanceof Error ? e.message : String(e)})`,
+      );
+    }
   };
 
   const mailRow = mailPairId ? (rows.find((r) => r.pairId === mailPairId) ?? null) : null;
   const reportRow = reportPairId ? (rows.find((r) => r.pairId === reportPairId) ?? null) : null;
 
-  const rowsOf = (r: ResultRow) => expandRow(r.cells, r.categories.map((c) => c.value));
+  const rowsOf = (r: ResultRow) => expandResultRow(r);
 
   // 工事区分の数だけ行を展開した貼り付け用データ
   const dataRows = () => {
@@ -268,6 +334,59 @@ export default function Home() {
 
   const mergedCount = rows.filter((r) => r.merged).length;
 
+  /**
+   * 1件の抽出結果を削除する。
+   *
+   * その報告書のPDF・ペアリング・結合PDFもまとめて消す。抽出結果だけを消すと
+   * 次の「処理実行」で戻ってきてしまい、ファイルだけ残すと次にファイルを足したときの
+   * 再ペアリングで復活するため。
+   */
+  const deleteRow = async (row: ResultRow) => {
+    const pair = pairs.find((p) => p.id === row.pairId);
+    // 他のペアがまだ使っているファイルは消さない
+    const stillUsed = new Set(
+      pairs
+        .filter((p) => p.id !== row.pairId)
+        .flatMap((p) => [p.photoId, p.inspectionId])
+        .filter((id): id is string => id !== null),
+    );
+    const fileIds = [pair?.photoId, pair?.inspectionId].filter(
+      (id): id is string => typeof id === "string" && !stillUsed.has(id),
+    );
+    const names = fileIds
+      .map((id) => fileMap.current.get(id)?.name)
+      .filter((name): name is string => Boolean(name));
+    if (
+      !confirm(
+        `${row.ownerDisplay || "この報告書"} の抽出結果を削除します。` +
+          `アップロードしたPDF・ペアリング・結合PDFも消えます (取り消せません)。` +
+          `${names.length > 0 ? `\n対象のファイル: ${names.join(", ")}` : ""}\nよろしいですか？`,
+      )
+    ) {
+      return;
+    }
+
+    for (const id of fileIds) fileMap.current.delete(id);
+    setFiles((prev) => prev.filter((f) => !fileIds.includes(f.id)));
+    setPairs((prev) => prev.filter((p) => p.id !== row.pairId));
+    setResults((prev) => prev.filter((r) => r?.pairId !== row.pairId));
+    if (mailPairId === row.pairId) setMailPairId(null);
+    if (reportPairId === row.pairId) setReportPairId(null);
+
+    if (!isStorageAvailable()) return;
+    try {
+      // 保存側は state の変更に任せず明示的に消す (最後の1件は空配列で上書きできないため)
+      await deleteReport(row.pairId, fileIds);
+      storage.refreshHasSaved();
+      storage.refreshUsage();
+    } catch (e) {
+      storage.setStorageError(
+        `保存データから削除できませんでした (${e instanceof Error ? e.message : String(e)})。` +
+          "再読み込みすると戻る場合があります",
+      );
+    }
+  };
+
   /** 定期点検の保存データを消して最初の状態に戻す (顧客情報を端末に残さないため) */
   const clearSaved = async () => {
     if (
@@ -287,6 +406,7 @@ export default function Home() {
       }
     }
     // 消去に失敗しても、画面とメモリ上の顧客情報は必ず消す
+    setAutoHandover(null);
     fileMap.current.clear();
     setFiles([]);
     setPairs([]);
@@ -399,12 +519,22 @@ export default function Home() {
             onCategoryChange={editors.onCategoryChange}
             onCategoryAdd={editors.onCategoryAdd}
             onCategoryRemove={editors.onCategoryRemove}
+            onCategorySummaryChange={editors.onCategorySummaryChange}
+            onSplitSummaryChange={editors.onSplitSummaryChange}
             onOpenMail={(row) => setMailPairId(row.pairId)}
             onOpenReport={(row) => setReportPairId(row.pairId)}
             onPrefetchReport={prefetchReportAssets}
             columnLabels={INSPECTION_COLUMN_LABELS}
+            {...(processing
+              ? {}
+              : { onDeleteRow: (row: ResultRow) => void deleteRow(row) })}
+            deleteTitle="この報告書の抽出結果・PDF・ペアリングを削除します"
           />
         </section>
+      )}
+
+      {rows.some((r) => !r.error) && (
+        <HandoverSync rows={rows} processing={processing} autoApplied={autoHandover} />
       )}
 
       {mailRow && (
