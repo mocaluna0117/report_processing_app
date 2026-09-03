@@ -1,6 +1,6 @@
 // 転記先Excelの列構成そのまま (空白列を含む24列)
 export const COLUMNS = [
-  "物件数", // 空白
+  "物件数", // ★ (記録1件につき先頭の行だけ)
   "PJ", // 契約番号
   "受付種別", // 点検時期
   "受付日", // 写真報告書の点検日 (yyyy/m/d)
@@ -47,6 +47,14 @@ export const INSPECTION_COLUMN_LABELS: Readonly<Record<number, string>> = {
 export function columnHeaders(labels?: Readonly<Record<number, string>>): string[] {
   return COLUMNS.map((c, i) => labels?.[i] ?? c);
 }
+
+/**
+ * 物件数の列と、そこに入れる印。
+ * 転記先シートでは記録1件につき★を1つ置き、その数で物件数を数える。
+ * 工事区分の数だけ行に展開しても件数が増えないよう、★は先頭の行にだけ残す (lib/rows.ts の expandRow)。
+ */
+export const PROPERTY_COUNT_COL = COLUMNS.indexOf("物件数");
+export const PROPERTY_COUNT_MARK = "★";
 
 /** メール文・完了報告書の組み立てに使う列番号 (テーブルで編集した値をそのまま使うため) */
 export const PJ_COL = COLUMNS.indexOf("PJ");

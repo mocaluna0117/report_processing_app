@@ -20,7 +20,9 @@ export interface MailInput {
   summary: string;
 }
 
-function contactLines(contacts: Contact[]): string[] {
+function contactLines(all: Contact[]): string[] {
+  // ①を空欄にして②だけ残した行では、空の「連絡先①：」を出さずに番号を詰める
+  const contacts = all.filter((c) => c.phone.trim() !== "");
   if (contacts.length === 0) return ["連絡先："];
   if (contacts.length === 1) return [`連絡先：${contacts[0].phone}`];
   return contacts.map(

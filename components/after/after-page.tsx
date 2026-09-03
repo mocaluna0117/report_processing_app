@@ -510,7 +510,6 @@ export function AfterPage() {
             onCategoryAdd={editors.onCategoryAdd}
             onCategoryRemove={editors.onCategoryRemove}
             onCategorySummaryChange={editors.onCategorySummaryChange}
-            onSplitSummaryChange={editors.onSplitSummaryChange}
             onOpenMail={(row) => setMailCaseId(row.pairId)}
             onOpenReport={(row) => setReportCaseId(row.pairId)}
             onPrefetchReport={prefetchReportAssets}
@@ -550,6 +549,9 @@ export function AfterPage() {
           row={reportRow}
           onOptionsChange={editors.onReportOptionsChange}
           onKanaChange={editors.onKanaChange}
+          onCellChange={editors.onCellChange}
+          onContactsChange={editors.onContactsChange}
+          onCategorySummaryChange={editors.onCategorySummaryChange}
           onSummaryChange={(pairId, summary) =>
             editors.onCellChange(pairId, SUMMARY_COL, summary)
           }

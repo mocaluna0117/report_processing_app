@@ -1,10 +1,10 @@
 /**
  * 点検内容 / アフター受付内容 (①②…で改行された要約) の扱い。純関数のみ。
  *
- * 本文の持ち方は2通りある:
- * - まとめて1つ: cells[SUMMARY_COL] に全事象が入る (既定)
- * - 工事区分ごとに分ける: categories[k].summary に区分ごとの本文が入り、
- *   Excelへ展開した行ごとに別の本文が貼られる (splitSummary フラグが true のとき)
+ * 本文の持ち方は工事区分の数で決まる (切り替えのボタンは無い):
+ * - 工事区分が1件以下: cells[SUMMARY_COL] に全事象が入る
+ * - 2件以上: categories[k].summary に区分ごとの本文が入り、Excelへ展開した行ごとに別の本文が貼られる。
+ *   cells[SUMMARY_COL] は各行の本文をまとめた「鏡」に保つ (隠れた原本を作らないため)
  */
 import { NO_DEFECT_TEXT, formatPhenomena } from "@/lib/summarize/format";
 import { SUMMARY_COL } from "@/lib/tsv";
@@ -68,15 +68,14 @@ export function joinSummary(parts: SummaryParts): string {
 export interface SummarySplitSource {
   cells: string[];
   categories?: readonly { value: string; summary?: string }[];
-  splitSummary?: boolean;
 }
 
 /**
  * 点検内容を工事区分ごとに分けて持っているか。
- * フラグが立っていても区分が2件未満なら分ける意味が無いので、まとめて1つとして扱う。
+ * 切り替えは無く、工事区分が2件以上あれば常に分ける (1件以下は分ける意味が無い)。
  */
 export function isSummarySplit(row: SummarySplitSource): boolean {
-  return row.splitSummary === true && (row.categories?.length ?? 0) >= 2;
+  return (row.categories?.length ?? 0) >= 2;
 }
 
 /**
@@ -128,4 +127,77 @@ export function mergeSplitSummary(categories: readonly { summary?: string }[]): 
 export function recordSummary(row: SummarySplitSource): string {
   if (!isSummarySplit(row)) return row.cells[SUMMARY_COL] ?? "";
   return mergeSplitSummary(row.categories ?? []);
+}
+
+/** 各区分から本文を外す (工事区分が1件以下になったとき。共通のセルが唯一の本文になる) */
+export function withoutSummaries<C extends { summary?: string }>(categories: readonly C[]): C[] {
+  return categories.map((c) => {
+    const next = { ...c };
+    delete next.summary;
+    return next;
+  });
+}
+
+/**
+ * 工事区分が2件以上なら本文をキーワードで振り分けて各区分に付ける。
+ * 1件以下なら分けないので、残っていた本文は外す。
+ */
+export function withDistributedSummaries<C extends { value: string; summary?: string }>(
+  categories: readonly C[],
+  summary: string,
+): (C & { summary?: string })[] {
+  if (categories.length < 2) return withoutSummaries(categories);
+  const texts = distributeSummary(summary, categories.map((c) => c.value));
+  return categories.map((c, i) => ({ ...c, summary: texts[i] ?? "" }));
+}
+
+/**
+ * 共通のセル (cells[SUMMARY_COL]) を、各区分の本文をまとめた「鏡」に揃える。
+ * 分けている間に古い本文がセルに隠れて残ると、メール文・完了報告書・学習・貼り付けが食い違うため。
+ * 2件未満なら分けていないので触らない (同じ配列を返す)。
+ */
+export function syncSummaryCell(
+  cells: string[],
+  categories: readonly { summary?: string }[],
+): string[] {
+  if (categories.length < 2) return cells;
+  const merged = mergeSplitSummary(categories);
+  if (cells[SUMMARY_COL] === merged) return cells;
+  return cells.map((c, i) => (i === SUMMARY_COL ? merged : c));
+}
+
+/**
+ * 共通のセルの本文を区分ごとに振り分けて各行に持たせ、共通のセルはその鏡にする。
+ * 処理直後 (processPair)・区分が1件→2件になった編集・古い保存データの読み込みが
+ * 同じ手順を踏むよう、1か所にまとめている。
+ */
+export function attachSummaries<C extends { value: string; summary?: string }>(
+  cells: string[],
+  categories: readonly C[],
+): { cells: string[]; categories: (C & { summary?: string })[] } {
+  const next = withDistributedSummaries(categories, cells[SUMMARY_COL] ?? "");
+  return { cells: syncSummaryCell(cells, next), categories: next };
+}
+
+/** 完了報告書ダイアログの指示内容1グループ (工事区分1件分) */
+export interface CategoryItemGroup {
+  /** 書き戻し先 (categories の添字) */
+  catIndex: number;
+  category: string;
+  parts: SummaryParts;
+}
+
+/**
+ * 分けている本文を区分ごとの項目・メモに分ける (完了報告書ダイアログの編集用)。
+ * 並びは mergeSplitSummary と同じ区分順なので、①②③を通しで振れば報告書の番号と一致する。
+ * 1グループを書き戻すときは joinSummary({ ...group.parts, items }) で、その区分のメモを保つ。
+ */
+export function categoryItemGroups(
+  categories: readonly { value: string; summary?: string }[],
+): CategoryItemGroup[] {
+  return categories.map((c, i) => ({
+    catIndex: i,
+    category: c.value,
+    parts: splitSummary(c.summary ?? ""),
+  }));
 }

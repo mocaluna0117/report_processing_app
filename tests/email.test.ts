@@ -56,6 +56,18 @@ describe("buildMailText", () => {
     expect(text).toContain("連絡先②：080-1111-2222\n");
   });
 
+  it("①を空欄にして②だけ残したら、空の行を出さず1件として書く", () => {
+    const text = buildMailText({
+      ...base,
+      contacts: [
+        { phone: "", relation: "", confidence: "ok" },
+        { phone: "080-1111-2222", relation: "奥様", confidence: "ok" },
+      ],
+    });
+    expect(text).toContain("\n連絡先：080-1111-2222\n");
+    expect(text).not.toContain("連絡先①");
+  });
+
   it("連絡先が無ければ空欄の行を残す", () => {
     expect(buildMailText({ ...base, contacts: [] })).toContain("\n連絡先：\n");
   });

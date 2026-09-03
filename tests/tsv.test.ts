@@ -6,6 +6,8 @@ import {
   INSPECTION_COLUMN_LABELS,
   OWNER_COL,
   PROPERTY_COL,
+  PROPERTY_COUNT_COL,
+  PROPERTY_COUNT_MARK,
   SUMMARY_COL,
   columnHeaders,
   toHtmlTable,
@@ -47,6 +49,12 @@ describe("COLUMNS", () => {
     expect(ADDRESS_COL).toBe(9);
     expect(HANDOVER_COL).toBe(10);
   });
+  it("物件数は左端の列で、印は★ (記録1件につき1つ)", () => {
+    expect(PROPERTY_COUNT_COL).toBe(0);
+    expect(COLUMNS[PROPERTY_COUNT_COL]).toBe("物件数");
+    expect(PROPERTY_COUNT_MARK).toBe("★");
+  });
+
 });
 
 describe("columnHeaders", () => {

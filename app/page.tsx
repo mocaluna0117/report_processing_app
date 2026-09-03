@@ -520,7 +520,6 @@ export default function Home() {
             onCategoryAdd={editors.onCategoryAdd}
             onCategoryRemove={editors.onCategoryRemove}
             onCategorySummaryChange={editors.onCategorySummaryChange}
-            onSplitSummaryChange={editors.onSplitSummaryChange}
             onOpenMail={(row) => setMailPairId(row.pairId)}
             onOpenReport={(row) => setReportPairId(row.pairId)}
             onPrefetchReport={prefetchReportAssets}
@@ -550,6 +549,9 @@ export default function Home() {
           row={reportRow}
           onOptionsChange={editors.onReportOptionsChange}
           onKanaChange={editors.onKanaChange}
+          onCellChange={editors.onCellChange}
+          onContactsChange={editors.onContactsChange}
+          onCategorySummaryChange={editors.onCategorySummaryChange}
           onSummaryChange={(pairId, summary) =>
             editors.onCellChange(pairId, SUMMARY_COL, summary)
           }

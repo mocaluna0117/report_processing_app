@@ -90,6 +90,15 @@ describe("buildReportXlsx", () => {
     expect(cell(input, "C10")).toContain("090-2345-6789");
   });
 
+  it("受付者を差し替えると入力シートと本紙のキャッシュ値も変わる", () => {
+    const { input, main } = build(["壁のひび"], {
+      ...DEFAULT_REPORT_OPTIONS,
+      receptionist: "架空　花子",
+    });
+    expect(cell(input, "C13")).toContain("架空　花子");
+    expect(cell(main, "M13")).toContain("<v>架空　花子</v>");
+  });
+
   it("本紙は数式を残してキャッシュ値だけ書き換える", () => {
     const { main } = build(["壁のひび"]);
     const d7 = cell(main, "D7");

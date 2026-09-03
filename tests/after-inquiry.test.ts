@@ -184,7 +184,6 @@ describe("inquiryExampleOf (学習する1件)", () => {
   it("工事区分ごとに分けているときは、分けた本文をまとめて学習する", () => {
     const row = {
       ...build(),
-      splitSummary: true,
       categories: [
         { value: "換気システム", confidence: "ok" as const, summary: "浴室の換気扇から異音" },
         { value: "サッシ", confidence: "ok" as const, summary: "2階洋室の窓が閉まりにくい" },

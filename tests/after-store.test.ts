@@ -1,6 +1,7 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createAfterCase } from "@/lib/after/case";
+import { PROPERTY_COUNT_COL, PROPERTY_COUNT_MARK } from "@/lib/tsv";
 import { applyEdits, effectiveFields, isReportHandover } from "@/lib/after/customer";
 import {
   clearCustomers,
@@ -277,6 +278,26 @@ describe("受付一覧の保存", () => {
     expect(loaded[0].kind).toBe("after");
     expect(loaded[0].inquiryText).toBe("換気扇から異音");
     expect(loaded[0].report.categories.after).toBe(true);
+    expect(loaded[0].cells[PROPERTY_COUNT_COL]).toBe(PROPERTY_COUNT_MARK);
+  });
+
+  it("物件数が空欄の古い受付は読み込み時に★で埋める", async () => {
+    // ★を扱う前に保存された受付 (印を持たない)
+    const { propertyCountMarked: _mark, ...old } = makeCase("c-old");
+    await saveAfterCases([
+      { ...old, cells: old.cells.map((v, i) => (i === PROPERTY_COUNT_COL ? "" : v)) },
+    ]);
+    const [loaded] = await loadAfterCases();
+    expect(loaded.cells[PROPERTY_COUNT_COL]).toBe(PROPERTY_COUNT_MARK);
+  });
+
+  it("利用者が消した★は再読み込みで戻らない", async () => {
+    const row = makeCase("c-cleared");
+    await saveAfterCases([
+      { ...row, cells: row.cells.map((v, i) => (i === PROPERTY_COUNT_COL ? "" : v)) },
+    ]);
+    const [loaded] = await loadAfterCases();
+    expect(loaded.cells[PROPERTY_COUNT_COL]).toBe("");
   });
 
   it("空配列では既存を消さない (復元前の上書き防止)", async () => {

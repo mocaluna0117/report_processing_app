@@ -1,5 +1,5 @@
 import { isSummarySplit, type SummarySplitSource } from "@/lib/summary";
-import { SUMMARY_COL, WORK_COL } from "@/lib/tsv";
+import { PROPERTY_COUNT_COL, SUMMARY_COL, WORK_COL } from "@/lib/tsv";
 
 /** 行に展開するときの工事区分1件分 (summary があればその行の点検内容を差し替える) */
 export interface RowCategory {
@@ -12,13 +12,16 @@ export interface RowCategory {
  * 1報告書分のセルを工事区分の数だけ行に展開する。
  * 工事区分が0件なら工事区分が空欄の1行を返す (他の列はすべて同じ値)。
  * summary を持つ区分は、その行の点検内容だけを差し替える。
+ * 物件数の★は記録1件につき1つなので、2行目以降は空欄にする
+ * (★を入れるのはセルを作るとき。ここでは先頭の行の値をそのまま残すだけ)。
  */
 export function expandRow(cells: string[], categories: readonly RowCategory[]): string[][] {
   if (categories.length === 0) return [cells];
-  return categories.map((c) =>
+  return categories.map((c, k) =>
     cells.map((v, i) => {
       if (i === WORK_COL) return c.value;
       if (i === SUMMARY_COL && c.summary !== undefined) return c.summary;
+      if (i === PROPERTY_COUNT_COL && k > 0) return "";
       return v;
     }),
   );

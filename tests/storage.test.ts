@@ -16,7 +16,7 @@ import {
   savePairs,
   saveResults,
 } from "@/lib/storage";
-import { COLUMNS } from "@/lib/tsv";
+import { COLUMNS, PROPERTY_COUNT_COL, PROPERTY_COUNT_MARK, SUMMARY_COL } from "@/lib/tsv";
 
 const pdf = (name: string, size = 16): UploadedFile => ({
   id: `f-${name}`,
@@ -48,7 +48,9 @@ describe("storage", () => {
   it("工事区分ごとに分けた点検内容も保存・復元できる", async () => {
     const split: ResultRow = {
       ...row("p-split"),
-      splitSummary: true,
+      cells: row("p-split").cells.map((c, i) =>
+        i === SUMMARY_COL ? "①クロスに凹凸\n②サッシの結露" : c,
+      ),
       categories: [
         { value: "クロス", confidence: "ok", summary: "クロスに凹凸" },
         { value: "サッシ", confidence: "ok", summary: "サッシの結露" },
@@ -56,14 +58,76 @@ describe("storage", () => {
     };
     await saveResults([split]);
     const [loaded] = (await loadSession()).results;
-    expect(loaded.splitSummary).toBe(true);
     expect(loaded.categories.map((c) => c.summary)).toEqual(["クロスに凹凸", "サッシの結露"]);
+    expect(loaded.cells[SUMMARY_COL]).toBe("①クロスに凹凸\n②サッシの結露");
   });
 
-  it("分けていない結果は splitSummary が false で復元される", async () => {
-    await saveResults([row("p-plain")]);
+  it("分ける前の形式 (区分2件・本文なし) は読み込み時に振り分けてセルを鏡にする", async () => {
+    const legacy = {
+      ...row("p-legacy"),
+      cells: row("p-legacy").cells.map((c, i) =>
+        i === SUMMARY_COL ? "①クロスに凹凸\n②サッシの結露" : c,
+      ),
+      categories: [
+        { value: "クロス", confidence: "ok" as const },
+        { value: "サッシ", confidence: "ok" as const },
+      ],
+    };
+    await saveResults([legacy]);
     const [loaded] = (await loadSession()).results;
-    expect(loaded.splitSummary).toBe(false);
+    expect(loaded.categories.map((c) => c.summary)).toEqual(["クロスに凹凸", "サッシの結露"]);
+    expect(loaded.cells[SUMMARY_COL]).toBe("①クロスに凹凸\n②サッシの結露");
+    expect("splitSummary" in loaded).toBe(false);
+  });
+
+  it("工事区分が1件なら区分に残った本文を外す", async () => {
+    const one = {
+      ...row("p-one"),
+      categories: [{ value: "クロス", confidence: "ok" as const, summary: "古い本文" }],
+    };
+    await saveResults([one]);
+    const [loaded] = (await loadSession()).results;
+    expect(loaded.categories[0].summary).toBeUndefined();
+  });
+
+  it("物件数が空欄の古い結果は読み込み時に★で埋める", async () => {
+    const old = {
+      ...row("p-old"),
+      cells: row("p-old").cells.map((c, i) => (i === PROPERTY_COUNT_COL ? "" : c)),
+    };
+    await saveResults([old]);
+    const [loaded] = (await loadSession()).results;
+    expect(loaded.cells[PROPERTY_COUNT_COL]).toBe(PROPERTY_COUNT_MARK);
+    // 他の列は触らない
+    expect(loaded.cells.slice(1)).toEqual(old.cells.slice(1));
+  });
+
+  it("利用者が消した★は再読み込みで戻らない", async () => {
+    const processed = { ...row("p-cleared"), propertyCountMarked: true };
+    await saveResults([
+      { ...processed, cells: processed.cells.map((c, i) => (i === PROPERTY_COUNT_COL ? "" : c)) },
+    ]);
+    const [loaded] = (await loadSession()).results;
+    expect(loaded.cells[PROPERTY_COUNT_COL]).toBe("");
+  });
+
+  it("物件数に値が入っていれば変えない", async () => {
+    await saveResults([row("p-keep")]);
+    const [loaded] = (await loadSession()).results;
+    expect(loaded.cells[PROPERTY_COUNT_COL]).toBe("v:物件数");
+  });
+
+  it("完了報告書の受付者は保存・復元され、既定のときはキーを持たない", async () => {
+    const custom: ResultRow = {
+      ...row("p-receptionist"),
+      report: { ...DEFAULT_REPORT_OPTIONS, receptionist: "架空　花子" },
+    };
+    await saveResults([custom, row("p-default")]);
+    const results = (await loadSession()).results;
+    expect(results.find((r) => r.pairId === "p-receptionist")?.report.receptionist).toBe("架空　花子");
+    expect("receptionist" in (results.find((r) => r.pairId === "p-default")?.report ?? {})).toBe(
+      false,
+    );
   });
 
   it("何も保存していなければ空のセッション", async () => {

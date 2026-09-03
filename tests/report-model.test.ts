@@ -108,6 +108,24 @@ describe("buildReportData", () => {
     expect(d.appendix).toBeNull();
   });
 
+  it("受付者は行ごとに差し替えられ、空欄なら既定に戻る", () => {
+    const withName = buildReportData(source(), {
+      ...DEFAULT_REPORT_OPTIONS,
+      receptionist: "架空　花子",
+    });
+    expect(withName.receptionist).toBe("架空　花子");
+    const blank = buildReportData(source(), { ...DEFAULT_REPORT_OPTIONS, receptionist: "  " });
+    expect(blank.receptionist).toBe(RECEPTIONIST);
+  });
+
+  it("連絡先①を空欄にしても②は連絡先②のまま", () => {
+    const d = buildReportData(
+      source({}, { contacts: [phone(""), phone("03-1234-5678", "奥様")] }),
+      DEFAULT_REPORT_OPTIONS,
+    );
+    expect([d.phone1, d.phone2]).toEqual(["", "03-1234-5678"]);
+  });
+
   it("連絡先が0件・1件でも落ちない", () => {
     expect(buildReportData(source(), DEFAULT_REPORT_OPTIONS)).toMatchObject({ phone1: "", phone2: "" });
     expect(
@@ -175,6 +193,21 @@ describe("buildReportData", () => {
       DEFAULT_REPORT_OPTIONS,
     );
     expect(d.appendix?.title).toBe("点検是正項目");
+  });
+});
+
+describe("normalizeReportOptions (受付者)", () => {
+  it("空でない文字列だけ通す", () => {
+    expect(normalizeReportOptions({ receptionist: "架空　花子" })).toEqual({
+      ...DEFAULT_REPORT_OPTIONS,
+      receptionist: "架空　花子",
+    });
+  });
+
+  it("空欄・別の型はキーごと持たない (既定に戻した行と同じ形になる)", () => {
+    for (const raw of [{ receptionist: "" }, { receptionist: "   " }, { receptionist: 1 }]) {
+      expect(normalizeReportOptions(raw)).toStrictEqual(DEFAULT_REPORT_OPTIONS);
+    }
   });
 });
 
@@ -269,7 +302,6 @@ describe("工事区分ごとに分けた点検内容からの指示内容", () =
     const data = buildReportData(
       {
         ...source({ [SUMMARY_COL]: "分ける前の本文" }),
-        splitSummary: true,
         categories: [
           { value: "クロス", summary: "①1階洋室のクロスに凹凸\n②2階の壁紙に浮き" },
           { value: "サッシ", summary: "玄関サッシの建付け不良" },
@@ -290,7 +322,6 @@ describe("工事区分ごとに分けた点検内容からの指示内容", () =
     const data = buildReportData(
       {
         ...source(),
-        splitSummary: true,
         categories: [
           { value: "クロス", summary: "①クロスA\n②クロスB\n③クロスC" },
           { value: "サッシ", summary: "①サッシA\n②サッシB\n③サッシC" },
@@ -303,11 +334,10 @@ describe("工事区分ごとに分けた点検内容からの指示内容", () =
     expect(data.main[0]?.text).toBe(APPENDIX_REFERENCE_TEXT);
   });
 
-  it("工事区分が1件だけならセルの本文を使う", () => {
+  it("工事区分が1件だけならセルの本文を使う (区分の本文は無視)", () => {
     const data = buildReportData(
       {
         ...source({ [SUMMARY_COL]: "セルの本文" }),
-        splitSummary: true,
         categories: [{ value: "クロス", summary: "分けた本文" }],
       },
       DEFAULT_REPORT_OPTIONS,

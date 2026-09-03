@@ -9,6 +9,7 @@ import type { PairView } from "@/components/pair-table";
 import type { AfterCase } from "@/lib/after/types";
 import type { ResultRow, UploadedFile } from "@/lib/process";
 import { AFTER_REPORT_OPTIONS, normalizeReportOptions } from "@/lib/report/model";
+import { normalizeStoredRow } from "@/lib/row-normalize";
 import { COLUMNS } from "@/lib/tsv";
 
 const DB_NAME = "folio";
@@ -347,15 +348,15 @@ export async function loadResults(): Promise<ResultRow[]> {
   if (!Array.isArray(raw)) return [];
   // 結合PDFが読めなくても抽出結果は返す (再処理せずにセルの内容を使えるようにする)
   const merged = await readAll<Blob>(STORE_MERGED).catch(() => new Map<IDBValidKey, Blob>());
-  return raw.filter(isResultRowLike).map((r) => ({
-    ...r,
-    // 古い保存データに無いフィールドは既定値で埋める
-    mail: r.mail ?? { ownerKana: "", kanaConfidence: "fail", kanaAlternatives: [], contacts: [] },
-    report: normalizeReportOptions(r.report),
-    // 壊れた値で分割表示にならないよう、真偽値に丸める
-    splitSummary: r.splitSummary === true,
-    merged: (merged.get(r.pairId) as Blob | undefined) ?? null,
-  }));
+  // 古い保存データに無いフィールドは既定値で埋め、形式の読み替えは normalizeStoredRow に任せる
+  return raw.filter(isResultRowLike).map((r) =>
+    normalizeStoredRow({
+      ...r,
+      mail: r.mail ?? { ownerKana: "", kanaConfidence: "fail", kanaAlternatives: [], contacts: [] },
+      report: normalizeReportOptions(r.report),
+      merged: (merged.get(r.pairId) as Blob | undefined) ?? null,
+    }),
+  );
 }
 
 // ---------- まとめて ----------
@@ -443,14 +444,13 @@ export async function loadAfterCases(): Promise<AfterCase[]> {
   if (!Array.isArray(raw)) return [];
   return raw.filter(isResultRowLike).map((r) => {
     const row = r as unknown as AfterCase;
-    return {
+    return normalizeStoredRow({
       ...row,
       kind: "after" as const,
       mail: row.mail ?? { ownerKana: "", kanaConfidence: "fail", kanaAlternatives: [], contacts: [] },
       report: normalizeReportOptions(row.report, AFTER_REPORT_OPTIONS),
-      splitSummary: row.splitSummary === true,
       merged: null,
-    };
+    });
   });
 }
 

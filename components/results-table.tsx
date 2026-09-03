@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import type { ColumnName } from "@/lib/cells";
 import type { ResultRow } from "@/lib/process";
 import { isSummarySplit } from "@/lib/summary";
 import { COLUMNS, SUMMARY_COL, TREATMENT_COL, WORK_COL } from "@/lib/tsv";
@@ -13,11 +14,17 @@ function cellClass(c: Confidence): string {
   return "border-slate-200 bg-white";
 }
 
-/** 列ごとの幅 (未指定の空白列などは w-20) */
-const COL_WIDTH: Record<string, string> = {
+/**
+ * 列ごとの幅。表は table-fixed なので、この見出しの幅がそのまま列幅になる
+ * (中身が長くても列は広がらず、入力欄が縮められることもない)。
+ * 下限は見出し (text-xs = 1文字12px + 左右の余白16px) が収まる幅。
+ * 合計: 24列 3248px / アフター (備考欄なし) 3072px。変えたら table の min-w も合わせる。
+ */
+const COL_WIDTH: Record<ColumnName, string> = {
   物件数: "w-16",
   PJ: "w-32",
-  受付種別: "w-28",
+  // 「－ 未選択 －」+ 矢印が w-28 では切れる
+  受付種別: "w-32",
   受付日: "w-28",
   受付者: "w-20",
   担当: "w-16",
@@ -26,20 +33,27 @@ const COL_WIDTH: Record<string, string> = {
   お客様氏名: "w-28",
   住所: "w-52",
   引渡日: "w-28",
-  完了報告書取得日: "w-28",
+  監督: "w-16",
+  営業: "w-16",
+  初回訪問日: "w-20",
+  前回対応日: "w-20",
+  対応予定日: "w-20",
+  完了日: "w-16",
+  完了報告書取得日: "w-32",
   工事区分: "w-48",
   アフター受付内容: "w-[24rem]",
   処置: "w-[24rem]",
+  手配業者: "w-20",
   最終更新日: "w-24",
   備考欄: "w-44",
 };
 
 /**
  * アフター受付内容・処置の入力欄。
- * 表は内容に合わせて列幅を配るので、w-full だと同じ列幅指定でも2列の実寸がずれる。
- * どちらも同じ大きさに見せるため、見出しの列幅 (w-[24rem]) と揃えた固定幅にする。
+ * 表は table-fixed で見出しの幅 (w-[24rem]) がそのまま列幅になるので、w-full で2列の実寸が揃う。
+ * 固定幅 (w-96 = 列幅と同じ) のままだと、セルの余白 (px-1) の分だけ列からはみ出す。
  */
-const BIG_CELL_CLASS = "w-96 rounded border px-2 py-1 text-sm leading-snug";
+const BIG_CELL_CLASS = "w-full rounded border px-2 py-1 text-sm leading-snug";
 
 const EMPTY_CATEGORY: WorkCategoryEntry = { value: "", confidence: "ok" };
 
@@ -62,7 +76,6 @@ export function ResultsTable<R extends ResultRow>({
   onCategoryAdd,
   onCategoryRemove,
   onCategorySummaryChange,
-  onSplitSummaryChange,
   onOpenMail,
   onOpenReport,
   onPrefetchReport,
@@ -84,10 +97,8 @@ export function ResultsTable<R extends ResultRow>({
   onCategoryChange: (pairId: string, index: number, value: string) => void;
   onCategoryAdd: (pairId: string) => void;
   onCategoryRemove: (pairId: string, index: number) => void;
-  /** 工事区分ごとに分けているときの、その区分の点検内容 */
+  /** 工事区分が2件以上のときの、その区分の行の点検内容 */
   onCategorySummaryChange: (pairId: string, index: number, value: string) => void;
-  /** 点検内容を工事区分ごとに分ける / 1つにまとめる */
-  onSplitSummaryChange: (pairId: string, enabled: boolean) => void;
   onOpenMail: (row: R) => void;
   onOpenReport: (row: R) => void;
   /** 完了報告書のテンプレート・フォントを先読みする (ボタンにカーソルを乗せた時) */
@@ -118,8 +129,11 @@ export function ResultsTable<R extends ResultRow>({
       {/* 行が増えても横スクロールバーに届くよう、表の高さを区切ってこの中でスクロールさせる。
           縦もこの中でスクロールするので、見出しの sticky が画面内に残る。
           scroll-p* は Tab移動でセルが固定した見出し・左右の列の下に潜らないための余白。 */}
-      <div className="max-h-[70vh] scroll-pt-10 scroll-pl-28 scroll-pr-32 overflow-auto">
-        <table className="w-full min-w-[2600px] text-sm">
+      <div className="max-h-[70vh] scroll-pt-10 scroll-pl-28 scroll-pr-44 overflow-auto">
+        {/* min-w は列幅の合計 (アフターの23列分)。fixed の表幅は max(width, 列幅の合計) なので
+            定期点検 (24列) は合計まで伸びる。合計より大きくすると余りが全列 (固定列を含む) に
+            配られて幅指定と scroll-pr がずれるので、増やすときは COL_WIDTH と一緒に見直す。 */}
+        <table className="w-full min-w-[3360px] table-fixed text-sm">
           <thead>
             <tr className="text-left text-xs text-slate-500">
               {/* 施主列は左端に固定し、横スクロールの対象外にする (コピー対象外のUI見出し) */}
@@ -130,14 +144,14 @@ export function ResultsTable<R extends ResultRow>({
                 isHidden(i) ? null : (
                   <th
                     key={c}
-                    className={`sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50 px-2 py-2 ${COL_WIDTH[c] ?? "w-20"}`}
+                    className={`sticky top-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50 px-2 py-2 ${COL_WIDTH[c]}`}
                   >
                     {columnLabels?.[i] ?? c}
                   </th>
                 ),
               )}
               {/* 操作列は右端に固定し、横スクロールの対象外にする */}
-              <th className="sticky right-0 top-0 z-30 w-32 whitespace-nowrap border-l border-b border-slate-200 bg-slate-50 px-2 py-2">
+              <th className="sticky right-0 top-0 z-30 w-44 whitespace-nowrap border-l border-b border-slate-200 bg-slate-50 px-2 py-2">
                 操作
               </th>
             </tr>
@@ -147,38 +161,21 @@ export function ResultsTable<R extends ResultRow>({
               // 同じ報告書の行は工事区分の数だけ展開し、共通列は rowSpan でまとめて表示する
               const cats = row.categories.length > 0 ? row.categories : [EMPTY_CATEGORY];
               const span = cats.length;
-              // 工事区分が2件以上ある報告書だけ、点検内容を区分ごとに分けられる
+              // 工事区分が2件以上あれば、点検内容は常に区分ごとの入力欄になる
               const split = isSummarySplit(row);
-              const canSplit = !row.error && row.categories.length >= 2;
               const summaryLabel = columnLabels?.[SUMMARY_COL] ?? COLUMNS[SUMMARY_COL];
-              // 点検内容の下の注記 (要約エンジンのバッジと「分ける / まとめる」の切り替え)
-              const summaryFooter = (
-                <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                  {row.engine && (
-                    <span
-                      className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                        row.engine === "gemini"
-                          ? "bg-blue-100 text-blue-800"
-                          : "bg-slate-200 text-slate-600"
-                      }`}
-                    >
-                      {row.engine === "gemini" ? "Gemini要約" : "定型要約"}
-                    </span>
-                  )}
-                  {canSplit && (
-                    <button
-                      type="button"
-                      title={
-                        split
-                          ? `各行の${summaryLabel}を1つにまとめて共通の欄に戻します`
-                          : `${summaryLabel}を工事区分ごとに別の文にします`
-                      }
-                      onClick={() => onSplitSummaryChange(row.pairId, !split)}
-                      className="cursor-pointer rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] text-slate-600 hover:bg-slate-50"
-                    >
-                      {split ? "1つにまとめる" : "工事区分ごとに分ける"}
-                    </button>
-                  )}
+              // 点検内容の下の注記 (要約エンジンのバッジ)
+              const summaryFooter = row.engine && (
+                <div className="mt-0.5">
+                  <span
+                    className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                      row.engine === "gemini"
+                        ? "bg-blue-100 text-blue-800"
+                        : "bg-slate-200 text-slate-600"
+                    }`}
+                  >
+                    {row.engine === "gemini" ? "Gemini要約" : "定型要約"}
+                  </span>
                 </div>
               );
               return cats.map((cat, k) => (
@@ -218,7 +215,7 @@ export function ResultsTable<R extends ResultRow>({
                                   value={cat.value}
                                   title={cat.item ? `シート上の項目: ${cat.item}` : undefined}
                                   onChange={(e) => onCategoryChange(row.pairId, k, e.target.value)}
-                                  className={`w-full rounded border px-1 py-1 text-sm ${cellClass(cat.confidence)}`}
+                                  className={`w-full min-w-32 rounded border px-1 py-1 text-sm ${cellClass(cat.confidence)}`}
                                 >
                                   <option value="">－</option>
                                   {WORK_CATEGORIES.map((c) => (
@@ -241,7 +238,7 @@ export function ResultsTable<R extends ResultRow>({
                                       }
                                       onCategoryRemove(row.pairId, k);
                                     }}
-                                    className="rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-red-600"
+                                    className="shrink-0 rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-red-600"
                                   >
                                     ✕
                                   </button>
@@ -251,7 +248,7 @@ export function ResultsTable<R extends ResultRow>({
                                     type="button"
                                     title="工事区分の行を追加"
                                     onClick={() => onCategoryAdd(row.pairId)}
-                                    className="rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
+                                    className="shrink-0 rounded px-1 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
                                   >
                                     ＋
                                   </button>
@@ -260,7 +257,7 @@ export function ResultsTable<R extends ResultRow>({
                           </td>
                         );
                       }
-                      // 工事区分ごとに分けているときは、点検内容も行ごとの入力欄にする
+                      // 工事区分が2件以上のときは、点検内容も行ごとの入力欄にする
                       if (col === SUMMARY_COL && split) {
                         return (
                           <td key={COLUMNS[col]} className="px-1 py-1.5">

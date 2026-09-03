@@ -15,6 +15,8 @@ import {
   OWNER_COL,
   PJ_COL,
   PROPERTY_COL,
+  PROPERTY_COUNT_COL,
+  PROPERTY_COUNT_MARK,
   RECEPTIONIST_COL,
   RECEPTION_DATE_COL,
   RECEPTION_TYPE_COL,
@@ -152,6 +154,12 @@ describe("createAfterCase", () => {
   });
 });
 
+describe("物件数の★", () => {
+  it("記録1件の印として★が入る", () => {
+    expect(build().cells[PROPERTY_COUNT_COL]).toBe(PROPERTY_COUNT_MARK);
+  });
+});
+
 describe("学習用のフィールド", () => {
   it("伏せ字メモと登録時の要約を持つ", () => {
     const row = createAfterCase({
@@ -177,6 +185,7 @@ describe("受付一覧の貼り付け", () => {
     const rows = dropColumns(expandRow(row.cells, []), AFTER_HIDDEN_COLUMNS);
     expect(rows[0]).toHaveLength(COLUMNS.length - 1);
     // 備考欄は末尾なので他の列の位置はずれない
+    expect(rows[0][PROPERTY_COUNT_COL]).toBe(PROPERTY_COUNT_MARK);
     expect(rows[0][PJ_COL]).toBe("2101230101");
     expect(rows[0][SUMMARY_COL]).toBe("浴室の換気扇から異音");
   });
@@ -188,12 +197,13 @@ describe("受付一覧の貼り付け", () => {
       AFTER_HIDDEN_COLUMNS,
     );
     expect(rows).toHaveLength(2);
+    // 物件数の★は先頭の行だけ (件数が増えないように)
+    expect(rows.map((r) => r[PROPERTY_COUNT_COL])).toEqual([PROPERTY_COUNT_MARK, ""]);
   });
 
   it("工事区分ごとに分けると行ごとに別のアフター受付内容が入る", () => {
     const row = {
       ...build(),
-      splitSummary: true,
       categories: [
         { value: "換気システム", confidence: "ok" as const, summary: "浴室の換気扇から異音" },
         { value: "サッシ", confidence: "ok" as const, summary: "2階洋室の窓が閉まりにくい" },

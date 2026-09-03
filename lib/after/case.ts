@@ -6,6 +6,7 @@ import { buildCells, entry } from "@/lib/cells";
 import { formatDateNoPadJst, formatLastUpdatedJst } from "@/lib/jst-date";
 import { AFTER_REPORT_OPTIONS } from "@/lib/report/model";
 import { toFullWidthSpace } from "@/lib/text";
+import { PROPERTY_COUNT_MARK } from "@/lib/tsv";
 import type { Confidence } from "@/lib/types";
 
 export interface CreateAfterCaseInput {
@@ -37,6 +38,8 @@ export function createAfterCase(input: CreateAfterCaseInput): AfterCase {
 
   const ownerName = fields.ownerName;
   const { cells, confidences } = buildCells({
+    // 物件数は記録1件の印 (行に展開するときは先頭の行だけに残る)
+    物件数: entry(PROPERTY_COUNT_MARK),
     PJ: entry(fields.pj ?? "", fields.pj ? "ok" : "fail"),
     // 受付種別は選択肢から選んでもらう (未選択のうちは要確認)
     受付種別: entry("", "warn"),
@@ -61,6 +64,7 @@ export function createAfterCase(input: CreateAfterCaseInput): AfterCase {
 
   return {
     kind: "after",
+    propertyCountMarked: true,
     pairId: input.id,
     customerId: input.customer.id,
     customerSource: input.customer.source,

@@ -16,7 +16,7 @@ import type { Contact } from "@/lib/types";
 /** 定期点検か、アフターメンテナンスか (既定のチェック・別紙タイトルが変わる) */
 export type ReportKind = "inspection" | "after";
 
-/** 受付者は運用上固定 (見本の完了報告書と同じ) */
+/** 受付者の既定値 (見本の完了報告書と同じ)。行ごとに ReportOptions.receptionist で差し替えられる */
 export const RECEPTIONIST = "木村美恵子";
 /** ダウンロード時のファイル名 (行の内容に依らず固定) */
 export const REPORT_XLSX_NAME = "完了報告書（原紙）.xlsx";
@@ -33,6 +33,11 @@ export const APPENDIX_REFERENCE_TEXT = "別紙参照";
 
 /** 立会・受付項目のチェック状態 (ダイアログで切り替える) */
 export interface ReportOptions {
+  /**
+   * 受付者。省略時は RECEPTIONIST。
+   * 結果テーブルの「受付者」列 (「木村」など苗字だけ) とは別で、完了報告書にだけ載せる氏名。
+   */
+  receptionist?: string;
   attendance: { owner: boolean; family: boolean; other: boolean };
   categories: {
     inspection: boolean;
@@ -78,9 +83,14 @@ export function normalizeReportOptions(
       keys.map((k) => [k, typeof g[k] === "boolean" ? (g[k] as boolean) : defaults[k]]),
     ) as Record<K, boolean>;
   };
+  // 受付者は空でない文字列だけ通し、空欄・別の型はキーごと持たない
+  // (既定に戻した行と古い保存データが同じ形になり、そのまま比べられる)
+  const receptionist =
+    typeof o.receptionist === "string" && o.receptionist.trim() ? o.receptionist : undefined;
   return {
     attendance: pick(o.attendance, ATTENDANCE_KEYS, defaults.attendance),
     categories: pick(o.categories, CATEGORY_KEYS, defaults.categories),
+    ...(receptionist !== undefined ? { receptionist } : {}),
   };
 }
 
@@ -135,9 +145,8 @@ export interface ReportSource {
   mail: { ownerKana: string; contacts: Contact[] };
   /** 省略時は定期点検 */
   kind?: ReportKind;
-  /** 点検内容を工事区分ごとに分けているとき、指示内容は各区分の本文から組み立てる */
+  /** 工事区分が2件以上なら指示内容は各区分の本文から組み立てる (常に区分ごとに分ける) */
   categories?: readonly { value: string; summary?: string }[];
-  splitSummary?: boolean;
 }
 
 /**
@@ -220,7 +229,7 @@ export function buildReportData(row: ReportSource, options: ReportOptions): Repo
     address: cell(ADDRESS_COL),
     phone1: row.mail.contacts[0]?.phone ?? "",
     phone2: row.mail.contacts[1]?.phone ?? "",
-    receptionist: RECEPTIONIST,
+    receptionist: options.receptionist?.trim() || RECEPTIONIST,
     items,
     useAppendix,
     main,

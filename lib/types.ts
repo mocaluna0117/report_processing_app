@@ -51,8 +51,8 @@ export interface WorkCategoryEntry {
   /** 画像認識が読み取った元の項目名 (参考) */
   item?: string;
   /**
-   * 点検内容を工事区分ごとに分けているときの、この区分の本文。
-   * 分けていないときは undefined (共通の cells[SUMMARY_COL] を使う)。
+   * この区分の行の点検内容。工事区分が2件以上のときだけ持つ (常に区分ごとに分ける)。
+   * 1件以下なら undefined で、共通の cells[SUMMARY_COL] が唯一の本文。
    */
   summary?: string;
 }

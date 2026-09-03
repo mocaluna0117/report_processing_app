@@ -15,7 +15,9 @@ import type {
   SummarizeRequest,
   SummarizeResponse,
 } from "@/lib/summarize/types";
+import { attachSummaries } from "@/lib/summary";
 import { toDateNoPad, toDateZeroPad, toFullWidthSpace, toHalfWidthAlnum } from "@/lib/text";
+import { PROPERTY_COUNT_MARK } from "@/lib/tsv";
 import type { Confidence, Contact, WorkCategoryEntry } from "@/lib/types";
 import type { WorkCategoriesResponse } from "@/lib/work-categories";
 
@@ -34,15 +36,17 @@ export interface ResultRow {
   /** 24列 (工事区分列は空欄のテンプレート。出力時に categories の数だけ行を展開する) */
   cells: string[];
   confidences: Confidence[];
-  /** 工事区分 (点検報告書で「有」に丸が付いた項目)。0件なら工事区分空欄の1行を出力 */
+  /**
+   * 工事区分 (点検報告書で「有」に丸が付いた項目)。0件なら工事区分空欄の1行を出力。
+   * 2件以上なら点検内容を区分ごとに分けて各 summary に持ち、
+   * cells[SUMMARY_COL] は各行の本文をまとめた鏡にしておく (recordSummary と同じ値)。
+   */
   categories: WorkCategoryEntry[];
   /**
-   * 点検内容 (SUMMARY_COL) を工事区分ごとに分けて持つか。
-   * true のとき展開した行 k は categories[k].summary を使い、
-   * cells[SUMMARY_COL] は「分ける前の本文」として残す。
-   * 工事区分が2件未満なら分ける意味が無いので、読み側は isSummarySplit() で判定する。
+   * 物件数の★を扱うようになったあとに作られた行か。
+   * 読み込み時の読み替え (lib/row-normalize.ts) が、利用者が消した★を戻さないための印。
    */
-  splitSummary?: boolean;
+  propertyCountMarked?: boolean;
   categoryEngine: "gemini" | "none";
   /** 工事区分の判定に使えたモデル名 (表示用) */
   categoryModel?: string;
@@ -264,7 +268,9 @@ export async function processPair(
     const now = new Date();
 
     // 転記先Excelの列構成 (lib/cells.ts が COLUMNS の順に並べる)
-    const { cells, confidences } = buildCells({
+    const built = buildCells({
+      // 物件数は記録1件の印 (行に展開するときは先頭の行だけに残る)
+      物件数: entry(PROPERTY_COUNT_MARK),
       PJ: data.pj,
       受付種別: data.inspectionTiming,
       // 受付日 = 点検日 (ゼロ埋めなし yyyy/m/d)
@@ -283,12 +289,17 @@ export async function processPair(
       備考欄: entry(formatRemarksJst(now)),
     });
 
+    // 工事区分が2件以上なら点検内容を区分ごとに振り分け、共通のセルはその鏡にする (常に区分ごとに分ける)。
+    // 要約が取れなかったときは全行が空欄になり、confidences は fail のまま各行に赤で出る
+    const attached = attachSummaries(built.cells, categories);
+
     return {
       pairId,
       ownerDisplay,
-      cells,
-      confidences,
-      categories,
+      cells: attached.cells,
+      confidences: built.confidences,
+      categories: attached.categories,
+      propertyCountMarked: true,
       categoryEngine,
       categoryModel,
       report: DEFAULT_REPORT_OPTIONS,
@@ -303,6 +314,7 @@ export async function processPair(
     return {
       pairId,
       ownerDisplay,
+      propertyCountMarked: true,
       ...blankCells(),
       categories: [],
       categoryEngine: "none",

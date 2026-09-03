@@ -4,7 +4,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ModalShell } from "@/components/modal-shell";
 import { downloadBytes } from "@/lib/download";
 import type { ResultRow } from "@/lib/process";
-import { isSummarySplit, recordSummary } from "@/lib/summary";
+import { setContactPhone } from "@/lib/contacts";
+import { categoryItemGroups, isSummarySplit, recordSummary, type SummaryParts } from "@/lib/summary";
+import {
+  ADDRESS_COL,
+  HANDOVER_COL,
+  OWNER_COL,
+  PJ_COL,
+  PROPERTY_COL,
+  RECEPTION_DATE_COL,
+} from "@/lib/tsv";
+import type { Contact } from "@/lib/types";
 import { loadReportAssets, resolveReportFonts } from "@/lib/report/assets";
 import {
   canQueryLocalFonts,
@@ -19,6 +29,7 @@ import {
   MAIN_SLOTS,
   REPORT_PDF_NAME,
   REPORT_XLSX_NAME,
+  RECEPTIONIST,
   buildReportData,
   joinSummary,
   splitSummary,
@@ -43,20 +54,50 @@ const CATEGORY_LABELS: { key: keyof ReportOptions["categories"]; label: string }
   { key: "free", label: "無償対応" },
 ];
 
+/** 見出し欄の1項目。onChange で結果テーブル (または行の mail / report) に即時書き戻す */
+interface HeaderField {
+  label: string;
+  value: string;
+  placeholder?: string;
+  /** 入力欄の下に出す補足 (続柄・空欄時の扱い) */
+  hint?: string;
+  /** 空欄を注意色にする (カナ。完了報告書では括弧ごと省かれる) */
+  warnWhenEmpty?: boolean;
+  onChange: (value: string) => void;
+  onBlur?: () => void;
+}
+
+/** 指示内容の編集単位。工事区分が2件以上なら区分ごと、1件以下なら全体で1つ */
+interface EditableGroup {
+  /** 書き戻し先の区分の添字。null なら共通のセル (onSummaryChange) */
+  catIndex: number | null;
+  label: string;
+  parts: SummaryParts;
+}
+
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 export function ReportDialog({
   row,
   onOptionsChange,
   onKanaChange,
+  onCellChange,
+  onContactsChange,
   onSummaryChange,
+  onCategorySummaryChange,
   onClose,
 }: {
   row: ResultRow;
   onOptionsChange: (pairId: string, options: ReportOptions) => void;
   onKanaChange: (pairId: string, kana: string) => void;
-  /** 指示内容の編集。要約の列 (結果テーブルのセル) に書き戻す */
+  /** 見出し欄 (PJコード・物件名など) の編集。結果テーブルの該当セルに書き戻す */
+  onCellChange: (pairId: string, col: number, value: string) => void;
+  /** 連絡先①②の編集 (結果テーブルに列が無いので mail.contacts を差し替える) */
+  onContactsChange: (pairId: string, contacts: Contact[]) => void;
+  /** 指示内容の編集 (工事区分が1件以下)。要約の列 (結果テーブルのセル) に書き戻す */
   onSummaryChange: (pairId: string, summary: string) => void;
+  /** 指示内容の編集 (工事区分が2件以上)。その区分の行の点検内容だけに書き戻す */
+  onCategorySummaryChange: (pairId: string, index: number, value: string) => void;
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState<"xlsx" | "pdf" | null>(null);
@@ -69,6 +110,11 @@ export function ReportDialog({
   const [fontBusy, setFontBusy] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
   const fontInputRef = useRef<HTMLInputElement>(null);
+  /**
+   * 連絡先の入力途中の文字列。行には番号だけを整えて書くので、
+   * 「（奥様）」を打っている途中の括弧が入力欄から消えないよう、編集中はこちらを表示する。
+   */
+  const [phoneDraft, setPhoneDraft] = useState<{ index: number; text: string } | null>(null);
 
   useEffect(() => {
     void loadLocalFontInfo()
@@ -85,26 +131,49 @@ export function ReportDialog({
   const summaryLabel = row.kind === "after" ? "アフター受付内容" : "点検内容";
 
   const data = useMemo(() => buildReportData(row, row.report), [row]);
-  // 指示内容は要約の列そのものなので、編集したらセルに書き戻す
-  // (メモ・「指摘なし」の定型文は落とさずに保つ)
-  const summaryParts = useMemo(() => splitSummary(recordSummary(row)), [row]);
+  /** 工事区分が2件以上なら、指示内容は区分ごとのグループに分けて編集する */
+  const split = isSummarySplit(row);
   /**
-   * 点検内容を工事区分ごとに分けているときは、ここで直せない。
-   * どの区分の項目かが分からず、書き戻し先を決められないため
-   * (結果テーブルの各行で直してもらう)。
+   * 指示内容の編集単位。
+   * 分けていれば工事区分ごと、分けていなければ全体で1グループ (見た目は今までと同じ)。
+   * 書き戻しはグループ単位なので、そのグループのメモ・定型文は joinSummary で保たれる。
    */
-  const splitByCategory = isSummarySplit(row);
+  const groups = useMemo<EditableGroup[]>(
+    () =>
+      split
+        ? categoryItemGroups(row.categories).map((g) => ({
+            catIndex: g.catIndex,
+            label: g.category || "工事区分 未選択",
+            parts: g.parts,
+          }))
+        : [{ catIndex: null, label: "", parts: splitSummary(recordSummary(row)) }],
+    [row, split],
+  );
   /**
-   * 編集中の項目。書き戻すときに空欄は落とすので、入力途中の空欄はここで保つ
-   * (「項目を追加」した直後の空欄が消えないようにする)。
+   * 編集中の項目 (グループごと)。書き戻すときに空欄は落とすので、入力途中の空欄はここで保つ。
+   * 行が替わったり工事区分の数が変わったら捨てる (書き戻し先がずれるため)。
    */
-  const [draftItems, setDraftItems] = useState<string[] | null>(null);
-  useEffect(() => setDraftItems(null), [row.pairId]);
-  const items = draftItems ?? summaryParts.items;
-  const editItems = (next: string[]) => {
-    setDraftItems(next);
-    onSummaryChange(row.pairId, joinSummary({ ...summaryParts, items: next }));
+  const [draft, setDraft] = useState<string[][] | null>(null);
+  useEffect(() => {
+    setDraft(null);
+    setPhoneDraft(null);
+  }, [row.pairId, row.categories.length]);
+  const itemsOf = (gi: number) => draft?.[gi] ?? groups[gi].parts.items;
+  const editGroupItems = (gi: number, next: string[]) => {
+    setDraft(groups.map((_, j) => (j === gi ? next : itemsOf(j))));
+    const group = groups[gi];
+    const text = joinSummary({ ...group.parts, items: next });
+    if (group.catIndex === null) onSummaryChange(row.pairId, text);
+    else onCategorySummaryChange(row.pairId, group.catIndex, text);
   };
+  const totalItems = groups.reduce((n, _, gi) => n + itemsOf(gi).length, 0);
+  /**
+   * 報告書の№。工事区分をまたいで通しで振る (buildReportData の並びと同じ)。
+   * 入力途中の空欄は報告書に載らないので数に入れず、その行の№は空にする
+   * (数に入れると後続の工事区分の番号まで実際の報告書とずれる)。
+   */
+  const numberLabel = (n: number | null) =>
+    n === null ? "" : data.useAppendix ? `別紙 ${n}` : n <= MAIN_SLOTS ? `本紙 ${n}` : `${n}`;
 
   const toggle = (group: "attendance" | "categories", key: string, checked: boolean) => {
     onOptionsChange(row.pairId, {
@@ -112,6 +181,60 @@ export function ReportDialog({
       [group]: { ...row.report[group], [key]: checked },
     });
   };
+
+  /** 受付者。空欄はキーごと外して既定 (RECEPTIONIST) に戻す */
+  const setReceptionist = (value: string) => {
+    const next: ReportOptions = { ...row.report };
+    if (value) next.receptionist = value;
+    else delete next.receptionist;
+    onOptionsChange(row.pairId, next);
+  };
+
+  const cellField = (label: string, col: number, placeholder?: string): HeaderField => ({
+    label,
+    value: row.cells[col] ?? "",
+    placeholder,
+    onChange: (value) => onCellChange(row.pairId, col, value),
+  });
+  const phoneField = (index: 0 | 1): HeaderField => {
+    const contact = row.mail.contacts[index];
+    return {
+      label: `連絡先${index === 0 ? "①" : "②"}`,
+      value: phoneDraft?.index === index ? phoneDraft.text : (contact?.phone ?? ""),
+      placeholder: "090-0000-1234（奥様）",
+      hint: contact?.relation ? `続柄: ${contact.relation}` : undefined,
+      onChange: (value) => {
+        setPhoneDraft({ index, text: value });
+        onContactsChange(row.pairId, setContactPhone(row.mail.contacts, index, value));
+      },
+      onBlur: () => setPhoneDraft(null),
+    };
+  };
+  const headerFields: HeaderField[] = [
+    cellField("PJコード", PJ_COL, "2101230101"),
+    cellField("引渡日", HANDOVER_COL, "2025/9/26"),
+    cellField("物件名", PROPERTY_COL),
+    cellField("施主名", OWNER_COL, "山田　太郎"),
+    {
+      label: "施主名 (カナ)",
+      value: row.mail.ownerKana,
+      placeholder: "ヤマダ　タロウ",
+      hint: "空欄なら括弧ごと省いて出力します（メール文と共通です）",
+      warnWhenEmpty: true,
+      onChange: (value) => onKanaChange(row.pairId, value),
+    },
+    cellField("住所", ADDRESS_COL),
+    phoneField(0),
+    phoneField(1),
+    cellField("受付日", RECEPTION_DATE_COL, "2026/7/22"),
+    {
+      label: "受付者",
+      value: row.report.receptionist ?? "",
+      placeholder: RECEPTIONIST,
+      hint: `空欄なら「${RECEPTIONIST}」で出力します（結果テーブルの受付者列とは別です）`,
+      onChange: setReceptionist,
+    },
+  ];
 
   const run = async (kind: "xlsx" | "pdf") => {
     setBusy(kind);
@@ -153,18 +276,6 @@ export function ReportDialog({
     }
   };
 
-  const fields: [string, string][] = [
-    ["PJコード", data.pj],
-    ["引渡日", data.handoverDate],
-    ["物件名", data.propertyName],
-    ["施主名", data.ownerLine ? `${data.ownerLine} 様` : ""],
-    ["住所", data.address],
-    ["連絡先①", data.phone1],
-    ["連絡先②", data.phone2],
-    ["受付日", data.receptionDate],
-    ["受付者", data.receptionist],
-  ];
-
   return (
     <ModalShell
       label={`完了報告書 ${row.ownerDisplay}`}
@@ -175,7 +286,7 @@ export function ReportDialog({
           <div>
             <h3 className="font-semibold">完了報告書 — {row.ownerDisplay}</h3>
             <p className="mt-0.5 text-xs text-slate-500">
-              内容は結果テーブルの現在値から作られます。作業内容・是正内容以降は空欄のままです
+              見出しの各欄と指示内容はここで直すと結果テーブルにも書き戻されます（受付者だけは完了報告書の値）。作業内容・是正内容以降は空欄のままです
             </p>
           </div>
           <button
@@ -188,31 +299,25 @@ export function ReportDialog({
           </button>
         </div>
 
-        <dl className="mt-4 grid gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
-          {fields.map(([label, value]) => (
-            <div key={label} className="grid grid-cols-[6rem_1fr] items-baseline gap-x-3">
-              <dt className="text-slate-500">{label}</dt>
-              <dd className={value ? "truncate" : "text-slate-400"} title={value}>
-                {value || "(空欄)"}
-              </dd>
-            </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {headerFields.map((f) => (
+            <label key={f.label} className="block text-sm">
+              <span className="font-medium">{f.label}</span>
+              <input
+                value={f.value}
+                placeholder={f.placeholder}
+                onChange={(e) => f.onChange(e.target.value)}
+                onBlur={f.onBlur}
+                className={`mt-1 w-full rounded border px-2 py-1.5 text-sm ${
+                  f.warnWhenEmpty && !f.value
+                    ? "border-amber-300 bg-amber-50"
+                    : "border-slate-300 bg-white"
+                }`}
+              />
+              {f.hint && <span className="mt-0.5 block text-xs text-slate-500">{f.hint}</span>}
+            </label>
           ))}
-        </dl>
-
-        <label className="mt-4 block text-sm">
-          <span className="font-medium">施主名のカナ</span>
-          <span className="ml-2 text-xs text-slate-500">
-            空欄なら括弧ごと省いて出力します（メール文と共通です）
-          </span>
-          <input
-            value={row.mail.ownerKana}
-            onChange={(e) => onKanaChange(row.pairId, e.target.value)}
-            placeholder="ヤマダ　タロウ"
-            className={`mt-1 w-full rounded border px-2 py-1.5 text-sm ${
-              row.mail.ownerKana ? "border-slate-300 bg-white" : "border-amber-300 bg-amber-50"
-            }`}
-          />
-        </label>
+        </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {(
@@ -247,15 +352,14 @@ export function ReportDialog({
             <p className="text-sm font-medium">
               指示内容
               <span className="ml-2 text-xs font-normal text-slate-500">
-                {splitByCategory
-                  ? `「${summaryLabel}」は工事区分ごとに分けて編集中です。直すときは結果テーブルの各行で編集してください`
-                  : `ここで直すと結果テーブルの「${summaryLabel}」にも反映されます`}
+                ここで直すと結果テーブルの「{summaryLabel}」にも反映されます
+                {split && "（工事区分ごとに、その行の欄へ書き戻します）"}
               </span>
             </p>
-            {!splitByCategory && (
+            {!split && (
               <button
                 type="button"
-                onClick={() => editItems([...items, ""])}
+                onClick={() => editGroupItems(0, [...itemsOf(0), ""])}
                 className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
               >
                 項目を追加
@@ -263,49 +367,82 @@ export function ReportDialog({
             )}
           </div>
 
-          {items.length === 0 ? (
-            <p className="mt-1 text-sm text-amber-800">
-              {splitByCategory
-                ? `指示内容が空です。結果テーブルの各行の${summaryLabel}を入力してから作成してください`
-                : `指示内容が空です。「項目を追加」で入力するか、${summaryLabel}を入力してから作成してください`}
-            </p>
-          ) : (
-            <ul className="mt-1.5 space-y-1.5">
-              {items.map((item, i) => (
-                // 並べ替えはしないので、位置をそのままキーにする
-                // biome-ignore lint/suspicious/noArrayIndexKey: 入力欄の位置と対応させるため
-                <li key={i} className="flex items-center gap-2">
-                  <span className="w-16 shrink-0 text-right text-xs text-slate-500">
-                    {data.useAppendix ? `別紙 ${i + 1}` : i < MAIN_SLOTS ? `本紙 ${i + 1}` : `${i + 1}`}
-                  </span>
-                  <input
-                    value={item}
-                    readOnly={splitByCategory}
-                    onChange={(e) =>
-                      editItems(items.map((v, j) => (j === i ? e.target.value : v)))
-                    }
-                    placeholder="1階洋室 天井クロス：クロス表面に凹凸あり"
-                    className={`w-full rounded border border-slate-300 px-2 py-1.5 text-sm ${
-                      splitByCategory ? "bg-slate-50 text-slate-600" : "bg-white"
-                    }`}
-                  />
-                  {!splitByCategory && (
-                    <button
-                      type="button"
-                      title="この項目を削除"
-                      onClick={() => editItems(items.filter((_, j) => j !== i))}
-                      className="shrink-0 cursor-pointer rounded px-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                    >
-                      ✕
-                    </button>
+          {(() => {
+            // №は工事区分をまたいで通しで振る (報告書の並びと同じ)。
+            // 空欄は報告書に載らないので数えない
+            let no = 0;
+            return groups.map((group, gi) => {
+              const items = itemsOf(gi);
+              const numbers = items.map((s) => (s.trim() ? ++no : null));
+              return (
+                <section
+                  key={group.catIndex ?? "all"}
+                  className={split ? "mt-2 rounded-lg border border-slate-200 p-2" : ""}
+                >
+                  {split && (
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <p className="text-xs font-medium text-slate-600">
+                        {group.label}
+                        <span className="ml-1 font-normal text-slate-400">{items.length}件</span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => editGroupItems(gi, [...items, ""])}
+                        className="cursor-pointer rounded-md border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium hover:bg-slate-50"
+                      >
+                        項目を追加
+                      </button>
+                    </div>
                   )}
-                </li>
-              ))}
-            </ul>
-          )}
-          {summaryParts.notes.length > 0 && (
-            <p className="mt-1.5 text-xs text-slate-500">
-              メモ (完了報告書には載せません): {summaryParts.notes.join(" / ")}
+                  {items.length === 0
+                    ? split && (
+                        <p className="mt-1 text-xs text-slate-400">この区分の項目はありません</p>
+                      )
+                    : (
+                      <ul className="mt-1.5 space-y-1.5">
+                        {items.map((item, i) => (
+                          // 並べ替えはしないので、位置をそのままキーにする
+                          // biome-ignore lint/suspicious/noArrayIndexKey: 入力欄の位置と対応させるため
+                          <li key={`${gi}-${i}`} className="flex items-center gap-2">
+                            <span className="w-16 shrink-0 text-right text-xs text-slate-500">
+                              {numberLabel(numbers[i])}
+                            </span>
+                            <input
+                              value={item}
+                              onChange={(e) =>
+                                editGroupItems(
+                                  gi,
+                                  items.map((v, j) => (j === i ? e.target.value : v)),
+                                )
+                              }
+                              placeholder="1階洋室 天井クロス：クロス表面に凹凸あり"
+                              className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                            />
+                            <button
+                              type="button"
+                              title="この項目を削除"
+                              onClick={() => editGroupItems(gi, items.filter((_, j) => j !== i))}
+                              className="shrink-0 cursor-pointer rounded px-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
+                            >
+                              ✕
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  {group.parts.notes.length > 0 && (
+                    <p className="mt-1.5 text-xs text-slate-500">
+                      メモ (完了報告書には載せません): {group.parts.notes.join(" / ")}
+                    </p>
+                  )}
+                </section>
+              );
+            });
+          })()}
+
+          {totalItems === 0 && (
+            <p className="mt-1 text-sm text-amber-800">
+              指示内容が空です。「項目を追加」で入力するか、{summaryLabel}を入力してから作成してください
             </p>
           )}
           {data.useAppendix && (
