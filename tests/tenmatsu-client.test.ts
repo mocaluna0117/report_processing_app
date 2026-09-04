@@ -3,12 +3,18 @@ import {
   createTenmatsuClient,
   describeCompletion,
   describeFailure,
+  EMPTY_FLAGS_MESSAGE,
   formatFetchedAt,
   formatFileSize,
+  hasFlags,
+  type HealthPayload,
   isFinished,
   isListItemLike,
   isValidToken,
+  type ListItem,
   NETWORK_FAILURE_MESSAGE,
+  resolveRunLimits,
+  RUN_COUNT_FORMAT_MESSAGE,
   type StatusPayload,
   TENMATSU_BASE_URL,
   TenmatsuError,
@@ -56,6 +62,55 @@ async function failureOf(call: () => Promise<unknown>): Promise<TenmatsuError> {
   throw new Error("失敗するはずの呼び出しが成功しました");
 }
 
+const listItem = (over: Partial<ListItem> = {}): ListItem => ({
+  denpyo_no: "TE00009001",
+  file: "顛末書No.9001.pdf",
+  at: "2026-09-04T10:00:00",
+  exists: true,
+  pages: 3,
+  size: 29140,
+  budget_entered: false,
+  cloud_stored: false,
+  completed: false,
+  flags_updated_at: null,
+  ...over,
+});
+
+/** 完了フラグに未対応のサーバー・この機能より前のキャッシュが返す形 (6項目だけ) */
+const oldShapeItem = {
+  denpyo_no: "TE00009002",
+  file: "顛末書No.9002.pdf",
+  at: "2026-09-04T10:00:00",
+  exists: true,
+  pages: 3,
+  size: 29140,
+};
+
+const health = (over: Partial<HealthPayload> = {}): HealthPayload => ({
+  ok: true,
+  service: "tenmatsu-local",
+  version: 1,
+  save_dir: "C:\\Users\\x\\顛末書",
+  job_state: "idle",
+  max_per_run: 10,
+  max_per_run_min: 1,
+  max_per_run_max: 100,
+  headless: true,
+  demo: false,
+  ...over,
+});
+
+/** 更新していないPCのサーバー (5個しか返さない) */
+const oldHealth = {
+  ok: true,
+  service: "tenmatsu-local",
+  version: 1,
+  save_dir: "",
+  job_state: "idle",
+} as HealthPayload;
+
+const bodyOf = (init: RequestInit) => JSON.parse(String(init.body)) as Record<string, unknown>;
+
 describe("リクエストの組み立て", () => {
   it("一覧はトークンをヘッダーで送り、毎回取りに行く", async () => {
     const { impl, calls } = fakeFetch(() => json({ items: [] }));
@@ -64,6 +119,17 @@ describe("リクエストの組み立て", () => {
     expect(headerOf(calls[0].init, "X-Tenmatsu-Token")).toBe("tok-1");
     expect(calls[0].init.cache).toBe("no-store");
     expect(calls[0].init.credentials).toBe("omit");
+  });
+
+  it("本文があるときだけ Content-Type を付ける", async () => {
+    const listCalls = fakeFetch(() => json({ items: [] }));
+    await createTenmatsuClient({ token: "t", fetchImpl: listCalls.impl }).list();
+    expect(headerOf(listCalls.calls[0].init, "Content-Type")).toBeUndefined();
+    expect(listCalls.calls[0].init.body).toBeUndefined();
+
+    const runCalls = fakeFetch(() => json({ ok: true, status: status() }));
+    await createTenmatsuClient({ token: "t", fetchImpl: runCalls.impl }).run({ maxPerRun: 5 });
+    expect(headerOf(runCalls.calls[0].init, "Content-Type")).toBe("application/json");
   });
 
   it("疎通確認はトークンを送らない (単純なGETに保つため)", async () => {
@@ -177,6 +243,8 @@ describe("失敗の扱い", () => {
 
   it("describeFailure の対応表", () => {
     expect(describeFailure(400).kind).toBe("badRequest");
+    // /run と /flags でも 400 になるので、/file 専用の文言を既定にしない
+    expect(describeFailure(400).message).not.toContain("伝票No.");
     expect(describeFailure(403).kind).toBe("forbidden");
     expect(describeFailure(403).message).toContain("allowed_origins");
     expect(describeFailure(418).kind).toBe("unknown");
@@ -200,13 +268,81 @@ describe("実行の開始", () => {
     expect(res.status.state).toBe("running");
   });
 
+  it("件数をJSONの本文で送る", async () => {
+    const { impl, calls } = fakeFetch(() =>
+      json({ ok: true, max_per_run: 25, headless: true, status: status() }),
+    );
+    const res = await createTenmatsuClient({ token: "t", fetchImpl: impl }).run({ maxPerRun: 25 });
+    expect(bodyOf(calls[0].init)).toEqual({ max_per_run: 25 });
+    expect(res.maxPerRun).toBe(25);
+    expect(res.headless).toBe(true);
+  });
+
+  it("件数を省略したら空のオブジェクトを送る (サーバーの既定値で動かす)", async () => {
+    const { impl, calls } = fakeFetch(() => json({ ok: true, status: status() }));
+    const res = await createTenmatsuClient({ token: "t", fetchImpl: impl }).run();
+    expect(calls[0].init.body).toBe("{}");
+    expect(res.started).toBe(true);
+  });
+
+  it("指定していないキーは送らない (null を送るとサーバーは未指定と同じに扱う)", async () => {
+    const { impl, calls } = fakeFetch(() => json({ ok: true, status: status() }));
+    const client = createTenmatsuClient({ token: "t", fetchImpl: impl });
+    await client.run({ maxPerRun: 5 });
+    expect("headless" in bodyOf(calls[0].init)).toBe(false);
+    await client.run({ headless: false });
+    expect(Object.keys(bodyOf(calls[1].init))).toEqual(["headless"]);
+  });
+
+  it("件数を返さない古いサーバーでは maxPerRun が null になる", async () => {
+    const { impl } = fakeFetch(() => json({ ok: true, status: status() }));
+    const res = await createTenmatsuClient({ token: "t", fetchImpl: impl }).run({ maxPerRun: 50 });
+    expect(res.started).toBe(true);
+    expect(res.maxPerRun).toBeNull();
+    expect(res.headless).toBeNull();
+  });
+
+  it("整数でない件数は通信する前に弾く", async () => {
+    for (const value of [1.5, Number.NaN]) {
+      const { impl, calls } = fakeFetch(() => json({ ok: true, status: status() }));
+      const e = await failureOf(() =>
+        createTenmatsuClient({ token: "t", fetchImpl: impl }).run({ maxPerRun: value }),
+      );
+      expect(e.message).toBe(RUN_COUNT_FORMAT_MESSAGE);
+      expect(e.kind).toBe("badRequest");
+      expect(e.status).toBeNull();
+      // NaN は JSON.stringify で null になり、サーバーは「未指定」と読んで既定値で走ってしまう
+      expect(calls.length).toBe(0);
+    }
+  });
+
+  it("範囲外の件数はサーバーの文言をそのまま出す", async () => {
+    const message = "max_per_run は 1〜100 の範囲で指定してください（受け取った値: 0）";
+    const { impl } = fakeFetch(() => json({ error: message }, 400));
+    const e = await failureOf(() =>
+      createTenmatsuClient({ token: "t", fetchImpl: impl }).run({ maxPerRun: 0 }),
+    );
+    expect(e.kind).toBe("badRequest");
+    expect(e.status).toBe(400);
+    expect(e.message).toBe(message);
+  });
+
+  it("整数でないと言われた400の文言も加工しない (値はPythonの表記で入る)", async () => {
+    const message = "max_per_run は整数で指定してください（受け取った値: True）";
+    const { impl } = fakeFetch(() => json({ error: message }, 400));
+    const e = await failureOf(() => createTenmatsuClient({ token: "t", fetchImpl: impl }).run());
+    expect(e.message).toBe(message);
+  });
+
   it("409 (すでに実行中) はエラーにせず、進行中の進捗を返す", async () => {
     const { impl } = fakeFetch(() =>
       json({ error: "すでに実行中です", status: status({ remaining: 86 }) }, 409),
     );
-    const res = await createTenmatsuClient({ token: "t", fetchImpl: impl }).run();
+    const res = await createTenmatsuClient({ token: "t", fetchImpl: impl }).run({ maxPerRun: 5 });
     expect(res.started).toBe(false);
     expect(res.status.remaining).toBe(86);
+    // 合流しただけなので、指定した件数は効いていない
+    expect(res.maxPerRun).toBeNull();
   });
 
   it("開始直後に失敗して done/error で返っても例外にしない", async () => {
@@ -328,5 +464,247 @@ describe("表示用の整形", () => {
     expect(isListItemLike({ ...good, at: 20260904 })).toBe(false);
     expect(isListItemLike(null)).toBe(false);
     expect(isListItemLike("なにか")).toBe(false);
+  });
+});
+
+describe("完了フラグを持つ一覧", () => {
+  it("フラグ4つをそのまま通す (completed を計算し直さない)", async () => {
+    // 両方 true なのに completed が false で届いても、そのまま渡すのが正しい
+    const row = listItem({
+      budget_entered: true,
+      cloud_stored: true,
+      completed: false,
+      flags_updated_at: "2026-09-04T18:20:00",
+    });
+    const { impl } = fakeFetch(() => json({ items: [row] }));
+    expect(await createTenmatsuClient({ token: "t", fetchImpl: impl }).list()).toEqual([row]);
+  });
+
+  it("フラグを持たない古い形の行も落とさない (0件に見せてはいけない)", async () => {
+    const { impl } = fakeFetch(() => json({ items: [oldShapeItem, listItem()] }));
+    const items = await createTenmatsuClient({ token: "t", fetchImpl: impl }).list();
+    expect(items.map((i) => i.denpyo_no)).toEqual(["TE00009002", "TE00009001"]);
+  });
+
+  it("hasFlags でフラグが分かる行と分からない行を見分ける", () => {
+    expect(hasFlags(listItem())).toBe(true);
+    expect(hasFlags(listItem({ budget_entered: true, cloud_stored: true }))).toBe(true);
+    expect(hasFlags(oldShapeItem as ListItem)).toBe(false);
+  });
+
+  it("isListItemLike は6項目だけの行も通す (キャッシュを捨てないため)", () => {
+    expect(isListItemLike(oldShapeItem)).toBe(true);
+    expect(isListItemLike(listItem())).toBe(true);
+    // 入っているときは型を確かめる
+    expect(isListItemLike({ ...oldShapeItem, budget_entered: 1 })).toBe(false);
+    expect(isListItemLike({ ...oldShapeItem, completed: "yes" })).toBe(false);
+    expect(isListItemLike({ ...oldShapeItem, flags_updated_at: 20260904 })).toBe(false);
+    expect(isListItemLike({ ...oldShapeItem, flags_updated_at: null })).toBe(true);
+  });
+});
+
+describe("疎通確認の新しいフィールド", () => {
+  it("読める", async () => {
+    const { impl } = fakeFetch(() => json(health({ demo: true, max_per_run: 25 })));
+    const h = await createTenmatsuClient({ token: "t", fetchImpl: impl }).health();
+    expect(h.demo).toBe(true);
+    expect(h.max_per_run).toBe(25);
+    expect(h.max_per_run_min).toBe(1);
+    expect(h.max_per_run_max).toBe(100);
+  });
+
+  it("返さない古いサーバーでも落ちない", async () => {
+    const { impl } = fakeFetch(() => json(oldHealth));
+    const h = await createTenmatsuClient({ token: "t", fetchImpl: impl }).health();
+    expect(h.ok).toBe(true);
+    expect(h.max_per_run).toBeUndefined();
+    expect(h.demo).toBeUndefined();
+  });
+});
+
+describe("件数の上下限", () => {
+  it("サーバーの値をそのまま使う", () => {
+    expect(resolveRunLimits(health())).toEqual({
+      value: 10,
+      min: 1,
+      max: 100,
+      fromServer: true,
+    });
+  });
+
+  it("古いサーバー・繋ぐ前は折り込みの既定値を使う", () => {
+    const fallback = { value: 10, min: 1, max: 100, fromServer: false };
+    expect(resolveRunLimits(oldHealth)).toEqual(fallback);
+    expect(resolveRunLimits(null)).toEqual(fallback);
+    expect(resolveRunLimits(undefined)).toEqual(fallback);
+  });
+
+  it("既定値が上下限の外なら丸める", () => {
+    expect(resolveRunLimits(health({ max_per_run: 500 })).value).toBe(100);
+    expect(resolveRunLimits(health({ max_per_run: 0 })).value).toBe(1);
+  });
+
+  it("上下限が逆転していても入力できる値にする", () => {
+    const r = resolveRunLimits(health({ max_per_run_min: 100, max_per_run_max: 1 }));
+    expect(r.min).toBe(1);
+    expect(r.max).toBe(100);
+  });
+
+  it("整数でない値は無視して既定値を使う", () => {
+    expect(resolveRunLimits(health({ max_per_run: Number.NaN })).value).toBe(10);
+    expect(resolveRunLimits(health({ max_per_run: 10.5 })).value).toBe(10);
+  });
+
+  it("version では判定しない (増えないため)", () => {
+    // 同じ version なのに答えは逆になる
+    expect(resolveRunLimits(health({ version: 1 })).fromServer).toBe(true);
+    expect(resolveRunLimits({ ...oldHealth, version: 1 }).fromServer).toBe(false);
+  });
+});
+
+describe("完了フラグの更新", () => {
+  const okFlags = (item: unknown = listItem({ budget_entered: true })) =>
+    fakeFetch(() => json({ ok: true, item }));
+
+  it("伝票No.と変えるフラグだけを本文で送る", async () => {
+    const { impl, calls } = okFlags();
+    await createTenmatsuClient({ token: "tok-1", fetchImpl: impl }).setFlags("TE00009001", {
+      budget_entered: true,
+    });
+    expect(calls[0].url.pathname).toBe("/flags");
+    expect(calls[0].init.method).toBe("POST");
+    expect(headerOf(calls[0].init, "Content-Type")).toBe("application/json");
+    expect(headerOf(calls[0].init, "X-Tenmatsu-Token")).toBe("tok-1");
+    expect(bodyOf(calls[0].init)).toEqual({ denpyo_no: "TE00009001", budget_entered: true });
+  });
+
+  it("2つ同時にも送れる", async () => {
+    const { impl, calls } = okFlags();
+    await createTenmatsuClient({ token: "t", fetchImpl: impl }).setFlags("TE1", {
+      budget_entered: true,
+      cloud_stored: false,
+    });
+    expect(bodyOf(calls[0].init)).toEqual({
+      denpyo_no: "TE1",
+      budget_entered: true,
+      cloud_stored: false,
+    });
+  });
+
+  it("false も送る (チェックを外せる)", async () => {
+    const { impl, calls } = okFlags();
+    await createTenmatsuClient({ token: "t", fetchImpl: impl }).setFlags("TE1", {
+      budget_entered: false,
+    });
+    expect(bodyOf(calls[0].init)).toEqual({ denpyo_no: "TE1", budget_entered: false });
+  });
+
+  it("フラグを1つも指定しなければ通信せずに例外にする", async () => {
+    const { impl, calls } = okFlags();
+    const e = await failureOf(() =>
+      createTenmatsuClient({ token: "t", fetchImpl: impl }).setFlags("TE1", {}),
+    );
+    expect(e.message).toBe(EMPTY_FLAGS_MESSAGE);
+    expect(e.kind).toBe("badRequest");
+    expect(e.status).toBeNull();
+    expect(calls.length).toBe(0);
+  });
+
+  it("undefined だけを渡した場合も通信しない", async () => {
+    const { impl, calls } = okFlags();
+    const e = await failureOf(() =>
+      createTenmatsuClient({ token: "t", fetchImpl: impl }).setFlags("TE1", {
+        budget_entered: undefined,
+      }),
+    );
+    expect(e.message).toBe(EMPTY_FLAGS_MESSAGE);
+    expect(calls.length).toBe(0);
+  });
+
+  it("更新後の行を返す", async () => {
+    const row = listItem({ budget_entered: true, flags_updated_at: "2026-09-04T18:20:00" });
+    const { impl } = okFlags(row);
+    const got = await createTenmatsuClient({ token: "t", fetchImpl: impl }).setFlags("TE1", {
+      budget_entered: true,
+    });
+    expect(got).toEqual(row);
+  });
+
+  it("item が null でも例外にしない (保存は済んでいる)", async () => {
+    const { impl } = okFlags(null);
+    const got = await createTenmatsuClient({ token: "t", fetchImpl: impl }).setFlags("TE1", {
+      budget_entered: true,
+    });
+    expect(got).toBeNull();
+  });
+
+  it("item が入っていない応答でも null を返す", async () => {
+    const { impl } = fakeFetch(() => json({ ok: true }));
+    expect(
+      await createTenmatsuClient({ token: "t", fetchImpl: impl }).setFlags("TE1", {
+        cloud_stored: true,
+      }),
+    ).toBeNull();
+  });
+
+  it("記録の無い伝票は notFound で返す", async () => {
+    const { impl } = fakeFetch(() => json({ error: "伝票 TE99999999 の記録がありません" }, 404));
+    const e = await failureOf(() =>
+      createTenmatsuClient({ token: "t", fetchImpl: impl }).setFlags("TE99999999", {
+        budget_entered: true,
+      }),
+    );
+    expect(e.kind).toBe("notFound");
+    expect(e.status).toBe(404);
+    expect(e.message).toBe("伝票 TE99999999 の記録がありません");
+  });
+
+  it("JSONの形が違うと言われた400もそのまま出す", async () => {
+    const { impl } = fakeFetch(() => json({ error: "JSONのオブジェクトを送ってください" }, 400));
+    const e = await failureOf(() =>
+      createTenmatsuClient({ token: "t", fetchImpl: impl }).setFlags("TE1", {
+        budget_entered: true,
+      }),
+    );
+    expect(e.kind).toBe("badRequest");
+    expect(e.message).toBe("JSONのオブジェクトを送ってください");
+  });
+
+  it("processed.json が壊れているときの案内をそのまま出す", async () => {
+    const message =
+      "/Users/x/processed.json が壊れています（Expecting value）。" +
+      "1つ前の内容が /Users/x/processed.json.bak に残っています。" +
+      "中身を確認して問題なければ processed.json にコピーしてください。";
+    const { impl } = fakeFetch(() => json({ error: message }, 500));
+    const e = await failureOf(() =>
+      createTenmatsuClient({ token: "t", fetchImpl: impl }).setFlags("TE1", {
+        budget_entered: true,
+      }),
+    );
+    expect(e.kind).toBe("server");
+    expect(e.message).toBe(message);
+  });
+
+  it("401 はフラグの更新でも例外にする", async () => {
+    const { impl } = fakeFetch(() => json({ error: "トークンが違います" }, 401));
+    const e = await failureOf(() =>
+      createTenmatsuClient({ token: "bad", fetchImpl: impl }).setFlags("TE1", {
+        budget_entered: true,
+      }),
+    );
+    expect(e.kind).toBe("auth");
+  });
+
+  it("通信そのものが失敗したら接続の案内になる", async () => {
+    const { impl } = fakeFetch(() => {
+      throw new TypeError("Failed to fetch");
+    });
+    const e = await failureOf(() =>
+      createTenmatsuClient({ token: "t", fetchImpl: impl }).setFlags("TE1", {
+        budget_entered: true,
+      }),
+    );
+    expect(e.kind).toBe("network");
+    expect(e.message).toBe(NETWORK_FAILURE_MESSAGE);
   });
 });

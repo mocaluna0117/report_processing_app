@@ -1,13 +1,15 @@
 "use client";
 
-// 顛末書タブの保存 (IndexedDB の meta ストア)。置くのは2つだけ:
+// 顛末書タブの保存 (IndexedDB の meta ストア)。置くのは3つだけ:
 //   1. ローカルサーバーのトークン (1回登録すれば次回から入力不要)
 //   2. 取得済み一覧のキャッシュ (サーバーへ繋ぐ前でも前回の内容を出せるように)
+//   3. 1回に取る件数 (次回も同じ件数から始められるように)
 // どちらもこの端末のこのブラウザの中だけに置く。folio のサーバー (Vercel) へは送らない。
 // 一覧には伝票No.とファイル名が入るので、「一覧を消去」で消せるようにしている。
 // PDFの実体はここには入れない (PCの保存先フォルダにあり、見るときだけ取りに行く)。
 import {
   META_TENMATSU_LIST,
+  SETTING_KEY_TENMATSU_MAX_PER_RUN,
   SETTING_KEY_TENMATSU_TOKEN,
   STORE_META,
   deleteMeta,
@@ -54,7 +56,23 @@ export async function clearCachedList(): Promise<void> {
   await deleteMeta(META_TENMATSU_LIST);
 }
 
-/** この画面の保存データが残っているか (消去の導線を出すため) */
+/**
+ * 1回に取る件数。整数でなければ null (＝サーバーの既定値を使う)。
+ * 上下限に収まっているかはここでは見ない (サーバーごとに違うので使うときに丸める)。
+ */
+export async function loadMaxPerRun(): Promise<number | null> {
+  const raw = await loadMeta<unknown>(SETTING_KEY_TENMATSU_MAX_PER_RUN);
+  return typeof raw === "number" && Number.isInteger(raw) ? raw : null;
+}
+
+export async function saveMaxPerRun(value: number): Promise<void> {
+  await saveMeta(SETTING_KEY_TENMATSU_MAX_PER_RUN, value);
+}
+
+/**
+ * この画面の保存データが残っているか (消去の導線を出すため)。
+ * 件数は設定なので数えない (件数だけ残っている状態で消去のボタンを出す意味はない)。
+ */
 export async function hasTenmatsuData(): Promise<boolean> {
   const [token, items] = await Promise.all([loadToken(), loadCachedList()]);
   return token !== null || items.length > 0;

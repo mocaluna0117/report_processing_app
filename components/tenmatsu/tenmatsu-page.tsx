@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StorageBanner } from "@/components/storage-banner";
+import { type FlagKey, TenmatsuList } from "@/components/tenmatsu/tenmatsu-list";
 import { TenmatsuPreviewDialog } from "@/components/tenmatsu/tenmatsu-preview-dialog";
 import { setNavigationGuard } from "@/lib/navigation-guard";
 import { isStorageAvailable } from "@/lib/storage";
@@ -14,18 +15,19 @@ import {
   TenmatsuError,
   createTenmatsuClient,
   describeCompletion,
-  formatFetchedAt,
-  formatFileSize,
   isFinished,
   isValidToken,
 } from "@/lib/tenmatsu/client";
+import { type ListFilter, resolvePerRun } from "@/lib/tenmatsu/list-view";
 import {
   clearCachedList,
   clearToken,
   hasTenmatsuData,
   loadCachedList,
+  loadMaxPerRun,
   loadToken,
   saveCachedList,
+  saveMaxPerRun,
   saveToken,
 } from "@/lib/tenmatsu/store";
 import { usePersistence } from "@/lib/use-persistence";
@@ -34,6 +36,9 @@ import { usePersistence } from "@/lib/use-persistence";
 const POLL_MS = 2000;
 /** 何回続けて進捗を取れなかったら諦めるか (一時的な失敗では止めない) */
 const POLL_FAILURE_LIMIT = 5;
+
+/** サーバーがPDFに変換できる添付。サーバーのエラー文と同じ並び・同じ表記にしてある */
+const SUPPORTED_ATTACHMENTS = "PDF, JPG, JPEG, PNG, XLSX, XLS, XLSM";
 
 const SECTION_CLASS = "rounded-lg border border-slate-200 bg-white p-4";
 const SUBTITLE_CLASS = "ml-2 text-xs font-normal text-slate-500";
@@ -80,6 +85,33 @@ export function TenmatsuPage() {
   const [runNotice, setRunNotice] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
 
+  /**
+   * 変更中のチェックがある行 (伝票No.)。応答は行まるごとなので行単位で止める。
+   * 判定は ref を正にする (state の反映を待たずに「いま保存中か」を見たいため)。
+   */
+  const savingFlagsRef = useRef<ReadonlySet<string>>(new Set());
+  const [savingFlags, setSavingFlags] = useState<ReadonlySet<string>>(new Set());
+  const [flagError, setFlagError] = useState<string | null>(null);
+  /**
+   * この画面でチェックを変えた行。完了になっても次に一覧を読み直すまでは隠さない。
+   * これが無いと2つ目にチェックを入れた瞬間に行が消えて、押し間違いを戻せない。
+   * 表示の都合だけで、チェックの値は /list のもの。
+   */
+  const [recentNos, setRecentNos] = useState<ReadonlySet<string>>(new Set());
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [listFilter, setListFilter] = useState<ListFilter>("all");
+  /** 1回に取る件数の下書き。数字かどうかは押したときに見る (入力中は弾かない) */
+  const [maxInput, setMaxInput] = useState("");
+  /** 保存されていた件数 (null なら未保存)。/health と合わせて入力欄の初期値にする */
+  const [storedMaxPerRun, setStoredMaxPerRun] = useState<number | null>(null);
+  const [listNotice, setListNotice] = useState<string | null>(null);
+  /**
+   * 「一覧を消去」で消した直後か。自動の取り直しを止めるために持つ
+   * (消した瞬間に戻ってきたら、消したことにならない)。
+   * 「接続する」と「一覧を再読み込み」で下ろす。
+   */
+  const clearedRef = useRef(false);
+
   const [previewNo, setPreviewNo] = useState<string | null>(null);
   /** 案内に出す自分のURL (サーバーの許可オリジンに足してもらうため) */
   const [origin, setOrigin] = useState("");
@@ -104,18 +136,37 @@ export function TenmatsuPage() {
       } catch (e) {
         partialErrors.push(`取得済み一覧: ${errorText(e)}`);
       }
+      try {
+        setStoredMaxPerRun(await loadMaxPerRun());
+      } catch (e) {
+        partialErrors.push(`取得件数: ${errorText(e)}`);
+      }
       return { partialErrors };
     },
     hasSaved: hasTenmatsuData,
   });
 
+  /** 保存中の印を上げ下げする (ref と state の両方) */
+  const markSaving = (no: string, on: boolean) => {
+    const next = new Set(savingFlagsRef.current);
+    if (on) next.add(no);
+    else next.delete(no);
+    savingFlagsRef.current = next;
+    setSavingFlags(next);
+  };
+
   const refreshList = async () => {
+    // チェックの保存中に取り直すと、古い /list が新しい書き込みを上書きしてしまう
+    if (savingFlagsRef.current.size > 0) return;
+    clearedRef.current = false;
     setListLoading(true);
     setListError(null);
+    setFlagError(null);
     try {
       const fresh = await client.list();
       setItems(fresh);
       setListFresh(true);
+      setRecentNos(new Set());
       storage.persist(() => saveCachedList(fresh));
     } catch (e) {
       if (e instanceof TenmatsuError && e.kind === "auth") setEditingToken(true);
@@ -142,6 +193,11 @@ export function TenmatsuPage() {
       const h = await client.health();
       setHealth(h);
       setConnection("ok");
+      setListNotice(null);
+      clearedRef.current = false;
+      // 件数の初期値は 保存値 → 範囲内か → /health の既定値 の順で決める。
+      // つなぎ直したときも入れ直す (サーバーを入れ替えて上下限が変わっていることがある)
+      setMaxInput(String(resolvePerRun(storedMaxPerRun, h).value));
       if (!token) return; // トークン未登録。入力欄が出るのでここで止める
       // .bat から始めた分や別タブの実行にも合流できるようにする
       if (h.job_state === "running") {
@@ -203,12 +259,35 @@ export function TenmatsuPage() {
     setRunError(null);
     setRunNotice(null);
     setStatusError(null);
+    setListNotice(null);
+    const draft = maxInput.trim();
+    // 数字でないときだけ folio で止める。範囲外 (0 や 999) はそのまま送って、
+    // サーバーの日本語のメッセージをそのまま出す (folio では丸めない)
+    if (perRun.fromServer && !/^\d+$/.test(draft)) {
+      setRunError(`1回に取る件数は半角の数字で入力してください (${perRun.min}〜${perRun.max})`);
+      return;
+    }
     setStarting(true);
     try {
-      const { started, status: first } = await client.run();
+      const {
+        started,
+        status: first,
+        maxPerRun,
+      } = await client.run(perRun.fromServer ? { maxPerRun: Number(draft) } : {});
       setStatus(first);
       setRunObserved(true);
-      if (!started) setRunNotice("すでに実行中でした。進行中の処理の進捗を表示します");
+      if (maxPerRun !== null) {
+        // サーバーが実際に使った件数を残す (次も同じ件数で始められる)
+        setMaxInput(String(maxPerRun));
+        setStoredMaxPerRun(maxPerRun);
+        storage.persist(() => saveMaxPerRun(maxPerRun));
+      }
+      if (!started) {
+        setRunNotice(
+          "すでに実行中でした。進行中の処理の進捗を表示します" +
+            " (入力した件数は、すでに動いている処理には反映されません)",
+        );
+      }
       // 200 でも、開始直後に失敗して done/error で返ってくることがある
       if (isFinished(first.state)) void refreshListRef.current();
       else setPolling(true);
@@ -264,6 +343,36 @@ export function TenmatsuPage() {
     };
   }, [polling, client]);
 
+  /**
+   * 一覧が空のままサーバーに繋がっているときは、自動でPCの記録を取り直す。
+   * 新しいブラウザで開いたときや、形の違う古いキャッシュを捨てたときのため。
+   *
+   * 繰り返さないための条件をすべて置く:
+   * - connection === "ok" だけを起点にする (マウント時にサーバーへ触らない。
+   *   Chrome 142 / Edge 143 の「このデバイス上のアプリ」の許可はクリックで出す)
+   * - listFresh が立ったらもう撃たない → サーバーが本当に0件でも取りに行くのは1回だけ
+   * - listError があるときは撃たない → 失敗のたびに撃ち続けない
+   * - 「一覧を消去」の直後は撃たない → 消したのに戻ってきたら消したことにならない
+   */
+  useEffect(() => {
+    if (connection !== "ok" || token === null || !storage.restored) return;
+    // 配列の同一性で見ると毎回 new になって無限に回る
+    if (items.length > 0 || listFresh) return;
+    if (listLoading || running || listError !== null) return;
+    if (savingFlags.size > 0 || clearedRef.current) return;
+    void refreshListRef.current();
+  }, [
+    connection,
+    token,
+    storage.restored,
+    items.length,
+    listFresh,
+    listLoading,
+    listError,
+    running,
+    savingFlags.size,
+  ]);
+
   // 取得中に画面を切り替えると進捗が見えなくなるので確認を出す
   useEffect(() => {
     setNavigationGuard(
@@ -277,7 +386,9 @@ export function TenmatsuPage() {
   const clearList = async () => {
     if (
       !confirm(
-        "この画面に保存している取得済み一覧を消去します。PCに保存されたPDFは消えません。よろしいですか？",
+        "この画面に保存している取得済み一覧を消去します。" +
+          "PCに保存されたPDFと、実行予算入力済み・クラウド格納済みのチェックは消えません。" +
+          "再接続すれば元に戻ります。よろしいですか？",
       )
     ) {
       return;
@@ -289,9 +400,18 @@ export function TenmatsuPage() {
         storage.setStorageError(`一覧を消去できませんでした (${errorText(e)})`);
       }
     }
+    // 消した直後に自動で取り直すと、消したことにならない。押したら戻すまでは空にしておく
+    clearedRef.current = true;
     setItems([]);
     setListFresh(false);
     setPreviewNo(null);
+    setFlagError(null);
+    setRecentNos(new Set());
+    setListNotice(
+      "この画面に保存していた分を消しました。" +
+        "「一覧を再読み込み」または「つなぎ直す」で元に戻ります" +
+        " (PDFとチェックはPCに残っています)",
+    );
     storage.refreshHasSaved();
     storage.refreshUsage();
   };
@@ -316,9 +436,68 @@ export function TenmatsuPage() {
     storage.refreshUsage();
   };
 
+  /**
+   * 1行のチェックを1つだけ切り替える。
+   * - 送るのは押した1つだけ (0個で送るとサーバーは400)
+   * - **応答が来るまで画面の値は変えない。**成功したらサーバーが返した行で置き換える
+   *   ＝ 失敗しても元に戻す処理が要らない (そもそも変わっていない) し、
+   *      成功したように見えることもない。チェックは常に /list の値の写しになる
+   * - exists=false の行でも変えられる (404 は記録の有無で決まる)
+   */
+  const toggleFlag = async (no: string, flag: FlagKey, next: boolean) => {
+    setFlagError(null);
+    markSaving(no, true);
+    // ok でも item が無いことがある。そのときは一覧を取り直すが、
+    // 保存中の印を下ろしてからにする (refreshList は保存中は動かないため)
+    let needsRefresh = false;
+    try {
+      const updated = await client.setFlags(
+        no,
+        flag === "budget_entered" ? { budget_entered: next } : { cloud_stored: next },
+      );
+      if (updated) {
+        // 一覧の再取得は不要。返ってきた行だけ差し替える
+        setItems((prev) => prev.map((i) => (i.denpyo_no === no ? updated : i)));
+        setRecentNos((prev) => new Set(prev).add(no));
+      } else {
+        needsRefresh = true;
+      }
+    } catch (e) {
+      if (e instanceof TenmatsuError && e.kind === "auth") setEditingToken(true);
+      const definite =
+        e instanceof TenmatsuError &&
+        (e.kind === "badRequest" || e.kind === "notFound" || e.kind === "auth");
+      setFlagError(
+        definite
+          ? `伝票No. ${no} のチェックを変更できませんでした (${errorText(e)})`
+          : // 通信できなかった・時間切れ・500 は「書けたのに失敗に見える」ことがある
+            // (サーバーは書き込んだあとに落ちることがある)。ここで「保存されていません」と
+            // 言うと、実行予算をダイテックへ二重入力させてしまう
+            `伝票No. ${no} のチェックを保存できたか確認できませんでした (${errorText(e)})。` +
+            "「一覧を再読み込み」で確かめてください",
+      );
+    } finally {
+      markSaving(no, false);
+    }
+    if (needsRefresh) await refreshListRef.current();
+  };
+
   const loadPdf = useCallback((no: string) => client.filePdf(no), [client]);
 
   const showTokenForm = connection === "ok" && (editingToken || token === null);
+  const perRun = resolvePerRun(storedMaxPerRun, health);
+  /** チェックを触れないときの理由 (title に出す)。null なら触れる */
+  const flagDisabledReason = !storage.restored
+    ? "前回の内容を読み込んでいます"
+    : running
+      ? "取得中は変更できません (終わると一覧が更新されます)"
+      : connection !== "ok" || token === null
+        ? "「接続する」でPCのサーバーにつなぐと変更できます"
+        : !listFresh
+          ? "前回このブラウザで見た内容です。「一覧を再読み込み」でPCの記録を読み込むと変更できます"
+          : listLoading
+            ? "一覧を読み込んでいます"
+            : null;
   /**
    * 終わった実行の1行。
    * /status の done は次の実行まで残るので、この画面で始めた (合流した) 実行でなければ
@@ -353,6 +532,11 @@ export function TenmatsuPage() {
                 {connection === "ok" && (
                   <>
                     <span className="font-medium text-emerald-700">接続できました</span>
+                    {health?.demo && (
+                      <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900">
+                        デモモード（架空データ）
+                      </span>
+                    )}
                     {health?.save_dir && (
                       <span className="ml-2 text-xs text-slate-500">保存先: {health.save_dir}</span>
                     )}
@@ -484,23 +668,64 @@ export function TenmatsuPage() {
                       <span className="ml-2 text-xs text-slate-500">処理中: {status.current}</span>
                     )}
                   </>
+                ) : health?.demo ? (
+                  "デモモード（架空データ）で動いています。楽楽精算には接続せず、架空の顛末書を作って一覧に足します。"
                 ) : (
                   "楽楽精算の画面がPC上で開き、数分かかることがあります (ログインを求められたらその画面で入力してください)。このタブを閉じても取得はPC側で続きます。"
                 )}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => void startRun()}
-              disabled={connection !== "ok" || token === null || running || !storage.restored}
-              aria-busy={running}
-              className={PRIMARY_BUTTON_CLASS}
-            >
-              {running
-                ? `処理中… (${status?.done ?? 0}/${status?.total ?? 0} 完了)`
-                : "顛末書を取得"}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {connection === "ok" && perRun.fromServer && (
+                <label className="flex items-center gap-1.5 text-sm text-slate-600">
+                  1回に取る件数
+                  <input
+                    // 値は文字列の下書きで持ち、valueAsNumber は読まない。
+                    // 空欄の valueAsNumber は NaN で、JSON では null になり、
+                    // サーバーは「未指定」と読んで黙って既定値で走ってしまう。
+                    // min/max は入力そのものを止めないので、範囲外はサーバーへ届いて 400 になる
+                    type="number"
+                    inputMode="numeric"
+                    min={perRun.min}
+                    max={perRun.max}
+                    value={maxInput}
+                    autoComplete="off"
+                    disabled={running}
+                    onChange={(e) => setMaxInput(e.target.value)}
+                    className="w-20 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                  <span className="text-xs text-slate-500">
+                    件 ({perRun.min}〜{perRun.max})
+                  </span>
+                </label>
+              )}
+              <button
+                type="button"
+                onClick={() => void startRun()}
+                disabled={connection !== "ok" || token === null || running || !storage.restored}
+                aria-busy={running}
+                className={PRIMARY_BUTTON_CLASS}
+              >
+                {running
+                  ? `処理中… (${status?.done ?? 0}/${status?.total ?? 0} 完了)`
+                  : "顛末書を取得"}
+              </button>
+            </div>
           </div>
+
+          {connection === "ok" && !perRun.fromServer && (
+            <p className="mt-2 text-xs text-amber-700">
+              このPCのサーバーは件数の指定に未対応です (サーバーの既定値で動きます)。
+              件数を変えたいときは ~/tenmatsu-dl/ を更新してください。
+            </p>
+          )}
+
+          <p className="mt-2 text-xs text-slate-500">
+            添付書類は {SUPPORTED_ATTACHMENTS} をPDFに変換して本体と結合します。
+            ExcelをPDFにできるのはExcelの入ったWindowsだけです。変換できないときは、
+            その顛末書は取得せずに止めます (添付が欠けた正式書類を作らないため)。
+            下に出るメッセージのとおり、手作業でPDFにしてから結合してください。
+          </p>
 
           {runNotice && <p className={WARN_CLASS}>{runNotice}</p>}
           {statusError && <p className="mt-2 text-xs text-amber-700">{statusError}</p>}
@@ -543,69 +768,24 @@ export function TenmatsuPage() {
             </button>
           </div>
 
+          {listNotice && <p className="mt-2 text-sm text-emerald-700">{listNotice}</p>}
           {listError && <p className={ERROR_CLASS}>{listError}</p>}
+          {/* 取得のエラーとは別に出す (Excelの失敗などを潰さないため) */}
+          {flagError && <p className={ERROR_CLASS}>{flagError}</p>}
 
-          {items.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-600">まだ取得した顛末書はありません。</p>
-          ) : (
-            <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="whitespace-nowrap border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
-                    <th className="w-32 px-3 py-2">伝票No.</th>
-                    <th className="px-3 py-2">ファイル名</th>
-                    <th className="w-36 px-3 py-2">取得日時</th>
-                    <th className="w-16 px-3 py-2">ページ</th>
-                    <th className="w-20 px-3 py-2">大きさ</th>
-                    <th className="w-28 px-3 py-2">状態</th>
-                    <th className="w-28 px-3 py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item) => (
-                    <tr
-                      key={item.denpyo_no}
-                      className={`border-b border-slate-100 last:border-0 ${item.exists ? "" : "opacity-60"}`}
-                    >
-                      <td className="px-3 py-2 font-mono text-xs text-slate-600">
-                        {item.denpyo_no}
-                      </td>
-                      <td className="px-3 py-2 font-medium">{item.file}</td>
-                      <td className="px-3 py-2 text-slate-600">{formatFetchedAt(item.at)}</td>
-                      <td className="px-3 py-2 text-slate-600">{item.pages ?? "－"}</td>
-                      <td className="px-3 py-2 text-slate-600">{formatFileSize(item.size)}</td>
-                      <td className="px-3 py-2">
-                        <span
-                          className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${
-                            item.exists
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-slate-100 text-slate-500"
-                          }`}
-                        >
-                          {item.exists ? "取得済み" : "ファイルなし"}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setPreviewNo(item.denpyo_no)}
-                          disabled={!item.exists || connection !== "ok" || token === null}
-                          title={
-                            item.exists
-                              ? undefined
-                              : "PCの保存先からファイルが消えています。もう一度取得してください"
-                          }
-                          className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          プレビュー
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <TenmatsuList
+            items={items}
+            filter={listFilter}
+            onFilterChange={setListFilter}
+            showCompleted={showCompleted}
+            onShowCompletedChange={setShowCompleted}
+            recentNos={recentNos}
+            savingNos={savingFlags}
+            flagDisabledReason={flagDisabledReason}
+            onToggleFlag={(no, flag, next) => void toggleFlag(no, flag, next)}
+            canPreview={connection === "ok" && token !== null}
+            onPreview={setPreviewNo}
+          />
         </section>
       </div>
 
@@ -622,10 +802,10 @@ export function TenmatsuPage() {
         <StorageBanner
           description={
             storage.canPersist
-              ? "顛末書の取得済み一覧 (伝票No.・ファイル名・取得日時) とローカルサーバーのトークンは、このブラウザ内にだけ保存され、folio のサーバーには送信されません。PDFの実体はこのPCの保存先フォルダにあり、ブラウザには保存しません。定期点検の「保存データを消去」では消えません。"
+              ? "顛末書の取得済み一覧 (伝票No.・ファイル名・取得日時・チェックの状態) とローカルサーバーのトークン・1回に取る件数は、このブラウザ内にだけ保存され、folio のサーバーには送信されません。チェックの正本はPCの記録で、この一覧はその写しです (消しても再接続すれば戻ります)。PDFの実体はこのPCの保存先フォルダにあり、ブラウザには保存しません。定期点検の「保存データを消去」では消えません。"
               : "このタブでは保存を停止しています (再読み込みすると復元を試み直せます)。"
           }
-          detail={`取得済み ${items.length}件${token !== null ? " / トークン登録済み" : ""}`}
+          detail={`取得済み ${items.length}件 (未完了 ${items.filter((i) => i.completed !== true).length}件)${token !== null ? " / トークン登録済み" : ""}`}
           usageBytes={storage.usageBytes}
           fontInfo={storage.fontInfo}
           disabled={running}

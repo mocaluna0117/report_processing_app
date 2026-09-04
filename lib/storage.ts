@@ -66,6 +66,12 @@ export const SETTING_KEY_TENMATSU_TOKEN = "tenmatsu:token";
  * 「保存データを消去」では消さない (定期点検の作業終了で顛末書の一覧まで消さないため)。
  */
 export const META_TENMATSU_LIST = "tenmatsu:list";
+/**
+ * 顛末書の「1回に取る件数」。設定なので「一覧を消去」でも
+ * 「トークンの登録を消す」でも消さない (「保存データを消去」でも消さない)。
+ * 範囲はサーバーが決めるので、丸めるのは保存時ではなく使うとき (lib/tenmatsu/list-view.ts)。
+ */
+export const SETTING_KEY_TENMATSU_MAX_PER_RUN = "tenmatsu:maxPerRun";
 
 export function isStorageAvailable(): boolean {
   return typeof indexedDB !== "undefined";
