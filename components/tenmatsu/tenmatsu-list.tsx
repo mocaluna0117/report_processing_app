@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type ListItem, formatFileSize, hasFlags } from "@/lib/tenmatsu/client";
 import {
   LIST_FILTERS,
@@ -55,6 +55,14 @@ const FRAME_TD_CLASS =
 /** 固定枠の中の並び。見出しと本体で同じ幅を使って縦を揃える (「✓ 入力済み」が収まる幅) */
 const FRAME_SLOT_CLASS = "flex w-24 items-center";
 const FRAME_BUTTON_SLOT_CLASS = "w-24";
+/**
+ * 左端の固定列 (伝票No. と ファイル名)。横にスクロールしても「どの伝票の行か」が分かるようにする。
+ * 2列目の left は1列目の実幅 (内容依存) を測って inline style で入れる。
+ * 2列目の右の境界は右端の枠と同じ濃さにして、ここまでが固定と分かるように。
+ */
+const LEFT_TH_CLASS = "sticky top-0 z-30 border-b border-slate-200 bg-slate-50 px-3 py-2";
+const LEFT_TD_CLASS = "sticky z-10 bg-white px-3 py-2 group-hover:bg-slate-50";
+const LEFT_EDGE_CLASS = "border-r-2 border-r-slate-300";
 
 /** 空欄の表示。値が無いことを黙って隠さない */
 const dash = (value: string | null | undefined) => (value ? value : "－");
@@ -103,6 +111,29 @@ export function TenmatsuList({
   );
   const visible = useMemo(() => visibleListItems(items, view), [items, view]);
   const counts = useMemo(() => listCounts(items, view), [items, view]);
+
+  // 左端の固定列の幅。table-auto では列幅が内容で決まるので、描いた後に測る。
+  // 伝票No. の幅が2列目の left、2列分の幅が scroll-padding-left になる
+  const noHeadRef = useRef<HTMLTableCellElement>(null);
+  const fileHeadRef = useRef<HTMLTableCellElement>(null);
+  const [leftWidths, setLeftWidths] = useState({ no: 0, file: 0 });
+  const hasTable = visible.length > 0;
+  useLayoutEffect(() => {
+    const noEl = noHeadRef.current;
+    const fileEl = fileHeadRef.current;
+    if (!noEl || !fileEl) return;
+    const measure = () => {
+      // offsetWidth は整数に丸めるので、境界に隙間が出ないよう小数のまま使う
+      const no = noEl.getBoundingClientRect().width;
+      const file = fileEl.getBoundingClientRect().width;
+      setLeftWidths((prev) => (prev.no === no && prev.file === file ? prev : { no, file }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(noEl);
+    ro.observe(fileEl);
+    return () => ro.disconnect();
+  }, [hasTable]);
 
   return (
     <>
@@ -167,8 +198,11 @@ export function TenmatsuList({
         // 枠線は外側に持たせ、スクロールするのは表だけにする。
         // 縦もこの中でスクロールさせて、見出しの sticky が枠の中に残るようにする
         <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
-          {/* scroll-pt / scroll-pr は Tab移動でセルが固定した見出し・右端の枠の下に潜らないための余白 */}
-          <div className="max-h-[60vh] scroll-pt-10 scroll-pr-96 overflow-auto">
+          {/* scroll-pt / scroll-pr / scroll-padding-left は Tab移動でセルが固定した見出し・左右の固定列の下に潜らないための余白 */}
+          <div
+            className="max-h-[60vh] scroll-pt-10 scroll-pr-96 overflow-auto"
+            style={{ scrollPaddingLeft: leftWidths.no + leftWidths.file }}
+          >
             {/* whitespace-nowrap は継承するので、見出しもセルも1つも折り返さない。
                 幅は内容に合わせて伸びる (table-auto)。支払先など長い値ははみ出さずに列が広がり、
                 表が横にスクロールする */}
@@ -176,12 +210,19 @@ export function TenmatsuList({
               <thead>
                 <tr className="text-left text-xs text-slate-500">
                   <th
-                    className={TH_CLASS}
+                    ref={noHeadRef}
+                    className={`left-0 ${LEFT_TH_CLASS}`}
                     title="PC側の記録に足した順の逆に並びます (申請日での並べ替えではありません)"
                   >
                     伝票No.
                   </th>
-                  <th className={TH_CLASS}>ファイル名</th>
+                  <th
+                    ref={fileHeadRef}
+                    className={`${LEFT_TH_CLASS} ${LEFT_EDGE_CLASS}`}
+                    style={{ left: leftWidths.no }}
+                  >
+                    ファイル名
+                  </th>
                   <th className={TH_CLASS}>物件名</th>
                   <th className={TH_CLASS}>申請日</th>
                   <th className={TH_CLASS}>申請者</th>
@@ -216,10 +257,15 @@ export function TenmatsuList({
                       // group は固定枠のセルにも hover の色を渡すため (sticky のセルは行の背景を継がない)
                       className={`group border-b border-slate-100 last:border-0 hover:bg-slate-50 ${item.exists ? "" : "opacity-60"}`}
                     >
-                      <td className="px-3 py-2 font-mono text-xs text-slate-600">
+                      <td className={`left-0 font-mono text-xs text-slate-600 ${LEFT_TD_CLASS}`}>
                         {item.denpyo_no}
                       </td>
-                      <td className="px-3 py-2 text-slate-600">{item.file}</td>
+                      <td
+                        className={`text-slate-600 ${LEFT_TD_CLASS} ${LEFT_EDGE_CLASS}`}
+                        style={{ left: leftWidths.no }}
+                      >
+                        {item.file}
+                      </td>
                       {/* 物件名は施主名を含むことがある。取り出せなければ空欄 */}
                       <td className="px-3 py-2 text-slate-600">{dash(item.property_name)}</td>
                       {/* ここから5つは楽楽精算から読んだ値。古い記録では空欄になる */}
