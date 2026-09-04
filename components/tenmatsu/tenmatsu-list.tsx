@@ -1,12 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import {
-  type ListItem,
-  formatFetchedAt,
-  formatFileSize,
-  hasFlags,
-} from "@/lib/tenmatsu/client";
+import { type ListItem, formatFileSize, hasFlags } from "@/lib/tenmatsu/client";
 import {
   LIST_FILTERS,
   type ListFilter,
@@ -17,17 +12,27 @@ import {
 /** 画面から切り替えられる完了フラグ */
 export type FlagKey = "budget_entered" | "cloud_stored";
 
-const FLAG_COLUMNS: readonly { key: FlagKey; label: string }[] = [
-  { key: "budget_entered", label: "実行予算入力済み" },
-  { key: "cloud_stored", label: "クラウド格納済み" },
+const FLAG_COLUMNS: readonly { key: FlagKey; head: string; label: string }[] = [
+  // head は列見出し (列を細く保つため短く)、label は読み上げと補足に使う正式名
+  { key: "budget_entered", head: "実行予算", label: "実行予算入力済み" },
+  { key: "cloud_stored", head: "クラウド", label: "クラウド格納済み" },
 ];
 
 const CHECKBOX_CLASS =
   "h-4 w-4 rounded border-slate-300 disabled:cursor-not-allowed disabled:opacity-50";
 
+/**
+ * 見出しのセル。縦スクロールしても残るように1つずつ sticky にする
+ * (背景色は tr ではなくセルに付けないと、下の行が透けて見える)。
+ */
+const TH_CLASS = "sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-3 py-2";
+
+/** 空欄の表示。値が無いことを黙って隠さない */
+const dash = (value: string | null | undefined) => (value ? value : "－");
+
 /** 印を最後に変えた日時。列を増やさず title に出す */
 const flagsUpdatedTitle = (item: ListItem) =>
-  item.flags_updated_at ? `最終更新 ${formatFetchedAt(item.flags_updated_at)}` : "まだ変更していません";
+  item.flags_updated_at ? `最終更新 ${item.flags_updated_at}` : "まだ変更していません";
 
 /**
  * 取得済み一覧の表と、その見せ方の操作。
@@ -130,28 +135,38 @@ export function TenmatsuList({
           {counts.hiddenByFilter > 0 && "絞り込みを「すべて」に戻すと全件出ます。"}
         </p>
       ) : (
-        <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200">
-          <table className="w-full text-sm">
+        // 枠線は外側に持たせ、スクロールするのは表だけにする。
+        // 縦もこの中でスクロールさせて、見出しの sticky が枠の中に残るようにする
+        <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
+          {/* scroll-pt は Tab移動でセルが固定した見出しの下に潜らないための余白 */}
+          <div className="max-h-[60vh] scroll-pt-10 overflow-auto">
+            {/* min-w は列幅の合計。列を増やしたり幅を変えたらここも直す */}
+            <table className="w-full min-w-[1460px] text-sm">
             <thead>
-              <tr className="whitespace-nowrap border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-500">
-                <th className="w-32 px-3 py-2">伝票No.</th>
-                <th className="px-3 py-2">ファイル名</th>
+              <tr className="whitespace-nowrap text-left text-xs text-slate-500">
+                <th
+                  className={`w-32 ${TH_CLASS}`}
+                  title="PC側の記録に足した順の逆に並びます (申請日での並べ替えではありません)"
+                >
+                  伝票No.
+                </th>
+                <th className={`w-48 ${TH_CLASS}`}>物件名</th>
                 {FLAG_COLUMNS.map((col) => (
-                  // 細い列に収めるため折り返す (行の whitespace-nowrap を上書きする)
-                  <th key={col.key} className="w-20 whitespace-normal px-3 py-2">
-                    {col.label}
+                  <th key={col.key} className={`w-20 ${TH_CLASS}`} title={col.label}>
+                    {col.head}
                   </th>
                 ))}
-                <th
-                  className="w-32 px-3 py-2"
-                  title="PC側の記録に足した順の逆に並びます (取得日時での並べ替えではありません)"
-                >
-                  取得日時
-                </th>
-                <th className="w-16 px-3 py-2">ページ</th>
-                <th className="w-20 px-3 py-2">大きさ</th>
-                <th className="w-28 px-3 py-2">状態</th>
-                <th className="w-28 px-3 py-2" />
+                <th className={`w-24 ${TH_CLASS}`}>申請日</th>
+                <th className={`w-24 ${TH_CLASS}`}>申請者</th>
+                {/* 見出しが長いので折り返す (行の whitespace-nowrap を上書きする) */}
+                <th className={`w-24 whitespace-normal ${TH_CLASS}`}>支払金額(税込)</th>
+                <th className={`w-24 ${TH_CLASS}`}>支払先</th>
+                <th className={`w-24 whitespace-normal ${TH_CLASS}`}>最終承認日</th>
+                <th className={`w-40 ${TH_CLASS}`}>ファイル名</th>
+                <th className={`w-14 ${TH_CLASS}`}>ページ</th>
+                <th className={`w-16 ${TH_CLASS}`}>大きさ</th>
+                <th className={`w-28 ${TH_CLASS}`}>状態</th>
+                <th className={`w-24 ${TH_CLASS}`} />
               </tr>
             </thead>
             <tbody>
@@ -168,7 +183,8 @@ export function TenmatsuList({
                     <td className="px-3 py-2 font-mono text-xs text-slate-600">
                       {item.denpyo_no}
                     </td>
-                    <td className="px-3 py-2 font-medium">{item.file}</td>
+                    {/* 物件名は施主名を含むことがある。取り出せなければ空欄 */}
+                    <td className="px-3 py-2 font-medium">{dash(item.property_name)}</td>
                     {FLAG_COLUMNS.map((col) => (
                       <td key={col.key} className="px-3 py-2">
                         {known ? (
@@ -207,11 +223,27 @@ export function TenmatsuList({
                         )}
                       </td>
                     ))}
-                    <td className="px-3 py-2 text-slate-600">{formatFetchedAt(item.at)}</td>
+                    {/* ここから4つは楽楽精算の一覧から読んだ値。古い記録では空欄になる */}
+                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                      {dash(item.shinsei_date)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                      {dash(item.shinseisha)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right text-slate-600">
+                      {dash(item.amount)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                      {dash(item.payee)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                      {dash(item.final_approved_at)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">{item.file}</td>
                     <td className="px-3 py-2 text-slate-600">{item.pages ?? "－"}</td>
                     <td className="px-3 py-2 text-slate-600">{formatFileSize(item.size)}</td>
                     <td className="px-3 py-2">
-                      <span
+                    <span
                         className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${
                           item.exists
                             ? "bg-emerald-100 text-emerald-800"
@@ -246,7 +278,8 @@ export function TenmatsuList({
                 );
               })}
             </tbody>
-          </table>
+            </table>
+          </div>
         </div>
       )}
     </>

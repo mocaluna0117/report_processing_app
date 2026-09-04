@@ -146,6 +146,13 @@ export function TenmatsuPage() {
     hasSaved: hasTenmatsuData,
   });
 
+  /**
+   * チェックの保存中に見送った「一覧の取り直し」を覚えておく。
+   * 取得中もチェックできるので、実行の完了とチェックの保存が重なり得る。
+   * 覚えておかないと、完了時の取り直しが1回きりで消えてしまう。
+   */
+  const pendingRefreshRef = useRef(false);
+
   /** 保存中の印を上げ下げする (ref と state の両方) */
   const markSaving = (no: string, on: boolean) => {
     const next = new Set(savingFlagsRef.current);
@@ -156,8 +163,13 @@ export function TenmatsuPage() {
   };
 
   const refreshList = async () => {
-    // チェックの保存中に取り直すと、古い /list が新しい書き込みを上書きしてしまう
-    if (savingFlagsRef.current.size > 0) return;
+    // チェックの保存中に取り直すと、古い /list が新しい書き込みを上書きしてしまう。
+    // 見送ったことを覚えておき、保存が終わってから取り直す
+    if (savingFlagsRef.current.size > 0) {
+      pendingRefreshRef.current = true;
+      return;
+    }
+    pendingRefreshRef.current = false;
     clearedRef.current = false;
     setListLoading(true);
     setListError(null);
@@ -386,7 +398,8 @@ export function TenmatsuPage() {
   const clearList = async () => {
     if (
       !confirm(
-        "この画面に保存している取得済み一覧を消去します。" +
+        "この画面に保存している取得済み一覧 (物件名・申請者・支払先・支払金額を含みます) を" +
+          "このブラウザから消去します。" +
           "PCに保存されたPDFと、実行予算入力済み・クラウド格納済みのチェックは消えません。" +
           "再接続すれば元に戻ります。よろしいですか？",
       )
@@ -479,7 +492,8 @@ export function TenmatsuPage() {
     } finally {
       markSaving(no, false);
     }
-    if (needsRefresh) await refreshListRef.current();
+    // 保存中に見送った取り直しがあれば、ここで取り直す (実行の完了と重なったとき)
+    if (needsRefresh || pendingRefreshRef.current) await refreshListRef.current();
   };
 
   const loadPdf = useCallback((no: string) => client.filePdf(no), [client]);
@@ -487,17 +501,17 @@ export function TenmatsuPage() {
   const showTokenForm = connection === "ok" && (editingToken || token === null);
   const perRun = resolvePerRun(storedMaxPerRun, health);
   /** チェックを触れないときの理由 (title に出す)。null なら触れる */
+  // 取得中でも変更できる。サーバーは processed.json をロックで守っているので
+  // 取得と同時に更新しても失われず、完了後の /list でサーバーの値に揃う
   const flagDisabledReason = !storage.restored
     ? "前回の内容を読み込んでいます"
-    : running
-      ? "取得中は変更できません (終わると一覧が更新されます)"
-      : connection !== "ok" || token === null
-        ? "「接続する」でPCのサーバーにつなぐと変更できます"
-        : !listFresh
-          ? "前回このブラウザで見た内容です。「一覧を再読み込み」でPCの記録を読み込むと変更できます"
-          : listLoading
-            ? "一覧を読み込んでいます"
-            : null;
+    : connection !== "ok" || token === null
+      ? "「接続する」でPCのサーバーにつなぐと変更できます"
+      : !listFresh
+        ? "前回このブラウザで見た内容です。「一覧を再読み込み」でPCの記録を読み込むと変更できます"
+        : listLoading
+          ? "一覧を読み込んでいます"
+          : null;
   /**
    * 終わった実行の1行。
    * /status の done は次の実行まで残るので、この画面で始めた (合流した) 実行でなければ
@@ -802,7 +816,7 @@ export function TenmatsuPage() {
         <StorageBanner
           description={
             storage.canPersist
-              ? "顛末書の取得済み一覧 (伝票No.・ファイル名・取得日時・チェックの状態) とローカルサーバーのトークン・1回に取る件数は、このブラウザ内にだけ保存され、folio のサーバーには送信されません。チェックの正本はPCの記録で、この一覧はその写しです (消しても再接続すれば戻ります)。PDFの実体はこのPCの保存先フォルダにあり、ブラウザには保存しません。定期点検の「保存データを消去」では消えません。"
+              ? "顛末書の取得済み一覧には、伝票No.・物件名 (施主名を含むことがあります)・申請者・支払先・支払金額・チェックの状態が入ります。これらはローカルサーバーのトークン・1回に取る件数とあわせて、このブラウザ内にだけ保存され、folio のサーバーには送信されません。チェックの正本はPCの記録で、この一覧はその写しです (消しても再接続すれば戻ります)。PDFの実体はこのPCの保存先フォルダにあり、ブラウザには保存しません。定期点検の「保存データを消去」では消えません。共有の端末では、使い終わったら「一覧を消去」を押してください。"
               : "このタブでは保存を停止しています (再読み込みすると復元を試み直せます)。"
           }
           detail={`取得済み ${items.length}件 (未完了 ${items.filter((i) => i.completed !== true).length}件)${token !== null ? " / トークン登録済み" : ""}`}

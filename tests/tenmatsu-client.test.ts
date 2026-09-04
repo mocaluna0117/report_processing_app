@@ -503,6 +503,55 @@ describe("完了フラグを持つ一覧", () => {
   });
 });
 
+describe("楽楽精算の一覧から読んだ項目", () => {
+  const filled = {
+    shinsei_date: "2026/09/01",
+    shinseisha: "テスト 太郎",
+    amount: "71,500 円",
+    payee: "テスト商事",
+    property_name: "テスト物件A",
+    final_approved_at: null,
+  };
+
+  it("そのまま通す (folio では加工しない)", async () => {
+    const row = listItem(filled);
+    const { impl } = fakeFetch(() => json({ items: [row] }));
+    expect(await createTenmatsuClient({ token: "t", fetchImpl: impl }).list()).toEqual([row]);
+  });
+
+  it("項目が無い古い記録も落とさない (空欄で出すため)", async () => {
+    const { impl } = fakeFetch(() => json({ items: [oldShapeItem] }));
+    const items = await createTenmatsuClient({ token: "t", fetchImpl: impl }).list();
+    expect(items).toHaveLength(1);
+    expect(items[0].property_name).toBeUndefined();
+    expect(items[0].amount).toBeUndefined();
+  });
+
+  it("null で来ても落とさない (サーバーは未取得を null で返す)", () => {
+    const nulls = {
+      shinsei_date: null,
+      shinseisha: null,
+      amount: null,
+      payee: null,
+      property_name: null,
+      final_approved_at: null,
+    };
+    expect(isListItemLike({ ...oldShapeItem, ...nulls })).toBe(true);
+  });
+
+  it("型が違う行は捨てる", () => {
+    expect(isListItemLike({ ...oldShapeItem, amount: 71500 })).toBe(false);
+    expect(isListItemLike({ ...oldShapeItem, property_name: { name: "x" } })).toBe(false);
+    expect(isListItemLike({ ...oldShapeItem, shinsei_date: 20260901 })).toBe(false);
+  });
+
+  it("保存して読み直しても消えない形になっている", () => {
+    // IndexedDB は structured clone なので、この形がそのまま往復できることを固定する
+    const row = listItem(filled);
+    expect(isListItemLike(JSON.parse(JSON.stringify(row)))).toBe(true);
+  });
+});
+
 describe("疎通確認の新しいフィールド", () => {
   it("読める", async () => {
     const { impl } = fakeFetch(() => json(health({ demo: true, max_per_run: 25 })));

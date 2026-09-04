@@ -212,6 +212,26 @@ describe("件数の内訳", () => {
   });
 });
 
+describe("楽楽精算の一覧から読んだ項目", () => {
+  it("値の有無で表示や非表示の判定を変えない (完了フラグだけで決める)", () => {
+    const rows = [
+      both("A", { property_name: "物件A", amount: "1,000 円" }),
+      item("B", { property_name: null, amount: null }),
+    ];
+    // 物件名や金額が空でも、隠す・出すの判断は completed だけで決まる
+    expect(nos(visibleListItems(rows, view()))).toEqual(["B"]);
+    expect(listCounts(rows, view())).toMatchObject({ shown: 1, hiddenCompleted: 1 });
+  });
+
+  it("絞り込みは完了フラグだけを見る (金額や物件名では絞らない)", () => {
+    const rows = [
+      item("A", { budget_entered: true, property_name: "物件A" }),
+      item("B", { property_name: null }),
+    ];
+    expect(nos(visibleListItems(rows, view("budget")))).toEqual(["B"]);
+  });
+});
+
 describe("resolvePerRun", () => {
   const health = (over: Partial<HealthPayload> = {}): HealthPayload => ({
     ok: true,

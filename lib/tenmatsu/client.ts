@@ -69,6 +69,22 @@ export interface ListItem {
   completed?: boolean;
   /** フラグを最後に変えた日時。at と同じ形。一度も変えていなければ null */
   flags_updated_at?: string | null;
+  /**
+   * ここから下の6つは楽楽精算の一覧から読んだ値で、**古い記録には入っていない**
+   * (サーバーが null を返す)。画面では空欄にする。folio では加工しない。
+   */
+  /** 申請日。一覧に日付しか無いので "2026/09/01" の形 (時刻は取れない) */
+  shinsei_date?: string | null;
+  /** 申請者 */
+  shinseisha?: string | null;
+  /** 支払金額(税込)。表示のままの文字列 (例 "71,500 円") */
+  amount?: string | null;
+  /** 支払先 */
+  payee?: string | null;
+  /** 物件名 (一覧の「どこで」から取り出した値)。**施主名を含むことがある** */
+  property_name?: string | null;
+  /** 最終承認日。サーバー側が未実装なのでいまは常に null */
+  final_approved_at?: string | null;
 }
 
 /** GET /health (トークン不要) */
@@ -278,6 +294,8 @@ export function formatFileSize(size: number | null): string {
 }
 
 const optionalBool = (v: unknown): boolean => v === undefined || typeof v === "boolean";
+const optionalText = (v: unknown): boolean =>
+  v === undefined || v === null || typeof v === "string";
 
 /**
  * /list の1行として使える形か (IndexedDBに残したキャッシュの検証にも使う)。
@@ -304,7 +322,14 @@ export function isListItemLike(v: unknown): v is ListItem {
     optionalBool(o.completed) &&
     (o.flags_updated_at === undefined ||
       typeof o.flags_updated_at === "string" ||
-      o.flags_updated_at === null)
+      o.flags_updated_at === null) &&
+    // 楽楽精算の一覧から読んだ値。無い (古いサーバー・古いキャッシュ) のは正常
+    optionalText(o.shinsei_date) &&
+    optionalText(o.shinseisha) &&
+    optionalText(o.amount) &&
+    optionalText(o.payee) &&
+    optionalText(o.property_name) &&
+    optionalText(o.final_approved_at)
   );
 }
 
