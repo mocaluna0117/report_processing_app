@@ -13,12 +13,12 @@ import {
 } from "@/lib/after/customer-store";
 import { DUPLICATE_ISSUE } from "@/lib/after/dedup";
 import {
-  clearInquiryExamples,
-  deleteInquiryExample,
-  loadInquiryExamples,
-  mergeInquiryExamples,
-  upsertInquiryExample,
-} from "@/lib/after/examples-store";
+  clearStoredExamples,
+  deleteStoredExample,
+  loadExamples,
+  mergeStoredExamples,
+  upsertStoredExample,
+} from "@/lib/examples-store";
 import type { ParsedImport } from "@/lib/after/import";
 import type { Customer, CustomerFields, CustomerSource } from "@/lib/after/types";
 import {
@@ -84,7 +84,8 @@ beforeEach(async () => {
   await clearAll();
   await clearCustomers();
   await clearAfterCases();
-  await clearInquiryExamples();
+  await clearStoredExamples("inquiry");
+  await clearStoredExamples("inspection");
 });
 
 describe("顧客データの保存", () => {
@@ -368,54 +369,65 @@ describe("学習した書き方の保存", () => {
   });
 
   it("学習を保存して読み戻せる", async () => {
-    await upsertInquiryExample(example("c-1"));
-    await upsertInquiryExample(example("c-2"));
-    const saved = await loadInquiryExamples();
+    await upsertStoredExample("inquiry", example("c-1"));
+    await upsertStoredExample("inquiry", example("c-2"));
+    const saved = await loadExamples("inquiry");
     expect(saved).toHaveLength(2);
     expect(saved.map((e) => e.id)).toEqual(["c-1", "c-2"]);
   });
 
   it("同じ受付を学習し直すと差し替わる", async () => {
-    await upsertInquiryExample(example("c-1"));
-    await upsertInquiryExample(example("c-1", "直した本文", 2_000));
-    const saved = await loadInquiryExamples();
+    await upsertStoredExample("inquiry", example("c-1"));
+    await upsertStoredExample("inquiry", example("c-1", "直した本文", 2_000));
+    const saved = await loadExamples("inquiry");
     expect(saved).toHaveLength(1);
     expect(saved[0]).toMatchObject({ output: "直した本文", createdAt: 1_000, updatedAt: 2_000 });
   });
 
   it("1件だけ消せる / 最後の1件も消せる", async () => {
-    await upsertInquiryExample(example("c-1"));
-    await upsertInquiryExample(example("c-2"));
-    expect(await deleteInquiryExample("c-1")).toHaveLength(1);
-    expect(await loadInquiryExamples()).toHaveLength(1);
-    await deleteInquiryExample("c-2");
-    expect(await loadInquiryExamples()).toEqual([]);
+    await upsertStoredExample("inquiry", example("c-1"));
+    await upsertStoredExample("inquiry", example("c-2"));
+    expect(await deleteStoredExample("inquiry", "c-1")).toHaveLength(1);
+    expect(await loadExamples("inquiry")).toHaveLength(1);
+    await deleteStoredExample("inquiry", "c-2");
+    expect(await loadExamples("inquiry")).toEqual([]);
   });
 
   it("書き出したものを取り込める (同じ id は新しい方)", async () => {
-    await upsertInquiryExample(example("c-1", "古い本文", 1_000));
-    await mergeInquiryExamples([
+    await upsertStoredExample("inquiry", example("c-1", "古い本文", 1_000));
+    await mergeStoredExamples("inquiry", [
       example("c-1", "新しい本文", 3_000),
       example("c-9", "別の受付", 3_000),
     ]);
-    const saved = await loadInquiryExamples();
+    const saved = await loadExamples("inquiry");
     expect(saved).toHaveLength(2);
     expect(saved.find((e) => e.id === "c-1")?.output).toBe("新しい本文");
   });
 
   it("「保存データを消去」「受付一覧を消去」では消えない (設定扱い)", async () => {
-    await upsertInquiryExample(example("c-1"));
+    await upsertStoredExample("inquiry", example("c-1"));
     await clearAfterCases();
     await clearAll();
-    expect(await loadInquiryExamples()).toHaveLength(1);
+    expect(await loadExamples("inquiry")).toHaveLength(1);
     // 学習だけがある状態では「前回の内容」とはみなさない
     expect(await hasStoredData()).toBe(false);
   });
 
+  it("定期点検とアフターの手本は別に持つ", async () => {
+    await upsertStoredExample("inquiry", example("c-1", "アフターの本文"));
+    await upsertStoredExample("inspection", example("p-1", "点検の本文"));
+    expect((await loadExamples("inquiry")).map((e) => e.output)).toEqual(["アフターの本文"]);
+    expect((await loadExamples("inspection")).map((e) => e.output)).toEqual(["点検の本文"]);
+    // 片方を消しても、もう片方は残る
+    await clearStoredExamples("inquiry");
+    expect(await loadExamples("inquiry")).toEqual([]);
+    expect(await loadExamples("inspection")).toHaveLength(1);
+  });
+
   it("すべて消去できる", async () => {
-    await upsertInquiryExample(example("c-1"));
-    await clearInquiryExamples();
-    expect(await loadInquiryExamples()).toEqual([]);
+    await upsertStoredExample("inquiry", example("c-1"));
+    await clearStoredExamples("inquiry");
+    expect(await loadExamples("inquiry")).toEqual([]);
   });
 
   it("受付の伏せ字メモも保存・復元される", async () => {

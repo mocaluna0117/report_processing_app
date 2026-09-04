@@ -1,41 +1,12 @@
 // コールセンターの受付メモ (自由文) から「アフター受付内容」を作る。
 // 定期点検の不具合一覧とは入力の形が違うので、プロンプトとルールベースを分けている。
-import { exampleOutputLines } from "@/lib/summarize/examples";
+import { exampleSection } from "@/lib/summarize/examples";
 import { formatPhenomena } from "@/lib/summarize/format";
 import { stripRequests } from "@/lib/summarize/rule-based";
 import type { InquiryExampleInput } from "@/lib/summarize/types";
 
 /** 受付メモの長さ上限 (これを超える分は切り捨てる) */
 export const INQUIRY_TEXT_MAX = 4000;
-
-/**
- * 利用者が手直しした過去の受付内容を、文体の手本としてプロンプトに並べる。
- * 出力は phenomena / requests に分けず箇条書きにする
- * (保存した本文からはどちらだったか分からないため。番号付けはサーバー側で行う)。
- */
-function exampleSection(examples: readonly InquiryExampleInput[]): string[] {
-  if (examples.length === 0) return [];
-  const lines = [
-    "## 過去の受付例 (書き方の手本)",
-    "以下は、この受付担当者が過去の受付メモから実際に作った「アフター受付内容」です。",
-    "文体・語尾・1要素にまとめる粒度・用語の選び方を、これらの例に合わせてください。",
-    "上の条件の書き方 (体言止めなど) と例の書き方が食い違う場合は、例の書き方を優先します。",
-    "ただし「個人情報・対応方針・訪問日程・折り返しの約束・挨拶を入れない」は例より優先して守ります。",
-    "例に書かれている内容を今回の受付メモへ持ち込まないこと (出力は今回の受付メモに書かれていることだけ)。",
-  ];
-  examples.forEach((example, i) => {
-    lines.push(
-      "",
-      `### 例${i + 1}`,
-      "受付メモ:",
-      example.input,
-      "アフター受付内容:",
-      ...exampleOutputLines(example.output).map((item) => `- ${item}`),
-    );
-  });
-  lines.push("");
-  return lines;
-}
 
 export function buildInquiryPrompt(
   redactedText: string,
@@ -60,7 +31,7 @@ export function buildInquiryPrompt(
     '良い例: {"phenomena": [], "requests": ["網戸の追加をご希望"]}',
     '悪い例: {"phenomena": ["換気扇から異音がするので早めに見に来てほしいとのこと。明日折り返し予定。"], "requests": []} (要望と対応方針が混ざっており不可)',
     "",
-    ...exampleSection(examples),
+    ...exampleSection(examples, { input: "受付メモ", output: "アフター受付内容" }),
     "## 受付メモ",
     redactedText,
   ].join("\n");

@@ -4,13 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { ModalShell } from "@/components/modal-shell";
 import { downloadBytes } from "@/lib/download";
 import {
+  type ExampleLabels,
   type InquiryExample,
   isInquiryExampleLike,
   EXAMPLES_PICK_DEFAULT,
 } from "@/lib/summarize/examples";
 
 const JSON_MIME = "application/json";
-const EXPORT_NAME = "folio-学習した書き方.json";
+
 
 const formatDateTime = (ms: number) =>
   new Intl.DateTimeFormat("ja-JP", {
@@ -23,17 +24,20 @@ const formatDateTime = (ms: number) =>
   }).format(new Date(ms));
 
 /**
- * 学習した書き方の確認・削除・受け渡し。
+ * 学習した書き方の確認・削除・受け渡し (定期点検・アフターメンテナンスで共通)。
  * 保存しているのは伏せ字済みの本文だけなので、ここで全文を見て確かめられるようにする。
  */
-export function InquiryExamplesDialog({
+export function ExamplesDialog({
   examples,
+  labels,
   onDelete,
   onClearAll,
   onImport,
   onClose,
 }: {
   examples: InquiryExample[];
+  /** 入力・出力の呼び名 (画面によって違う) */
+  labels: ExampleLabels;
   onDelete: (id: string) => void;
   onClearAll: () => void;
   onImport: (examples: InquiryExample[]) => void;
@@ -53,7 +57,11 @@ export function InquiryExamplesDialog({
 
   const exportJson = () => {
     const text = JSON.stringify(examples, null, 2);
-    downloadBytes(new TextEncoder().encode(text), EXPORT_NAME, JSON_MIME);
+    downloadBytes(
+      new TextEncoder().encode(text),
+      `folio-学習した書き方-${labels.output}.json`,
+      JSON_MIME,
+    );
   };
 
   const importJson = async (file: File) => {
@@ -80,7 +88,7 @@ export function InquiryExamplesDialog({
       <div>
         <h2 className="text-lg font-semibold">学習した書き方 {examples.length}件</h2>
         <p className="mt-1 text-xs text-slate-500">
-          受付を要約するとき、今回の受付メモに近いものを最大{EXAMPLES_PICK_DEFAULT}件まで手本として
+          要約するとき、今回の{labels.input}に近いものを最大{EXAMPLES_PICK_DEFAULT}件まで手本として
           Gemini に送ります。保存・送信しているのは、お客様の氏名・電話番号・住所・メールアドレスを
           伏せ字にした本文だけです。
         </p>
@@ -93,7 +101,7 @@ export function InquiryExamplesDialog({
       <div className="mt-3 flex-1 overflow-auto">
         {sorted.length === 0 ? (
           <p className="text-sm text-slate-500">
-            まだ学習していません。受付一覧の「この書き方を学習」で覚えさせてください。
+            まだ学習していません。表の「この書き方を学習」で覚えさせてください。
           </p>
         ) : (
           <ul className="space-y-2">
@@ -113,13 +121,13 @@ export function InquiryExamplesDialog({
                 </div>
                 <details className="mt-1">
                   <summary className="cursor-pointer text-xs text-slate-500">
-                    受付メモ (伏せ字済み)
+                    {labels.input} (伏せ字済み)
                   </summary>
                   <p className="mt-1 whitespace-pre-line rounded bg-slate-50 px-2 py-1.5 text-xs text-slate-700">
                     {example.input}
                   </p>
                 </details>
-                <p className="mt-1.5 text-xs text-slate-500">アフター受付内容</p>
+                <p className="mt-1.5 text-xs text-slate-500">{labels.output}</p>
                 <p className="whitespace-pre-line text-sm">{example.output}</p>
               </li>
             ))}

@@ -7,6 +7,7 @@ import { MailDialog } from "@/components/mail-dialog";
 import { PairTable, type PairView } from "@/components/pair-table";
 import { ReportDialog } from "@/components/report-dialog";
 import { ResultsTable } from "@/components/results-table";
+import { ExamplesDialog } from "@/components/examples-dialog";
 import { StorageBanner } from "@/components/storage-banner";
 import { runLimited } from "@/lib/concurrency";
 import { downloadBlob as download } from "@/lib/download";
@@ -16,6 +17,7 @@ import { warmUpPdfjs } from "@/lib/pdf/extract";
 import { processPair, type ResultRow, type UploadedFile } from "@/lib/process";
 import { prefetchReportAssets } from "@/lib/report/assets";
 import { expandResultRow } from "@/lib/rows";
+import { useExamples } from "@/lib/use-examples";
 import { effectiveFields } from "@/lib/after/customer";
 import { loadCustomers, saveReportHandoverDates } from "@/lib/after/customer-store";
 import { buildHandoverSync } from "@/lib/after/match-report";
@@ -87,9 +89,22 @@ export default function Home() {
       setResults(session.results);
       // 結果に紐づかない前回の結合PDFを掃除して容量を戻す
       void collectGarbage(new Set(session.results.map((r) => r.pairId))).catch(() => {});
-      return { partialErrors: session.partialErrors };
+      const partialErrors = [...session.partialErrors];
+      try {
+        await learning.restore();
+      } catch (e) {
+        partialErrors.push(`学習した書き方: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      return { partialErrors };
     },
     hasSaved: hasStoredData,
+  });
+  /** 学習した書き方 (伏せ字済みの不具合項目 → 利用者が書いた点検内容) */
+  const learning = useExamples<ResultRow>({
+    kind: "inspection",
+    inputOf: (row) => row.redactedDefects ?? "",
+    outputLabel: "点検内容",
+    storage,
   });
   const copyState = useExcelCopy();
 
@@ -222,7 +237,8 @@ export default function Home() {
       const inspection = p.inspectionId ? (fileMap.current.get(p.inspectionId) ?? null) : null;
       return {
         bytes: photo.file.size + (inspection?.file.size ?? 0),
-        run: () => processPair(p.id, p.ownerDisplay, p.date, photo, inspection),
+        run: () =>
+          processPair(p.id, p.ownerDisplay, p.date, photo, inspection, learning.examples),
       };
     });
 
@@ -510,6 +526,20 @@ export default function Home() {
               </button>
             </div>
           </div>
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <span>要約の書き方を学習: {learning.examples.length}件</span>
+            <button
+              type="button"
+              onClick={() => learning.setOpen(true)}
+              className="cursor-pointer rounded-md border border-slate-300 bg-white px-2 py-0.5 font-medium text-slate-700 hover:bg-slate-50"
+            >
+              一覧・消去
+            </button>
+            <span>
+              行の「この書き方を学習」で覚えた文体を、次に処理する報告書の要約の手本として送ります
+              (伏せ字にした本文だけ。キー未設定時の定型要約には使われません)
+            </span>
+          </div>
           <ResultsTable
             results={rows}
             onCellChange={editors.onCellChange}
@@ -528,6 +558,24 @@ export default function Home() {
               ? {}
               : { onDeleteRow: (row: ResultRow) => void deleteRow(row) })}
             deleteTitle="この報告書の抽出結果・PDF・ペアリングを削除します"
+            renderRowActions={(row) => {
+              const state = learning.learnState(row);
+              return (
+                <button
+                  type="button"
+                  disabled={state.disabled}
+                  title={state.title}
+                  onClick={() => void learning.learn(row)}
+                  className={`whitespace-nowrap rounded-md border px-2.5 py-1 text-xs font-medium ${
+                    state.disabled
+                      ? "cursor-default border-slate-200 bg-slate-50 text-slate-400"
+                      : "cursor-pointer border-violet-300 bg-violet-50 text-violet-800 hover:bg-violet-100"
+                  }`}
+                >
+                  {state.label}
+                </button>
+              );
+            }}
           />
         </section>
       )}
@@ -566,18 +614,49 @@ export default function Home() {
         <FallbackTsvDialog text={copyState.fallbackTsv} onClose={copyState.closeFallback} />
       )}
 
-      {(files.length > 0 || rows.length > 0 || storage.hasSaved || storage.fontInfo) && (
+      {(files.length > 0 ||
+        rows.length > 0 ||
+        storage.hasSaved ||
+        storage.fontInfo ||
+        learning.examples.length > 0) && (
         <StorageBanner
           description={
             storage.canPersist
               ? "アップロードしたPDF・ペアリング・抽出結果はこのブラウザ内に保存され、再読み込みしても残ります (サーバーには送信されません)。作業が終わったら消去してください。"
               : "このタブでは保存を停止しています (再読み込みすると復元を試み直せます)。以前の保存データが端末に残っている場合は消去できます。"
           }
+          detail={
+            learning.examples.length > 0
+              ? `学習した書き方 ${learning.examples.length}件 (伏せ字にした本文だけを保存し、「保存データを消去」では消えません)`
+              : undefined
+          }
           usageBytes={storage.usageBytes}
           fontInfo={storage.fontInfo}
           disabled={processing}
-          actions={[{ label: "保存データを消去", onClick: clearSaved, danger: true }]}
+          actions={[
+            { label: "保存データを消去", onClick: clearSaved, danger: true },
+            ...(learning.examples.length > 0
+              ? [
+                  {
+                    label: "学習した書き方を消去",
+                    onClick: () => void learning.clearExamples(),
+                    danger: true,
+                  },
+                ]
+              : []),
+          ]}
           onClearFont={storage.clearFont}
+        />
+      )}
+
+      {learning.open && (
+        <ExamplesDialog
+          examples={learning.examples}
+          labels={{ input: "不具合項目", output: "点検内容" }}
+          onDelete={learning.deleteExample}
+          onClearAll={() => void learning.clearExamples()}
+          onImport={learning.importExamples}
+          onClose={() => learning.setOpen(false)}
         />
       )}
 

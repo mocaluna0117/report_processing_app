@@ -15,6 +15,11 @@ import type {
   SummarizeRequest,
   SummarizeResponse,
 } from "@/lib/summarize/types";
+import { formatDefectList } from "@/lib/summarize/defects";
+import {
+  type InquiryExample,
+  selectInquiryExamples,
+} from "@/lib/summarize/examples";
 import { attachSummaries } from "@/lib/summary";
 import { toDateNoPad, toDateZeroPad, toFullWidthSpace, toHalfWidthAlnum } from "@/lib/text";
 import { PROPERTY_COUNT_MARK } from "@/lib/tsv";
@@ -47,6 +52,13 @@ export interface ResultRow {
    * 読み込み時の読み替え (lib/row-normalize.ts) が、利用者が消した★を戻さないための印。
    */
   propertyCountMarked?: boolean;
+  /**
+   * 要約APIへ送った不具合項目の文 (伏せ字済み)。「この書き方を学習」の入力に使う。
+   * 古い保存データには無い。
+   */
+  redactedDefects?: string;
+  /** 処理した時点の要約 (手直し前)。学習ボタンで「手直し済みか」を出すのに使う */
+  originalSummary?: string;
   categoryEngine: "gemini" | "none";
   /** 工事区分の判定に使えたモデル名 (表示用) */
   categoryModel?: string;
@@ -113,6 +125,8 @@ export async function processPair(
   date: string | null,
   photo: UploadedFile,
   inspection: UploadedFile | null,
+  /** 「この書き方を学習」で覚えた手本 (今回の不具合項目に近いものだけ送る) */
+  examples: readonly InquiryExample[] = [],
 ): Promise<ResultRow> {
   const warnings: string[] = [];
   // 抽出前のフォールバック名 (抽出成功後に「〇〇目点検報告書_施主名様／物件名.pdf」へ更新)
@@ -156,6 +170,7 @@ export async function processPair(
     let summary = "";
     let engine: "gemini" | "rule" | null = null;
     let summaryFailed = false;
+    let redactedDefects = "";
     let categories: WorkCategoryEntry[] = [];
     let categoryEngine: "gemini" | "none" = "none";
     let categoryModel: string | undefined;
@@ -166,18 +181,28 @@ export async function processPair(
 
     const summaryTask = async () => {
       if (!data.templateRecognized) return;
+      const request: SummarizeRequest = {
+        defects: data.defects.map((d) => ({
+          location: d.location,
+          part: d.part,
+          symptom: d.symptom,
+          followup: d.followup,
+          remarks: d.remarks,
+        })),
+        standaloneNotes: data.standaloneNotes,
+        specialNotes: data.specialNotes,
+        noAbnormality: data.noAbnormalityOnPage1 && data.defects.length === 0,
+      };
+      // 学習の入力に使うので、プロンプトに載るのと同じ文 (伏せ字済み) を残す
+      redactedDefects = formatDefectList(request);
       try {
         const res = await requestSummary({
-          defects: data.defects.map((d) => ({
-            location: d.location,
-            part: d.part,
-            symptom: d.symptom,
-            followup: d.followup,
-            remarks: d.remarks,
+          ...request,
+          // 今回の不具合項目に近い手本だけを送る
+          examples: selectInquiryExamples(redactedDefects, examples).map(({ input, output }) => ({
+            input,
+            output,
           })),
-          standaloneNotes: data.standaloneNotes,
-          specialNotes: data.specialNotes,
-          noAbnormality: data.noAbnormalityOnPage1 && data.defects.length === 0,
         });
         summary = toHalfWidthAlnum(res.summary);
         engine = res.engine;
@@ -300,6 +325,8 @@ export async function processPair(
       confidences: built.confidences,
       categories: attached.categories,
       propertyCountMarked: true,
+      redactedDefects,
+      originalSummary: summary,
       categoryEngine,
       categoryModel,
       report: DEFAULT_REPORT_OPTIONS,

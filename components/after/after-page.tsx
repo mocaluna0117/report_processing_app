@@ -5,7 +5,7 @@ import { AfterIntake } from "@/components/after/after-intake";
 import { CustomerCard } from "@/components/after/customer-card";
 import { CustomerImport, type CustomerSummary } from "@/components/after/customer-import";
 import { CustomerSearch } from "@/components/after/customer-search";
-import { InquiryExamplesDialog } from "@/components/after/inquiry-examples-dialog";
+import { ExamplesDialog } from "@/components/examples-dialog";
 import { FallbackTsvDialog } from "@/components/fallback-tsv-dialog";
 import { MailDialog } from "@/components/mail-dialog";
 import { ReportDialog } from "@/components/report-dialog";
@@ -20,25 +20,19 @@ import {
   saveImport,
   type ImportReport,
 } from "@/lib/after/customer-store";
-import {
-  clearInquiryExamples,
-  deleteInquiryExample,
-  loadInquiryExamples,
-  mergeInquiryExamples,
-  upsertInquiryExample,
-} from "@/lib/after/examples-store";
 import { parseCustomerFile } from "@/lib/after/import";
 import {
   AFTER_HIDDEN_COLUMNS,
   AFTER_SELECT_COLUMNS,
 } from "@/lib/after/reception";
-import { inquiryExampleOf, summarizeInquiry } from "@/lib/after/summarize-inquiry";
+import { redactedInquiryOf, summarizeInquiry } from "@/lib/after/summarize-inquiry";
 import type { AfterCase, Customer, CustomerFields } from "@/lib/after/types";
 import { setNavigationGuard } from "@/lib/navigation-guard";
 import { prefetchReportAssets } from "@/lib/report/assets";
 import { dropColumns, expandResultRow } from "@/lib/rows";
 import { recordSummary } from "@/lib/summary";
-import { type InquiryExample, upsertExample } from "@/lib/summarize/examples";
+import type { InquiryExample } from "@/lib/summarize/examples";
+import { useExamples } from "@/lib/use-examples";
 import {
   clearAfterCases,
   isStorageAvailable,
@@ -62,9 +56,6 @@ export function AfterPage() {
   const [reviewOnly, setReviewOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [inquiryText, setInquiryText] = useState("");
-  /** 学習した書き方 (伏せ字済みの受付メモ → 利用者が書いた本文) */
-  const [examples, setExamples] = useState<InquiryExample[]>([]);
-  const [examplesOpen, setExamplesOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
@@ -88,7 +79,7 @@ export function AfterPage() {
         partialErrors.push(`受付一覧: ${e instanceof Error ? e.message : String(e)}`);
       }
       try {
-        setExamples(await loadInquiryExamples());
+        await learning.restore();
       } catch (e) {
         partialErrors.push(`学習した書き方: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -96,6 +87,14 @@ export function AfterPage() {
     },
     hasSaved: async () => (await loadAfterCases()).length > 0,
   });
+  /** 学習した書き方 (伏せ字済みの受付メモ → 利用者が書いた本文) */
+  const learning = useExamples<AfterCase>({
+    kind: "inquiry",
+    inputOf: redactedInquiryOf,
+    outputLabel: "アフター受付内容",
+    storage,
+  });
+  const examples = learning.examples;
   const copyState = useExcelCopy();
   const editors = useRowEditors<AfterCase>((pairId, fn) => {
     setCases((prev) => prev.map((c) => (c.pairId === pairId ? fn(c) : c)));
@@ -250,98 +249,6 @@ export function AfterPage() {
     }
   };
 
-  const exampleById = useMemo(
-    () => new Map(examples.map((e) => [e.id, e])),
-    [examples],
-  );
-
-  /** 保存に失敗しても作業は止めず、画面内の状態だけは進める */
-  const applyExamples = async (
-    run: () => Promise<InquiryExample[]>,
-    fallback: (list: InquiryExample[]) => InquiryExample[],
-  ) => {
-    if (!isStorageAvailable()) {
-      setExamples(fallback);
-      return;
-    }
-    try {
-      setExamples(await run());
-      storage.refreshUsage();
-    } catch (e) {
-      storage.setStorageError(
-        `学習した書き方を保存できませんでした (${e instanceof Error ? e.message : String(e)})`,
-      );
-    }
-  };
-
-  /** 今のアフター受付内容を「この書き方」として覚える (本文・メモとも伏せ字にして保存する) */
-  const learn = async (row: AfterCase) => {
-    const { input, output } = inquiryExampleOf(row);
-    if (!output || !input) return;
-    const now = Date.now();
-    const example: InquiryExample = {
-      id: row.pairId,
-      input,
-      output,
-      createdAt: exampleById.get(row.pairId)?.createdAt ?? now,
-      updatedAt: now,
-    };
-    await applyExamples(
-      () => upsertInquiryExample(example),
-      (list) => upsertExample(list, example),
-    );
-  };
-
-  const deleteExample = (id: string) =>
-    applyExamples(
-      () => deleteInquiryExample(id),
-      (list) => list.filter((e) => e.id !== id),
-    );
-
-  const importExamples = (incoming: InquiryExample[]) =>
-    applyExamples(
-      () => mergeInquiryExamples(incoming),
-      (list) => list,
-    );
-
-  const clearExamples = async () => {
-    if (!confirm(`学習した書き方 ${examples.length}件 をすべて消去します。よろしいですか？`)) {
-      return;
-    }
-    try {
-      await clearInquiryExamples();
-    } catch {
-      // 消せなくても画面からは外す (次の保存で上書きされる)
-    }
-    setExamples([]);
-    setExamplesOpen(false);
-    storage.refreshUsage();
-  };
-
-  /** 学習ボタンの状態 (未学習 / 学習済み / 手直しがあって再学習できる) */
-  const learnState = (row: AfterCase) => {
-    const { output } = inquiryExampleOf(row);
-    if (!output) {
-      return { label: "この書き方を学習", disabled: true, title: "アフター受付内容が空欄です" };
-    }
-    const saved = exampleById.get(row.pairId);
-    if (!saved) {
-      // 要約をそのまま使っている行も、確認として学習できる
-      const edited = row.originalSummary !== undefined && row.originalSummary !== recordSummary(row);
-      return {
-        label: "この書き方を学習",
-        disabled: false,
-        title: edited
-          ? "手直しした書き方を、次回以降の要約の手本にします"
-          : "この受付内容の書き方を、次回以降の要約の手本にします (要約のまま)",
-      };
-    }
-    if (saved.output === output) {
-      return { label: "学習済み ✓", disabled: true, title: "この書き方を手本にしています" };
-    }
-    return { label: "再学習", disabled: false, title: "直したあとの書き方で覚え直します" };
-  };
-
   const deleteCase = (row: AfterCase) => {
     if (!confirm(`${row.ownerDisplay} の受付を削除します。よろしいですか？`)) return;
     setCases((prev) => prev.filter((c) => c.pairId !== row.pairId));
@@ -450,7 +357,7 @@ export function AfterPage() {
             <span>要約の書き方を学習: {examples.length}件</span>
             <button
               type="button"
-              onClick={() => setExamplesOpen(true)}
+              onClick={() => learning.setOpen(true)}
               className="cursor-pointer rounded-md border border-slate-300 bg-white px-2 py-0.5 font-medium text-slate-700 hover:bg-slate-50"
             >
               一覧・消去
@@ -515,13 +422,13 @@ export function AfterPage() {
             onPrefetchReport={prefetchReportAssets}
             onDeleteRow={deleteCase}
             renderRowActions={(row) => {
-              const state = learnState(row);
+              const state = learning.learnState(row);
               return (
                 <button
                   type="button"
                   disabled={state.disabled}
                   title={state.title}
-                  onClick={() => void learn(row)}
+                  onClick={() => void learning.learn(row)}
                   className={`whitespace-nowrap rounded-md border px-2.5 py-1 text-xs font-medium ${
                     state.disabled
                       ? "cursor-default border-slate-200 bg-slate-50 text-slate-400"
@@ -566,13 +473,14 @@ export function AfterPage() {
         <FallbackTsvDialog text={copyState.fallbackTsv} onClose={copyState.closeFallback} />
       )}
 
-      {examplesOpen && (
-        <InquiryExamplesDialog
+      {learning.open && (
+        <ExamplesDialog
           examples={examples}
-          onDelete={(id) => void deleteExample(id)}
-          onClearAll={() => void clearExamples()}
-          onImport={(list) => void importExamples(list)}
-          onClose={() => setExamplesOpen(false)}
+          labels={{ input: "受付メモ", output: "アフター受付内容" }}
+          onDelete={learning.deleteExample}
+          onClearAll={() => void learning.clearExamples()}
+          onImport={learning.importExamples}
+          onClose={() => learning.setOpen(false)}
         />
       )}
 
@@ -595,7 +503,7 @@ export function AfterPage() {
               ? [{ label: "顧客データを削除", onClick: deleteCustomers, danger: true }]
               : []),
             ...(examples.length > 0
-              ? [{ label: "学習した書き方を消去", onClick: () => void clearExamples(), danger: true }]
+              ? [{ label: "学習した書き方を消去", onClick: () => void learning.clearExamples(), danger: true }]
               : []),
           ]}
           onClearFont={storage.clearFont}

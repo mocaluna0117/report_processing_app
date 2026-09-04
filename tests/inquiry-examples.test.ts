@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   EXAMPLES_PICK_DEFAULT,
   type InquiryExample,
+  buildExample,
   exampleOutputLines,
+  exampleSection,
   isInquiryExampleLike,
   mergeExamples,
   redactExamples,
@@ -193,18 +195,18 @@ describe("buildInquiryPrompt の手本", () => {
 
   it("手本を渡すと受付メモの前に手本の節が入る", () => {
     const prompt = buildInquiryPrompt("今回のメモ", examples);
-    expect(prompt).toContain("過去の受付例");
+    expect(prompt).toContain("過去の例");
     expect(prompt).toContain("換気扇がうるさいとの連絡");
     expect(prompt).toContain("- 浴室の換気扇から異音");
     expect(prompt).toContain("- 窓の建付け不良");
     // 番号はサーバー側で振り直すので手本には残さない
     expect(prompt).not.toContain("①浴室");
-    expect(prompt.indexOf("過去の受付例")).toBeLessThan(prompt.indexOf("## 受付メモ"));
+    expect(prompt.indexOf("過去の例")).toBeLessThan(prompt.indexOf("## 受付メモ"));
   });
 
   it("手本を渡さなければ従来のプロンプトのまま", () => {
     const prompt = buildInquiryPrompt("今回のメモ");
-    expect(prompt).not.toContain("過去の受付例");
+    expect(prompt).not.toContain("過去の例");
   });
 
   it("手本があっても既存の条件文は残る", () => {
@@ -221,5 +223,47 @@ describe("isInquiryExampleLike", () => {
     expect(isInquiryExampleLike(example())).toBe(true);
     expect(isInquiryExampleLike({ id: "a", input: "b", output: "c" })).toBe(false);
     expect(isInquiryExampleLike(null)).toBe(false);
+  });
+});
+
+describe("exampleSection (画面ごとの呼び名)", () => {
+  const examples = [{ input: "1. 場所: 1階 洋室 / 部位: クロス", output: "①1階洋室のクロスに凹凸" }];
+
+  it("定期点検は「不具合項目 → 点検内容」で並べる", () => {
+    const lines = exampleSection(examples, { input: "不具合項目", output: "点検内容" }).join("\n");
+    expect(lines).toContain("過去の例");
+    expect(lines).toContain("不具合項目:");
+    expect(lines).toContain("点検内容:");
+    expect(lines).toContain("- 1階洋室のクロスに凹凸");
+    // 番号はサーバー側で振り直すので手本には残さない
+    expect(lines).not.toContain("①1階");
+  });
+
+  it("手本が無ければ何も出さない", () => {
+    expect(exampleSection([], { input: "不具合項目", output: "点検内容" })).toEqual([]);
+  });
+});
+
+describe("buildExample", () => {
+  it("入力・出力のどちらも伏せ字にする", () => {
+    const { input, output } = buildExample(
+      "1. 場所: 1階 洋室 / 症状: 凹凸\n   備考: 山田様より 090-0000-1234",
+      "1階洋室のクロスに凹凸 (山田様宅)",
+    );
+    expect(input).toContain("1階 洋室");
+    expect(input).not.toContain("山田");
+    expect(input).not.toContain("090-0000-1234");
+    expect(output).not.toContain("山田");
+    expect(output).toContain("1階洋室のクロスに凹凸");
+  });
+
+  it("長すぎる本文は切り詰める", () => {
+    const { input, output } = buildExample("あ".repeat(3000), "い".repeat(2000));
+    expect(input).toHaveLength(1500);
+    expect(output).toHaveLength(600);
+  });
+
+  it("空の入力・出力はそのまま空 (学習ボタンを押せないようにするため)", () => {
+    expect(buildExample("", "")).toEqual({ input: "", output: "" });
   });
 });

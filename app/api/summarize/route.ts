@@ -1,12 +1,17 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { NextResponse } from "next/server";
 import { GEMINI_SUMMARY_CHAIN, callWithModelChain } from "@/lib/gemini-model";
-import { redactExamples, sanitizeExamples } from "@/lib/summarize/examples";
+import { formatDefectList } from "@/lib/summarize/defects";
+import { exampleSection, redactExamples, sanitizeExamples } from "@/lib/summarize/examples";
 import { redactPii } from "@/lib/summarize/redact";
 import { formatPhenomena } from "@/lib/summarize/format";
 import { INQUIRY_TEXT_MAX, buildInquiryPrompt, ruleBasedInquirySummary } from "@/lib/summarize/inquiry";
 import { ruleBasedSummary, stripRequests } from "@/lib/summarize/rule-based";
-import type { SummarizeRequest, SummarizeResponse } from "@/lib/summarize/types";
+import type {
+  InquiryExampleInput,
+  SummarizeRequest,
+  SummarizeResponse,
+} from "@/lib/summarize/types";
 
 export const runtime = "nodejs";
 // Vercel等のサーバーレス環境での関数実行上限
@@ -55,7 +60,7 @@ function sanitizeRequest(raw: unknown): SummarizeRequest {
   };
 }
 
-function buildPrompt(req: SummarizeRequest): string {
+function buildPrompt(req: SummarizeRequest, examples: InquiryExampleInput[] = []): string {
   const lines: string[] = [
     "あなたは住宅アフターメンテナンス受付の記録係です。",
     "以下は住宅の定期点検で確認された不具合項目の一覧です。",
@@ -78,22 +83,11 @@ function buildPrompt(req: SummarizeRequest): string {
     "悪い例: [\"クロスの凹凸について補修をご希望。弊社にて継続対応いたします。\"] (要望と対応方針が含まれており不可)",
     "悪い例: [\"1階洋室天井のクロスに凹凸、2階リビング壁のクロスに浮き、2階階段の剥がれ\"] (複数の事象が1要素に詰め込まれており不可)",
     "",
+    ...exampleSection(examples, { input: "不具合項目", output: "点検内容" }),
     "## 不具合項目",
+    // 整形は lib/summarize/defects.ts に置き、「この書き方を学習」の入力と同じ文にする
+    formatDefectList(req),
   ];
-  if (req.defects.length === 0) {
-    lines.push("(不具合の指摘なし)");
-  }
-  // 事後対応(弊社継続対応・見積もり希望など)は対応方針なので、出力に混ざらないよう渡さない
-  req.defects.forEach((d, i) => {
-    lines.push(
-      `${i + 1}. 場所: ${d.location || "-"} / 部位: ${d.part || "-"} / 症状: ${d.symptom || "-"}`,
-    );
-    if (d.remarks) lines.push(`   備考(要望や対応方針は無視し、事象だけ読み取る): ${redactPii(d.remarks)}`);
-  });
-  if (req.specialNotes.length > 0) {
-    lines.push("## 特記事項 (事象だけ読み取り、phenomena に含める)");
-    for (const n of req.specialNotes) lines.push(`- ${redactPii(n)}`);
-  }
   return lines.join("\n");
 }
 
@@ -215,7 +209,9 @@ export async function POST(request: Request): Promise<NextResponse<SummarizeResp
   }
 
   try {
-    const phenomena = stringArray((await callGemini(apiKey, buildPrompt(body))).phenomena);
+    // 手本も伏せ字を掛け直してから渡す (保存時に伏せた上での保険)
+    const prompt = buildPrompt(body, redactExamples(body.examples ?? []));
+    const phenomena = stringArray((await callGemini(apiKey, prompt)).phenomena);
     // 番号付け・改行はサーバー側で行い、モデルの表記揺れに左右されないようにする
     const notes = body.standaloneNotes.map((n) => stripRequests(n)).filter(Boolean);
     return NextResponse.json({

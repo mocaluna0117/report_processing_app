@@ -9,7 +9,8 @@ export interface DefectForSummary {
 
 /**
  * 学習した書き方1件のうち、要約APIへ送る部分。
- * input = 伏せ字済みの受付メモ / output = 利用者が最終的に書いた「アフター受付内容」。
+ * input = 伏せ字済みの入力 (受付メモ / 不具合項目)
+ * output = 利用者が最終的に書いた本文 (アフター受付内容 / 点検内容)。
  */
 export interface InquiryExampleInput {
   input: string;
@@ -28,7 +29,9 @@ export interface SummarizeRequest {
    */
   inquiryText?: string;
   /**
-   * アフターメンテナンス: 過去の受付例 (文体・粒度の手本)。inquiryText があるときだけ使う。
+   * 過去の例 (文体・粒度の手本)。
+   * アフターメンテナンスは「受付メモ → アフター受付内容」、
+   * 定期点検は「不具合項目 → 点検内容」の組で、画面ごとに別の一覧を持つ。
    * 呼び出し側で伏せ字にしたものだけを送ること (サーバー側でも redactPii を掛ける)。
    */
   examples?: InquiryExampleInput[];

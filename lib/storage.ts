@@ -51,6 +51,8 @@ export const SETTING_KEY_FONT_BOLD = "report:fontBold";
  * 伏せ字にした本文だけを置くこと (氏名・電話番号・住所をこのキーで保存してはいけない)。
  */
 export const META_INQUIRY_EXAMPLES = "inquiryExamples";
+/** 定期点検の「学習した書き方」(不具合項目 → 利用者が書いた点検内容)。上と同じ扱い */
+export const META_INSPECTION_EXAMPLES = "inspectionExamples";
 
 export function isStorageAvailable(): boolean {
   return typeof indexedDB !== "undefined";
