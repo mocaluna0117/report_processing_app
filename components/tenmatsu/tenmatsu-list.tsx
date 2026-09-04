@@ -26,6 +26,19 @@ const CHECKBOX_CLASS =
  * (背景色は tr ではなくセルに付けないと、下の行が透けて見える)。
  */
 const TH_CLASS = "sticky top-0 z-20 border-b border-slate-200 bg-slate-50 px-3 py-2";
+/**
+ * 右端の固定枠 (完了フラグ2つとプレビュー)。楽楽精算のデータ列とは別枠にして、
+ * 横にスクロールしても常に見えるようにする。境界は他の罫線より濃くして「別枠」と分かるように。
+ * z-30 (見出しの固定枠) > z-20 (通常の見出し) > z-10 (本体の固定枠) は results-table.tsx と同じ。
+ * 固定するのは1セルだけ (3セルを right-* で並べると、table-auto では実幅が内容依存でずれる)。
+ */
+const FRAME_TH_CLASS =
+  "sticky right-0 top-0 z-30 border-b border-l-2 border-b-slate-200 border-l-slate-300 bg-slate-50 px-3 py-2";
+const FRAME_TD_CLASS =
+  "sticky right-0 z-10 border-l-2 border-l-slate-300 bg-white px-3 py-2 group-hover:bg-slate-50";
+/** 固定枠の中の並び。見出しと本体で同じ幅を使って縦を揃える */
+const FRAME_SLOT_CLASS = "flex w-16 items-center";
+const FRAME_BUTTON_SLOT_CLASS = "w-24";
 
 /** 空欄の表示。値が無いことを黙って隠さない */
 const dash = (value: string | null | undefined) => (value ? value : "－");
@@ -138,146 +151,146 @@ export function TenmatsuList({
         // 枠線は外側に持たせ、スクロールするのは表だけにする。
         // 縦もこの中でスクロールさせて、見出しの sticky が枠の中に残るようにする
         <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
-          {/* scroll-pt は Tab移動でセルが固定した見出しの下に潜らないための余白 */}
-          <div className="max-h-[60vh] scroll-pt-10 overflow-auto">
-            {/* min-w は列幅の合計。列を増やしたり幅を変えたらここも直す */}
-            <table className="w-full min-w-[1460px] text-sm">
-            <thead>
-              <tr className="whitespace-nowrap text-left text-xs text-slate-500">
-                <th
-                  className={`w-32 ${TH_CLASS}`}
-                  title="PC側の記録に足した順の逆に並びます (申請日での並べ替えではありません)"
-                >
-                  伝票No.
-                </th>
-                <th className={`w-48 ${TH_CLASS}`}>物件名</th>
-                {FLAG_COLUMNS.map((col) => (
-                  <th key={col.key} className={`w-20 ${TH_CLASS}`} title={col.label}>
-                    {col.head}
-                  </th>
-                ))}
-                <th className={`w-24 ${TH_CLASS}`}>申請日</th>
-                <th className={`w-24 ${TH_CLASS}`}>申請者</th>
-                {/* 見出しが長いので折り返す (行の whitespace-nowrap を上書きする) */}
-                <th className={`w-24 whitespace-normal ${TH_CLASS}`}>支払金額(税込)</th>
-                <th className={`w-24 ${TH_CLASS}`}>支払先</th>
-                <th className={`w-24 whitespace-normal ${TH_CLASS}`}>最終承認日</th>
-                <th className={`w-40 ${TH_CLASS}`}>ファイル名</th>
-                <th className={`w-14 ${TH_CLASS}`}>ページ</th>
-                <th className={`w-16 ${TH_CLASS}`}>大きさ</th>
-                <th className={`w-28 ${TH_CLASS}`}>状態</th>
-                <th className={`w-24 ${TH_CLASS}`} />
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((item) => {
-                const saving = savingNos.has(item.denpyo_no);
-                const known = hasFlags(item);
-                const disabled = saving || !known || flagDisabledReason !== null;
-                return (
-                  <tr
-                    key={item.denpyo_no}
-                    aria-busy={saving}
-                    className={`border-b border-slate-100 last:border-0 hover:bg-slate-50 ${item.exists ? "" : "opacity-60"}`}
+          {/* scroll-pt / scroll-pr は Tab移動でセルが固定した見出し・右端の枠の下に潜らないための余白 */}
+          <div className="max-h-[60vh] scroll-pt-10 scroll-pr-72 overflow-auto">
+            {/* whitespace-nowrap は継承するので、見出しもセルも1つも折り返さない。
+                幅は内容に合わせて伸びる (table-auto)。支払先など長い値ははみ出さずに列が広がり、
+                表が横にスクロールする */}
+            <table className="w-full whitespace-nowrap text-sm">
+              <thead>
+                <tr className="text-left text-xs text-slate-500">
+                  <th
+                    className={TH_CLASS}
+                    title="PC側の記録に足した順の逆に並びます (申請日での並べ替えではありません)"
                   >
-                    <td className="px-3 py-2 font-mono text-xs text-slate-600">
-                      {item.denpyo_no}
-                    </td>
-                    {/* 物件名は施主名を含むことがある。取り出せなければ空欄 */}
-                    <td className="px-3 py-2 font-medium">{dash(item.property_name)}</td>
-                    {FLAG_COLUMNS.map((col) => (
-                      <td key={col.key} className="px-3 py-2">
-                        {known ? (
-                          <label
-                            className={`flex items-center ${disabled ? "" : "cursor-pointer"}`}
-                            title={
-                              saving
-                                ? "変更しています…"
-                                : (flagDisabledReason ?? flagsUpdatedTitle(item))
-                            }
-                          >
-                            <input
-                              type="checkbox"
-                              // 出すのは /list が返した値そのもの。応答が返るまで変えないので、
-                              // 失敗しても元に戻す処理は要らない (そもそも変わっていない)
-                              checked={item[col.key] === true}
-                              disabled={disabled}
-                              // exists=false の行でも変えられる
-                              // (404 は記録の有無で決まる。隣のプレビューとは逆)
-                              onChange={(e) =>
-                                onToggleFlag(item.denpyo_no, col.key, e.target.checked)
-                              }
-                              aria-label={`${item.denpyo_no} の${col.label}`}
-                              className={CHECKBOX_CLASS}
-                            />
-                          </label>
-                        ) : (
-                          // フラグに未対応のサーバー・この機能より前のキャッシュ。
-                          // 未チェックとして見せると「未入力」の嘘になるので「－」にする
-                          <span
-                            className="text-slate-400"
-                            title="このPCのサーバーはチェックに未対応です (~/tenmatsu-dl/ を更新してください)"
-                          >
-                            －
+                    伝票No.
+                  </th>
+                  <th className={TH_CLASS}>ファイル名</th>
+                  <th className={TH_CLASS}>物件名</th>
+                  <th className={TH_CLASS}>申請日</th>
+                  <th className={TH_CLASS}>申請者</th>
+                  <th className={TH_CLASS}>支払金額(税込)</th>
+                  <th className={TH_CLASS}>支払先</th>
+                  <th className={TH_CLASS}>最終承認日</th>
+                  <th className={`w-14 ${TH_CLASS}`}>ページ</th>
+                  <th className={`w-16 ${TH_CLASS}`}>大きさ</th>
+                  <th className={TH_CLASS}>状態</th>
+                  {/* 右端の固定枠。ボタンの上は空けておく */}
+                  <th className={FRAME_TH_CLASS}>
+                    <div className="flex items-center gap-2">
+                      {FLAG_COLUMNS.map((col) => (
+                        <span key={col.key} className={FRAME_SLOT_CLASS} title={col.label}>
+                          {col.head}
+                        </span>
+                      ))}
+                      <span className={FRAME_BUTTON_SLOT_CLASS} />
+                    </div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((item) => {
+                  const saving = savingNos.has(item.denpyo_no);
+                  const known = hasFlags(item);
+                  const disabled = saving || !known || flagDisabledReason !== null;
+                  return (
+                    <tr
+                      key={item.denpyo_no}
+                      aria-busy={saving}
+                      // group は固定枠のセルにも hover の色を渡すため (sticky のセルは行の背景を継がない)
+                      className={`group border-b border-slate-100 last:border-0 hover:bg-slate-50 ${item.exists ? "" : "opacity-60"}`}
+                    >
+                      <td className="px-3 py-2 font-mono text-xs text-slate-600">
+                        {item.denpyo_no}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">{item.file}</td>
+                      {/* 物件名は施主名を含むことがある。取り出せなければ空欄 */}
+                      <td className="px-3 py-2 text-slate-600">{dash(item.property_name)}</td>
+                      {/* ここから5つは楽楽精算から読んだ値。古い記録では空欄になる */}
+                      <td className="px-3 py-2 text-slate-600">{dash(item.shinsei_date)}</td>
+                      <td className="px-3 py-2 text-slate-600">{dash(item.shinseisha)}</td>
+                      <td className="px-3 py-2 text-right text-slate-600">{dash(item.amount)}</td>
+                      <td className="px-3 py-2 text-slate-600">{dash(item.payee)}</td>
+                      <td className="px-3 py-2 text-slate-600">{dash(item.final_approved_at)}</td>
+                      <td className="px-3 py-2 text-slate-600">{item.pages ?? "－"}</td>
+                      <td className="px-3 py-2 text-slate-600">{formatFileSize(item.size)}</td>
+                      <td className="px-3 py-2">
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-xs ${
+                            item.exists
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-slate-100 text-slate-500"
+                          }`}
+                        >
+                          {item.exists ? "取得済み" : "ファイルなし"}
+                        </span>
+                        {item.completed === true && (
+                          // 取得済み (emerald) と混ざらない色にする
+                          <span className="ml-1 rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-900">
+                            完了
                           </span>
                         )}
                       </td>
-                    ))}
-                    {/* ここから4つは楽楽精算の一覧から読んだ値。古い記録では空欄になる */}
-                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">
-                      {dash(item.shinsei_date)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">
-                      {dash(item.shinseisha)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right text-slate-600">
-                      {dash(item.amount)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">
-                      {dash(item.payee)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">
-                      {dash(item.final_approved_at)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">{item.file}</td>
-                    <td className="px-3 py-2 text-slate-600">{item.pages ?? "－"}</td>
-                    <td className="px-3 py-2 text-slate-600">{formatFileSize(item.size)}</td>
-                    <td className="px-3 py-2">
-                    <span
-                        className={`whitespace-nowrap rounded px-1.5 py-0.5 text-xs ${
-                          item.exists
-                            ? "bg-emerald-100 text-emerald-800"
-                            : "bg-slate-100 text-slate-500"
-                        }`}
-                      >
-                        {item.exists ? "取得済み" : "ファイルなし"}
-                      </span>
-                      {item.completed === true && (
-                        // 取得済み (emerald) と混ざらない色にする
-                        <span className="ml-1 whitespace-nowrap rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-900">
-                          完了
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => onPreview(item.denpyo_no)}
-                        disabled={!item.exists || !canPreview}
-                        title={
-                          item.exists
-                            ? undefined
-                            : "PCの保存先からファイルが消えています。もう一度取得してください"
-                        }
-                        className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        プレビュー
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
+                      {/* 右端の固定枠: 完了フラグ2つ + プレビュー */}
+                      <td className={FRAME_TD_CLASS}>
+                        <div className="flex items-center gap-2">
+                          {FLAG_COLUMNS.map((col) =>
+                            known ? (
+                              <label
+                                key={col.key}
+                                className={`${FRAME_SLOT_CLASS} ${disabled ? "" : "cursor-pointer"}`}
+                                title={
+                                  saving
+                                    ? "変更しています…"
+                                    : (flagDisabledReason ?? flagsUpdatedTitle(item))
+                                }
+                              >
+                                <input
+                                  type="checkbox"
+                                  // 出すのは /list が返した値そのもの。応答が返るまで変えないので、
+                                  // 失敗しても元に戻す処理は要らない (そもそも変わっていない)
+                                  checked={item[col.key] === true}
+                                  disabled={disabled}
+                                  // exists=false の行でも変えられる
+                                  // (404 は記録の有無で決まる。隣のプレビューとは逆)
+                                  onChange={(e) =>
+                                    onToggleFlag(item.denpyo_no, col.key, e.target.checked)
+                                  }
+                                  aria-label={`${item.denpyo_no} の${col.label}`}
+                                  className={CHECKBOX_CLASS}
+                                />
+                              </label>
+                            ) : (
+                              // フラグに未対応のサーバー・この機能より前のキャッシュ。
+                              // 未チェックとして見せると「未入力」の嘘になるので「－」にする
+                              <span
+                                key={col.key}
+                                className={`${FRAME_SLOT_CLASS} text-slate-400`}
+                                title="このPCのサーバーはチェックに未対応です (~/tenmatsu-dl/ を更新してください)"
+                              >
+                                －
+                              </span>
+                            ),
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => onPreview(item.denpyo_no)}
+                            disabled={!item.exists || !canPreview}
+                            title={
+                              item.exists
+                                ? undefined
+                                : "PCの保存先からファイルが消えています。もう一度取得してください"
+                            }
+                            className={`${FRAME_BUTTON_SLOT_CLASS} cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50`}
+                          >
+                            プレビュー
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
             </table>
           </div>
         </div>
