@@ -53,6 +53,19 @@ export const SETTING_KEY_FONT_BOLD = "report:fontBold";
 export const META_INQUIRY_EXAMPLES = "inquiryExamples";
 /** 定期点検の「学習した書き方」(不具合項目 → 利用者が書いた点検内容)。上と同じ扱い */
 export const META_INSPECTION_EXAMPLES = "inspectionExamples";
+/**
+ * 顛末書のローカルサーバーのトークン (そのPCのサーバーが起動時に発行したもの)。
+ * 設定なので「保存データを消去」では消さない (専用のボタンで消す)。
+ * 顧客情報ではないが、同じPCのサーバーを叩ける鍵なので画面には末尾だけを出す。
+ */
+export const SETTING_KEY_TENMATSU_TOKEN = "tenmatsu:token";
+/**
+ * 顛末書の取得済み一覧のキャッシュ (伝票No.・ファイル名・取得日時)。
+ * サーバーへ繋ぐ前でも前回の一覧を出せるように置く。
+ * 伝票No.が入るので「一覧を消去」で消せるようにし、folio のサーバーへは送らない。
+ * 「保存データを消去」では消さない (定期点検の作業終了で顛末書の一覧まで消さないため)。
+ */
+export const META_TENMATSU_LIST = "tenmatsu:list";
 
 export function isStorageAvailable(): boolean {
   return typeof indexedDB !== "undefined";

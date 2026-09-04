@@ -6,10 +6,11 @@ import { useEffect, useState } from "react";
 import { SIGNED_IN_COOKIE } from "@/lib/auth";
 import { getNavigationGuard } from "@/lib/navigation-guard";
 
-/** 画面 (処理の種類)。定期点検とアフターメンテナンスで扱うデータが別なのでURLも分ける */
+/** 画面 (処理の種類)。扱うデータが別なのでURLも分ける */
 export const MODES = [
   { href: "/", label: "定期点検" },
   { href: "/after", label: "アフターメンテナンス" },
+  { href: "/tenmatsu", label: "顛末書" },
 ] as const;
 
 export function ModeNav() {
