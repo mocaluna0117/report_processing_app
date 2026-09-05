@@ -18,7 +18,7 @@ function cellClass(c: Confidence): string {
  * 列ごとの幅。表は table-fixed なので、この見出しの幅がそのまま列幅になる
  * (中身が長くても列は広がらず、入力欄が縮められることもない)。
  * 下限は見出し (text-xs = 1文字12px + 左右の余白16px) が収まる幅。
- * 合計: 24列 3248px / アフター (備考欄なし) 3072px。変えたら table の min-w も合わせる。
+ * 合計: 24列 3344px / アフター (備考欄なし) 3168px。変えたら table の min-w も合わせる。
  */
 const COL_WIDTH: Record<ColumnName, string> = {
   物件数: "w-16",
@@ -33,8 +33,9 @@ const COL_WIDTH: Record<ColumnName, string> = {
   お客様氏名: "w-28",
   住所: "w-52",
   引渡日: "w-28",
-  監督: "w-16",
-  営業: "w-16",
+  // 顛末書から反映した氏名 (姓 名) が入るので、他の氏名の列と同じ幅にする
+  監督: "w-28",
+  営業: "w-28",
   初回訪問日: "w-20",
   前回対応日: "w-20",
   対応予定日: "w-20",
@@ -133,7 +134,7 @@ export function ResultsTable<R extends ResultRow>({
         {/* min-w は列幅の合計 (アフターの23列分)。fixed の表幅は max(width, 列幅の合計) なので
             定期点検 (24列) は合計まで伸びる。合計より大きくすると余りが全列 (固定列を含む) に
             配られて幅指定と scroll-pr がずれるので、増やすときは COL_WIDTH と一緒に見直す。 */}
-        <table className="w-full min-w-[3360px] table-fixed text-sm">
+        <table className="w-full min-w-[3456px] table-fixed text-sm">
           <thead>
             <tr className="text-left text-xs text-slate-500">
               {/* 施主列は左端に固定し、横スクロールの対象外にする (コピー対象外のUI見出し) */}

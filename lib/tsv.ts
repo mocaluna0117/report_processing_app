@@ -64,6 +64,9 @@ export const PROPERTY_COL = COLUMNS.indexOf("物件名称");
 export const OWNER_COL = COLUMNS.indexOf("お客様氏名");
 export const ADDRESS_COL = COLUMNS.indexOf("住所");
 export const HANDOVER_COL = COLUMNS.indexOf("引渡日");
+/** 監督・営業。アフターメンテナンスのお客様の情報から反映する (24列の構成は変えない) */
+export const SUPERVISOR_COL = COLUMNS.indexOf("監督");
+export const SALES_COL = COLUMNS.indexOf("営業");
 export const RECEPTIONIST_COL = COLUMNS.indexOf("受付者");
 export const DEVELOPER_COL = COLUMNS.indexOf("事業者");
 export const LAST_UPDATED_COL = COLUMNS.indexOf("最終更新日");

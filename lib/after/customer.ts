@@ -116,6 +116,49 @@ export function applyReportHandoverDate(
   };
 }
 
+/**
+ * 顛末書の監督・営業を利用者の修正として反映し、出どころを残す。
+ * 修正として書くので、顧客データを取り込み直しても残る
+ * (台帳に値が入れば applyEdits の規則で自然に外れる)。
+ */
+export function applyTenmatsuStaff(
+  customer: Customer,
+  patch: { supervisor?: string; salesRep?: string },
+  pj: string | null,
+  now: number,
+): Customer {
+  const next = applyEdits(customer, patch, now);
+  return { ...next, tenmatsuSync: { ...patch, at: now, pj } };
+}
+
+/** その項目が顛末書から反映されたものか (顧客カードの表示に使う) */
+export function isTenmatsuStaff(
+  customer: Customer,
+  field: "supervisor" | "salesRep",
+): boolean {
+  const sync = customer.tenmatsuSync;
+  if (!sync) return false;
+  const value = sync[field];
+  return value !== undefined && customer.edits[field] === value;
+}
+
+/**
+ * 顛末書から入れた監督・営業を取り消す (修正からキーごと外す)。
+ * ★applyEdits で空文字に戻してはいけない。項目を増やす前に保存された顧客は
+ *   取り込み値が undefined なので空文字と一致せず、修正が残り続けてしまう。
+ */
+export function revertTenmatsuStaff(
+  customer: Customer,
+  fields: readonly ("supervisor" | "salesRep")[],
+  now: number,
+): Customer {
+  const edits: Partial<CustomerFields> = { ...customer.edits };
+  for (const field of fields) delete edits[field];
+  const next: Customer = { ...customer, edits, editedAt: now };
+  delete next.tenmatsuSync;
+  return { ...next, searchKey: buildSearchKey(effectiveFields(next)) };
+}
+
 /** 引渡日が写真報告書から反映されたものか (顧客カードの表示に使う) */
 export function isReportHandover(customer: Customer): boolean {
   return (
@@ -150,8 +193,9 @@ export function mergeImported(previous: Customer, incoming: Customer): Customer 
     ...supplemented,
     edits,
     editedAt: previous.editedAt,
-    // 引渡日の出どころ (報告書から反映) は取り込み直しても残す
+    // 出どころ (報告書から引渡日 / 顛末書から監督・営業) は取り込み直しても残す
     reportSync: previous.reportSync,
+    tenmatsuSync: previous.tenmatsuSync,
   };
   return { ...merged, searchKey: buildSearchKey(effectiveFields(merged)) };
 }

@@ -66,6 +66,22 @@ export interface Customer {
    * いずれの場合も自然に無効になるので消す処理は要らない。
    */
   reportSync?: ReportSync;
+  /**
+   * 顛末書から監督・営業を反映した記録 (画面に出どころを出すため)。
+   * edits の値と同じときだけ有効とみなすので、手で直せば自然に外れる。
+   * 古い保存データには無いので任意。
+   */
+  tenmatsuSync?: TenmatsuSync;
+}
+
+/** 顛末書から監督・営業を反映した記録 (個人情報は持たない) */
+export interface TenmatsuSync {
+  supervisor?: string;
+  salesRep?: string;
+  /** 反映した日時 */
+  at: number;
+  /** 元になった顛末書のPJ (表示用) */
+  pj: string | null;
 }
 
 /** 写真報告書から引渡日を反映した記録 (個人情報は持たない) */

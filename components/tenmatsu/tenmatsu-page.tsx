@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StorageBanner } from "@/components/storage-banner";
 import { type FlagKey, TenmatsuList } from "@/components/tenmatsu/tenmatsu-list";
 import { TenmatsuPreviewDialog } from "@/components/tenmatsu/tenmatsu-preview-dialog";
+import { TenmatsuStaffSync } from "@/components/tenmatsu/tenmatsu-staff-sync";
 import { setNavigationGuard } from "@/lib/navigation-guard";
 import { isStorageAvailable } from "@/lib/storage";
 import {
@@ -836,6 +837,12 @@ export function TenmatsuPage() {
             onPreview={setPreviewNo}
           />
         </section>
+
+        {/* 顛末書から読んだ監督・営業を、アフターメンテナンスのお客様の情報へ入れる。
+            顧客データを取り込んでいないブラウザでは何も出ない */}
+        {items.length > 0 && (
+          <TenmatsuStaffSync items={items} listFresh={listFresh} disabled={running} />
+        )}
       </div>
 
       {preview && (

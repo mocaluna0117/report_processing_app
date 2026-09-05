@@ -21,6 +21,8 @@ import { useExamples } from "@/lib/use-examples";
 import { effectiveFields } from "@/lib/after/customer";
 import { loadCustomers, saveReportHandoverDates } from "@/lib/after/customer-store";
 import { buildHandoverSync } from "@/lib/after/match-report";
+import { type RowStaffPlan, buildRowStaff } from "@/lib/after/match-staff";
+import type { Customer } from "@/lib/after/types";
 import { HandoverSync } from "@/components/handover-sync";
 import {
   clearAll as clearStorage,
@@ -73,6 +75,8 @@ export default function Home() {
    * 「元に戻す」で戻す値を持つため、更新前の値を覚えておく。
    */
   const [autoHandover, setAutoHandover] = useState<Map<string, string | null> | null>(null);
+  /** 監督・営業を引くための顧客データ (引渡日の反映と同じものを使い回す) */
+  const [staffCustomers, setStaffCustomers] = useState<Customer[]>([]);
   const fileMap = useRef(new Map<string, UploadedFile>());
   /**
    * 最新の抽出結果。処理中でもセルは編集できるので、
@@ -119,6 +123,23 @@ export default function Home() {
   useEffect(() => {
     warmUpPdfjs();
   }, []);
+
+  // 監督・営業の反映に使う顧客データ。処理の完了後にも読み直す
+  // (処理中に引渡日を自動反映しているため)
+  useEffect(() => {
+    if (processing || !isStorageAvailable()) return;
+    let alive = true;
+    loadCustomers()
+      .then((list) => {
+        if (alive) setStaffCustomers(list);
+      })
+      .catch(() => {
+        if (alive) setStaffCustomers([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [processing]);
 
   // 処理中に画面を切り替えると未完了分が失われるので確認を出す
   useEffect(() => {
@@ -311,6 +332,29 @@ export default function Home() {
       storage.setStorageError(
         `引渡日を顧客データへ反映できませんでした (${e instanceof Error ? e.message : String(e)})`,
       );
+    }
+  };
+
+  /**
+   * お客様の情報から監督・営業を引く計画 (PJの上8桁で突き合わせる)。
+   * 空欄のセルにだけ入れ、値が食い違うときは入れない (lib/after/match-staff.ts)。
+   */
+  const staffPlans = useMemo(() => {
+    const map = new Map<string, RowStaffPlan>();
+    for (const plan of buildRowStaff(rows, staffCustomers)) map.set(plan.pairId, plan);
+    return map;
+  }, [rows, staffCustomers]);
+  const staffReady = useMemo(
+    () => [...staffPlans.values()].filter((p) => p.updates.length > 0),
+    [staffPlans],
+  );
+
+  /** 計画どおりにセルを書き換える。保存は既存の仕組み (results の変化) に任せる */
+  const applyStaff = (plans: readonly RowStaffPlan[]) => {
+    for (const plan of plans) {
+      for (const update of plan.updates) {
+        editors.onCellChange(plan.pairId, update.col, update.value);
+      }
     }
   };
 
@@ -516,6 +560,17 @@ export default function Home() {
               >
                 {copyState.copied ? "コピーしました ✓" : "Excel用にコピー"}
               </button>
+              {staffCustomers.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => applyStaff(staffReady)}
+                  disabled={processing || staffReady.length === 0}
+                  title="お客様の情報 (アフターメンテナンス) から、PJの上8桁が一致する監督・営業を空欄の行に入れます"
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                >
+                  監督・営業をまとめて反映 ({staffReady.length}件)
+                </button>
+              )}
               <button
                 type="button"
                 onClick={zipAll}
@@ -560,7 +615,24 @@ export default function Home() {
             deleteTitle="この報告書の抽出結果・PDF・ペアリングを削除します"
             renderRowActions={(row) => {
               const state = learning.learnState(row);
+              const staff = staffPlans.get(row.pairId);
               return (
+                <>
+                {staffCustomers.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={!staff || staff.updates.length === 0}
+                    title={staff?.reason}
+                    onClick={() => staff && applyStaff([staff])}
+                    className={`whitespace-nowrap rounded-md border px-2.5 py-1 text-xs font-medium ${
+                      staff && staff.updates.length > 0
+                        ? "cursor-pointer border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                        : "cursor-default border-slate-200 bg-slate-50 text-slate-400"
+                    }`}
+                  >
+                    監督・営業を反映
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={state.disabled}
@@ -574,6 +646,7 @@ export default function Home() {
                 >
                   {state.label}
                 </button>
+                </>
               );
             }}
           />

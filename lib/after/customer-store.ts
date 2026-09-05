@@ -6,9 +6,11 @@
 import {
   applyEdits,
   applyReportHandoverDate,
+  applyTenmatsuStaff,
   mergeImported,
   needsReview,
   normalizeStoredCustomer,
+  revertTenmatsuStaff,
   withSupplements,
 } from "@/lib/after/customer";
 import { resolveDuplicates, withDuplicateIssue } from "@/lib/after/dedup";
@@ -208,6 +210,57 @@ export async function saveReportHandoverDates(
     }
   });
   return saved;
+}
+
+/** 顛末書から反映する監督・営業1件分 */
+export interface TenmatsuStaffUpdate {
+  id: string;
+  supervisor?: string;
+  salesRep?: string;
+  /** 元になった顛末書のPJ (表示用) */
+  pj: string | null;
+}
+
+/**
+ * 顛末書の監督・営業を顧客データへ反映する (まとめて1トランザクションで書く)。
+ * 見つからないIDは飛ばし、実際に書いた顧客を返す。
+ */
+export async function saveTenmatsuStaff(
+  updates: readonly TenmatsuStaffUpdate[],
+  now: number = Date.now(),
+): Promise<Customer[]> {
+  const saved: Customer[] = [];
+  if (updates.length === 0) return saved;
+  await withStore(STORE_CUSTOMERS, "readwrite", async (store) => {
+    for (const update of updates) {
+      const current = (await request(store.get(update.id))) as Customer | undefined;
+      if (!current) continue;
+      const patch: { supervisor?: string; salesRep?: string } = {};
+      if (update.supervisor !== undefined) patch.supervisor = update.supervisor;
+      if (update.salesRep !== undefined) patch.salesRep = update.salesRep;
+      const next = applyTenmatsuStaff(
+        normalizeStoredCustomer(current), patch, update.pj, now);
+      store.put(next);
+      saved.push(next);
+    }
+  });
+  return saved;
+}
+
+/** 顛末書から入れた監督・営業を元に戻す */
+export async function clearTenmatsuStaff(
+  id: string,
+  fields: readonly ("supervisor" | "salesRep")[],
+  now: number = Date.now(),
+): Promise<Customer | null> {
+  let next: Customer | null = null;
+  await withStore(STORE_CUSTOMERS, "readwrite", async (store) => {
+    const current = (await request(store.get(id))) as Customer | undefined;
+    if (!current) return;
+    next = revertTenmatsuStaff(normalizeStoredCustomer(current), fields, now);
+    store.put(next);
+  });
+  return next;
 }
 
 /** 顧客データをまるごと消す (「顧客データを削除」ボタン) */

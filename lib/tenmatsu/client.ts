@@ -85,6 +85,15 @@ export interface ListItem {
   property_name?: string | null;
   /** 最終承認日。サーバー側が未実装なのでいまは常に null */
   final_approved_at?: string | null;
+  /**
+   * PJ (契約番号 10桁)。伝票画面の「どこで」のすぐ下の行から読んだ値。
+   * アフターメンテナンスのお客様の情報とは**この上8桁**で突き合わせる。
+   */
+  pj?: string | null;
+  /** 監督。「どこで」の「監督：〇〇/営業：〇〇」から読んだ値 */
+  supervisor?: string | null;
+  /** 営業。同上 */
+  sales_rep?: string | null;
 }
 
 /** GET /health (トークン不要) */
@@ -329,7 +338,10 @@ export function isListItemLike(v: unknown): v is ListItem {
     optionalText(o.amount) &&
     optionalText(o.payee) &&
     optionalText(o.property_name) &&
-    optionalText(o.final_approved_at)
+    optionalText(o.final_approved_at) &&
+    optionalText(o.pj) &&
+    optionalText(o.supervisor) &&
+    optionalText(o.sales_rep)
   );
 }
 
