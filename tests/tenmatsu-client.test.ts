@@ -834,6 +834,13 @@ describe("種類ごとのフラグ", () => {
     expect(isListItemLike({ ...listItem(), title: "外壁補修" })).toBe(true);
     expect(isListItemLike({ ...listItem(), title: null })).toBe(true);
     expect(isListItemLike({ ...listItem(), title: 1 })).toBe(false);
+
+    // 動画のため結合しなかった添付。無い記録 (古いサーバー・古いキャッシュ) も通す
+    expect(isListItemLike({ ...listItem(), skipped_attachments: ["現場動画.mp4"] })).toBe(true);
+    expect(isListItemLike({ ...listItem(), skipped_attachments: [] })).toBe(true);
+    expect(isListItemLike({ ...listItem(), skipped_attachments: null })).toBe(true);
+    expect(isListItemLike({ ...listItem(), skipped_attachments: "現場動画.mp4" })).toBe(false);
+    expect(isListItemLike({ ...listItem(), skipped_attachments: [1] })).toBe(false);
   });
 
   it("完了の文言に種類の名前を入れられる", () => {

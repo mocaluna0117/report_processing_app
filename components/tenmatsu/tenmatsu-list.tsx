@@ -339,6 +339,16 @@ export function TenmatsuList({
                             完了
                           </span>
                         )}
+                        {item.skipped_attachments && item.skipped_attachments.length > 0 && (
+                          // 動画はPDFにできないので結合していない。
+                          // 黙って落とすと「添付ごと1つのPDF」の約束が崩れるため必ず出す
+                          <span
+                            className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900"
+                            title={`PDFに入っていません: ${item.skipped_attachments.join(", ")}`}
+                          >
+                            動画は未結合
+                          </span>
+                        )}
                       </td>
                       {/* 右端の固定枠: 完了フラグ2つ + プレビュー */}
                       <td className={FRAME_TD_CLASS}>

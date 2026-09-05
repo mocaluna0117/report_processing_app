@@ -383,6 +383,7 @@ Chrome 142 / Edge 143（2025-10）以降、公開HTTPSのページから `127.0.
 | XLSX / XLS / XLSM | **1枚目のシート**だけ（Excel） |
 | DOCX / DOC | 文書全体（Word） |
 | TXT | そのまま（Word） |
+| MP4 / MOV / MP3 など | **結合しない**（紙にできないため飛ばし、一覧に「動画は未結合」と出す） |
 | PPTX / PPT | 全スライド（PowerPoint） |
 | MSG（Outlookのメール） | **本文だけ**（Outlookで書き出してWordでPDF化）。**メールの中の添付は展開しません**（顛末書には別途添付されているため） |
 

@@ -828,6 +828,8 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
             Office の添付 (Excel・Word・PowerPoint・Outlookのメール) をPDFにできるのは、
             そのアプリが入ったWindowsだけです。テキスト (.txt) も Word で変換するので同じ条件です。
             メール (.msg) は本文だけをPDFにします。
+            動画・音声 (.mp4 .mov .mp3 など) は紙にできないので結合せず飛ばし、
+            その行に「動画は未結合」と出します。
             変換できないときは、その{kind.label}は取得せずに止めます (添付が欠けた正式書類を作らないため)。
             下に出るメッセージのとおり、手作業でPDFにしてから結合してください。
           </p>

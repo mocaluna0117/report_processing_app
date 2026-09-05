@@ -104,6 +104,11 @@ export interface ListItem {
   /** 表題。専決決裁書だけが返す (顛末書には無い項目) */
   title?: string | null;
   /**
+   * 動画・音声のため結合しなかった添付の名前。
+   * 空・無しは「飛ばしたものは無い」。PDFに入っていない中身があることを画面に出す。
+   */
+  skipped_attachments?: string[] | null;
+  /**
    * PJ (契約番号 10桁)。伝票画面の「どこで」のすぐ下の行から読んだ値。
    * アフターメンテナンスのお客様の情報とは**この上8桁**で突き合わせる。
    */
@@ -382,7 +387,12 @@ export function isListItemLike(v: unknown): v is ListItem {
     optionalText(o.title) &&
     optionalText(o.pj) &&
     optionalText(o.supervisor) &&
-    optionalText(o.sales_rep)
+    optionalText(o.sales_rep) &&
+    // 動画・音声のため結合しなかった添付の名前
+    (o.skipped_attachments === undefined ||
+      o.skipped_attachments === null ||
+      (Array.isArray(o.skipped_attachments) &&
+        o.skipped_attachments.every((x) => typeof x === "string")))
   );
 }
 
