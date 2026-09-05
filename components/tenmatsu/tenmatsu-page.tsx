@@ -40,7 +40,8 @@ const POLL_MS = 2000;
 const POLL_FAILURE_LIMIT = 5;
 
 /** サーバーがPDFに変換できる添付。サーバーのエラー文と同じ並び・同じ表記にしてある */
-const SUPPORTED_ATTACHMENTS = "PDF, JPG, JPEG, PNG, XLSX, XLS, XLSM";
+const SUPPORTED_ATTACHMENTS =
+  "PDF, JPG, JPEG, PNG, XLSX, XLS, XLSM, DOCX, DOC, PPTX, PPT, MSG";
 
 const SECTION_CLASS = "rounded-lg border border-slate-200 bg-white p-4";
 const SUBTITLE_CLASS = "ml-2 text-xs font-normal text-slate-500";
@@ -772,8 +773,9 @@ export function TenmatsuPage() {
 
           <p className="mt-2 text-xs text-slate-500">
             添付書類は {SUPPORTED_ATTACHMENTS} をPDFに変換して本体と結合します。
-            ExcelをPDFにできるのはExcelの入ったWindowsだけです。変換できないときは、
-            その顛末書は取得せずに止めます (添付が欠けた正式書類を作らないため)。
+            Office の添付 (Excel・Word・PowerPoint・Outlookのメール) をPDFにできるのは、
+            そのアプリが入ったWindowsだけです。メール (.msg) は本文だけをPDFにします。
+            変換できないときは、その顛末書は取得せずに止めます (添付が欠けた正式書類を作らないため)。
             下に出るメッセージのとおり、手作業でPDFにしてから結合してください。
           </p>
 
