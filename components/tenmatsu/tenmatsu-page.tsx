@@ -826,7 +826,8 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
           <p className="mt-2 text-xs text-slate-500">
             添付書類は {SUPPORTED_ATTACHMENTS} をPDFに変換して本体と結合します。
             Office の添付 (Excel・Word・PowerPoint・Outlookのメール) をPDFにできるのは、
-            そのアプリが入ったWindowsだけです。メール (.msg) は本文だけをPDFにします。
+            そのアプリが入ったWindowsだけです。テキスト (.txt) も Word で変換するので同じ条件です。
+            メール (.msg) は本文だけをPDFにします。
             変換できないときは、その{kind.label}は取得せずに止めます (添付が欠けた正式書類を作らないため)。
             下に出るメッセージのとおり、手作業でPDFにしてから結合してください。
           </p>
