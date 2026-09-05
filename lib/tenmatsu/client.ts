@@ -18,6 +18,11 @@ export interface SavedItem {
 
 /** GET /status の中身 (10個のキーは常に揃う) */
 export interface StatusPayload {
+  /**
+   * 実行中 / 最後に実行した書類の種類。
+   * 無い＝この項目に未対応の古いサーバー。
+   */
+  kind?: string | null;
   state: JobState;
   /** 進捗。processed は完了時にしか入らないので、途中経過はこの done/total を使う */
   done: number;
@@ -35,6 +40,17 @@ export interface StatusPayload {
   remaining: number;
   saved: SavedItem[];
 }
+
+/**
+ * 画面から切り替えられる完了フラグ。
+ * **全種類の既知のキーを並べた閉じた合併**にしておく (string にはしない)。
+ * 種類ごとに使うキーは違う (顛末書は2つ、専決決裁書はクラウドだけ) が、
+ * 綴り違いはここで型に落ちるようにする。
+ */
+export type FlagKey = "budget_entered" | "cloud_stored";
+export const FLAG_KEYS: readonly FlagKey[] = ["budget_entered", "cloud_stored"];
+/** 顛末書のフラグ (hasFlags の既定。種類を渡さない呼び出しは顛末書とみなす) */
+export const TENMATSU_FLAG_KEYS: readonly FlagKey[] = ["budget_entered", "cloud_stored"];
 
 /**
  * GET /list の1行。
@@ -85,6 +101,8 @@ export interface ListItem {
   property_name?: string | null;
   /** 最終承認日。サーバー側が未実装なのでいまは常に null */
   final_approved_at?: string | null;
+  /** 表題。専決決裁書だけが返す (顛末書には無い項目) */
+  title?: string | null;
   /**
    * PJ (契約番号 10桁)。伝票画面の「どこで」のすぐ下の行から読んだ値。
    * アフターメンテナンスのお客様の情報とは**この上8桁**で突き合わせる。
@@ -97,6 +115,15 @@ export interface ListItem {
 }
 
 /** GET /health (トークン不要) */
+/** /health が返す「扱える書類の種類」1つ分 */
+export interface HealthKind {
+  kind: string;
+  label: string;
+  flag_keys: string[];
+  file_prefix: string;
+  save_dir: string;
+}
+
 export interface HealthPayload {
   ok: boolean;
   service: string;
@@ -123,6 +150,16 @@ export interface HealthPayload {
   headless?: boolean;
   /** デモモード (架空データ。本番の記録には触らない) で動いているか */
   demo?: boolean;
+  /**
+   * このPCのツールが扱える書類の種類。
+   * **この項目が無い＝種類に未対応の古いサーバー**。version では判定しない
+   * (項目を増やしても version は 1 のままにする、という既存の決まりのため)。
+   */
+  kinds?: HealthKind[];
+  /** 問い合わせた種類 (kind を付けなければ tenmatsu) */
+  kind?: string;
+  /** 実行中 / 最後に実行した種類 */
+  job_kind?: string | null;
 }
 
 /**
@@ -267,7 +304,10 @@ export interface Completion {
  * 注意: /status の done は次の実行までずっと done のままなので、
  * 「この画面で始めた / 合流した処理がある」ときだけ呼ぶこと (画面を開いただけで出さない)。
  */
-export function describeCompletion(status: StatusPayload): Completion | null {
+export function describeCompletion(
+  status: StatusPayload,
+  docLabel = "顛末書",
+): Completion | null {
   if (status.state === "error") {
     const reason = status.error?.trim() || "原因不明";
     const log = status.error_file ? `。ログ: ${status.error_file}` : "";
@@ -277,7 +317,7 @@ export function describeCompletion(status: StatusPayload): Completion | null {
   const base =
     status.processed > 0
       ? `${status.processed}件を保存しました`
-      : "新しく取得できる顛末書はありませんでした";
+      : `新しく取得できる${docLabel}はありませんでした`;
   // remaining は「今回の残り」ではなく「1回の上限で見送った分」。黙って切り捨てない
   if (status.remaining > 0) {
     return {
@@ -339,6 +379,7 @@ export function isListItemLike(v: unknown): v is ListItem {
     optionalText(o.payee) &&
     optionalText(o.property_name) &&
     optionalText(o.final_approved_at) &&
+    optionalText(o.title) &&
     optionalText(o.pj) &&
     optionalText(o.supervisor) &&
     optionalText(o.sales_rep)
@@ -351,8 +392,11 @@ export function isListItemLike(v: unknown): v is ListItem {
  * *フラグが未設定* という意味ではない (サーバーは未設定でも false を返す)。
  * 分からないものを false として扱わないために、判定はここを通す。
  */
-export function hasFlags(item: ListItem): boolean {
-  return typeof item.budget_entered === "boolean" && typeof item.cloud_stored === "boolean";
+export function hasFlags(
+  item: ListItem,
+  flagKeys: readonly FlagKey[] = TENMATSU_FLAG_KEYS,
+): boolean {
+  return flagKeys.every((key) => typeof item[key] === "boolean");
 }
 
 /**
@@ -420,10 +464,7 @@ export interface RunResult {
 export const RUN_COUNT_FORMAT_MESSAGE = "取得件数は整数で指定してください";
 
 /** 取得後の手作業の進捗。変えるものだけ入れる (両方省略は不可) */
-export interface FlagUpdate {
-  budget_entered?: boolean;
-  cloud_stored?: boolean;
-}
+export type FlagUpdate = Partial<Record<FlagKey, boolean>>;
 
 export const EMPTY_FLAGS_MESSAGE = "変更するフラグが指定されていません";
 
@@ -460,11 +501,19 @@ export interface TenmatsuClient {
 
 export function createTenmatsuClient(options: {
   token: string;
+  /**
+   * 書類の種類。**顛末書では渡さない** (今までどおり kind を付けずに呼ぶ)。
+   * 渡すと GET はクエリ、POST は本文に kind が入る。
+   * ★client と保存先のキーは必ず同じ種類から作ること
+   *   (取り違えると別の種類の一覧を上書き保存してしまう)。
+   */
+  kind?: string;
   /** テストから差し替える (グローバルの fetch には触らない) */
   fetchImpl?: typeof fetch;
   baseUrl?: string;
 }): TenmatsuClient {
   const base = options.baseUrl ?? TENMATSU_BASE_URL;
+  const kind = options.kind;
   const doFetch = options.fetchImpl ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
 
   const call = async (
@@ -478,16 +527,23 @@ export function createTenmatsuClient(options: {
        * 「本文はあるが Content-Type が無い」組み合わせを作れないように1つの引数にまとめている
        * (サーバーはそれを 400 にせず、黙って既定値で動いてしまう)。
        */
-      json?: unknown;
+      json?: Record<string, unknown>;
     },
   ): Promise<Response> => {
     // Headers ではなく素のオブジェクトで持つ (テストがそのまま中身を読めるように)
     const headers: Record<string, string> = {};
     if (opts.auth) headers[TOKEN_HEADER] = options.token;
-    const body = opts.json === undefined ? undefined : JSON.stringify(opts.json);
+    // 種類を渡されたときだけ足す。顛末書 (kind なし) では
+    // URLも本文も今までと1文字も変えない (古いサーバー・既存のテストのため)
+    const url = kind
+      ? `${base}${path}${path.includes("?") ? "&" : "?"}kind=${encodeURIComponent(kind)}`
+      : `${base}${path}`;
+    const payload =
+      opts.json === undefined ? undefined : kind ? { ...opts.json, kind } : opts.json;
+    const body = payload === undefined ? undefined : JSON.stringify(payload);
     if (body !== undefined) headers["Content-Type"] = "application/json";
     try {
-      return await doFetch(`${base}${path}`, {
+      return await doFetch(url, {
         method: opts.method ?? "GET",
         headers,
         body,
@@ -576,16 +632,15 @@ export function createTenmatsuClient(options: {
       };
     },
     setFlags: async (denpyoNo, flags) => {
-      const body: { denpyo_no: string; budget_entered?: boolean; cloud_stored?: boolean } = {
-        denpyo_no: denpyoNo,
-      };
+      const body: Record<string, unknown> = { denpyo_no: denpyoNo };
       // false も送る (チェックを外して押し間違いを戻せるようにする)。
       // null は「値は変えずに更新日時だけ動かす」扱いになるので送らない ＝ 未指定はキーごと落とす
-      if (flags.budget_entered !== undefined) body.budget_entered = flags.budget_entered;
-      if (flags.cloud_stored !== undefined) body.cloud_stored = flags.cloud_stored;
+      for (const key of FLAG_KEYS) {
+        if (typeof flags[key] === "boolean") body[key] = flags[key];
+      }
       // フラグを1つも入れずに送るとサーバーは 400 を返す (何もしない、ではない)。
       // 手元で分かる間違いなので、通信する前に弾く
-      if (body.budget_entered === undefined && body.cloud_stored === undefined) {
+      if (Object.keys(body).length === 1) {
         throw new TenmatsuError("badRequest", null, EMPTY_FLAGS_MESSAGE);
       }
       const res = await call("/flags", { auth: true, method: "POST", json: body });

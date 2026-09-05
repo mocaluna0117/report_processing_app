@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ModeNav } from "@/components/mode-nav";
+import { PageTitle } from "@/components/page-title";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -18,9 +19,7 @@ export default function RootLayout({
           <header className="flex flex-wrap items-center justify-between gap-4">
             <h1 className="text-2xl font-bold tracking-tight">
               Folio
-              <span className="ml-3 align-middle text-sm font-normal text-slate-500">
-                報告書処理
-              </span>
+              <PageTitle />
             </h1>
             <ModeNav />
           </header>

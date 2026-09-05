@@ -1,9 +1,8 @@
 "use client";
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { type ListItem, formatFileSize, hasFlags } from "@/lib/tenmatsu/client";
+import { type FlagKey, type ListItem, formatFileSize, hasFlags } from "@/lib/tenmatsu/client";
 import {
-  LIST_FILTERS,
   type ListFilter,
   type ListSort,
   listCounts,
@@ -11,22 +10,8 @@ import {
   sortListItems,
   visibleListItems,
 } from "@/lib/tenmatsu/list-view";
+import type { DocKind } from "@/lib/tenmatsu/kinds";
 
-/** 画面から切り替えられる完了フラグ */
-export type FlagKey = "budget_entered" | "cloud_stored";
-
-const FLAG_COLUMNS: readonly {
-  key: FlagKey;
-  head: string;
-  label: string;
-  todo: string;
-  done: string;
-}[] = [
-  // head は枠の見出し、label は読み上げに使う正式名、
-  // todo / done はボタンの文字 (見出しに項目名があるので、ボタンは状態だけを書く)
-  { key: "budget_entered", head: "実行予算", label: "実行予算入力済み", todo: "未入力", done: "入力済み" },
-  { key: "cloud_stored", head: "クラウド", label: "クラウド格納済み", todo: "未格納", done: "格納済み" },
-];
 
 /**
  * 完了フラグのボタン。押すと反対の状態に切り替わる (押し間違いはもう一度押して戻す)。
@@ -82,6 +67,12 @@ const SORT_TITLE: Record<ListSort, string> = {
 /** 空欄の表示。値が無いことを黙って隠さない */
 const dash = (value: string | null | undefined) => (value ? value : "－");
 
+/** データ列のセル。右寄せは金額だけ (class 文字列は種類で変えない) */
+const DATA_TD_CLASS = {
+  left: "px-3 py-2 text-slate-600",
+  right: "px-3 py-2 text-right text-slate-600",
+} as const;
+
 /** 印を最後に変えた日時。列を増やさず title に出す */
 const flagsUpdatedTitle = (item: ListItem) =>
   item.flags_updated_at ? `最終更新 ${item.flags_updated_at}` : "まだ変更していません";
@@ -92,6 +83,7 @@ const flagsUpdatedTitle = (item: ListItem) =>
  * (この repo の vitest は node 環境なので、判定はコンポーネントの外に出して単体テストする)。
  */
 export function TenmatsuList({
+  kind,
   items,
   filter,
   onFilterChange,
@@ -104,6 +96,8 @@ export function TenmatsuList({
   canPreview,
   onPreview,
 }: {
+  /** 書類の種類 (列・完了の印・絞り込み・文言をここから引く) */
+  kind: DocKind;
   /** /list が返した全行。絞り込みと非表示はこの中で行い、items 自体は書き換えない */
   items: ListItem[];
   filter: ListFilter;
@@ -121,8 +115,14 @@ export function TenmatsuList({
   onPreview: (no: string) => void;
 }) {
   const view = useMemo(
-    () => ({ filter, showCompleted, keepNos: recentNos }),
-    [filter, showCompleted, recentNos],
+    () => ({
+      filter,
+      showCompleted,
+      keepNos: recentNos,
+      filters: kind.listFilters,
+      flagKeys: kind.flagKeys,
+    }),
+    [filter, showCompleted, recentNos, kind],
   );
   // 並べ替えはこの表の中だけの話なので、ここで持つ (絞り込みと同じく保存しない)
   const [sort, setSort] = useState<ListSort>("default");
@@ -160,7 +160,7 @@ export function TenmatsuList({
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
         <label
           className="flex cursor-pointer items-center gap-1.5 text-sm"
-          title="実行予算入力済みとクラウド格納済みの両方にチェックが付いた行のことです"
+          title={kind.text.completedHint}
         >
           <input
             type="checkbox"
@@ -176,12 +176,12 @@ export function TenmatsuList({
             value={filter}
             // e.target.value は string なので、選択肢から引き当てる
             onChange={(e) => {
-              const next = LIST_FILTERS.find((f) => f.value === e.target.value);
+              const next = kind.listFilters.find((f) => f.value === e.target.value);
               if (next) onFilterChange(next.value);
             }}
             className="rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
           >
-            {LIST_FILTERS.map((f) => (
+            {kind.listFilters.map((f) => (
               <option key={f.value} value={f.value}>
                 {f.label}
               </option>
@@ -205,10 +205,10 @@ export function TenmatsuList({
       )}
 
       {items.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-600">まだ取得した顛末書はありません。</p>
+        <p className="mt-2 text-sm text-slate-600">まだ取得した{kind.label}はありません。</p>
       ) : visible.length === 0 ? (
         // 完了を既定で隠すので、作業が全部済んでいると表が空になる。
-        // ここで「まだ取得した顛末書はありません」と出すと嘘になる
+        // ここで「まだ取得した◯◯はありません」と出すと嘘になる
         <p className="mt-2 text-sm text-slate-600">
           表示できる行がありません (全 {counts.total}件)。
           {counts.hiddenCompleted > 0 && "「完了したものも表示」で完了した分を出せます。"}
@@ -272,19 +272,18 @@ export function TenmatsuList({
                       </span>
                     </button>
                   </th>
-                  <th className={TH_CLASS}>物件名</th>
-                  <th className={TH_CLASS}>申請日</th>
-                  <th className={TH_CLASS}>申請者</th>
-                  <th className={TH_CLASS}>支払金額(税込)</th>
-                  <th className={TH_CLASS}>支払先</th>
-                  <th className={TH_CLASS}>最終承認日</th>
+                  {kind.dataColumns.map((col) => (
+                    <th key={col.field} className={TH_CLASS}>
+                      {col.head}
+                    </th>
+                  ))}
                   <th className={`w-14 ${TH_CLASS}`}>ページ</th>
                   <th className={`w-16 ${TH_CLASS}`}>大きさ</th>
                   <th className={TH_CLASS}>状態</th>
                   {/* 右端の固定枠。ボタンの上は空けておく */}
                   <th className={FRAME_TH_CLASS}>
                     <div className="flex items-center gap-2">
-                      {FLAG_COLUMNS.map((col) => (
+                      {kind.flagColumns.map((col) => (
                         <span key={col.key} className={FRAME_SLOT_CLASS} title={col.label}>
                           {col.head}
                         </span>
@@ -297,7 +296,7 @@ export function TenmatsuList({
               <tbody>
                 {visible.map((item) => {
                   const saving = savingNos.has(item.denpyo_no);
-                  const known = hasFlags(item);
+                  const known = hasFlags(item, kind.flagKeys);
                   const disabled = saving || !known || flagDisabledReason !== null;
                   return (
                     <tr
@@ -315,14 +314,13 @@ export function TenmatsuList({
                       >
                         {item.file}
                       </td>
-                      {/* 物件名は施主名を含むことがある。取り出せなければ空欄 */}
-                      <td className="px-3 py-2 text-slate-600">{dash(item.property_name)}</td>
-                      {/* ここから5つは楽楽精算から読んだ値。古い記録では空欄になる */}
-                      <td className="px-3 py-2 text-slate-600">{dash(item.shinsei_date)}</td>
-                      <td className="px-3 py-2 text-slate-600">{dash(item.shinseisha)}</td>
-                      <td className="px-3 py-2 text-right text-slate-600">{dash(item.amount)}</td>
-                      <td className="px-3 py-2 text-slate-600">{dash(item.payee)}</td>
-                      <td className="px-3 py-2 text-slate-600">{dash(item.final_approved_at)}</td>
+                      {/* 楽楽精算から読んだ値。古い記録では空欄になる。
+                          物件名は施主名を含むことがある (取り出せなければ空欄) */}
+                      {kind.dataColumns.map((col) => (
+                        <td key={col.field} className={DATA_TD_CLASS[col.align ?? "left"]}>
+                          {dash(item[col.field])}
+                        </td>
+                      ))}
                       <td className="px-3 py-2 text-slate-600">{item.pages ?? "－"}</td>
                       <td className="px-3 py-2 text-slate-600">{formatFileSize(item.size)}</td>
                       <td className="px-3 py-2">
@@ -345,7 +343,7 @@ export function TenmatsuList({
                       {/* 右端の固定枠: 完了フラグ2つ + プレビュー */}
                       <td className={FRAME_TD_CLASS}>
                         <div className="flex items-center gap-2">
-                          {FLAG_COLUMNS.map((col) => {
+                          {kind.flagColumns.map((col) => {
                             if (!known) {
                               // フラグに未対応のサーバー・この機能より前のキャッシュ。
                               // 「未入力」と見せると嘘になるので「－」にする

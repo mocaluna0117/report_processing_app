@@ -3,15 +3,33 @@
 // 画面 (components/tenmatsu/) から切り出してあるのは、この repo の vitest が node 環境で
 // DOM を持たないため。一番間違えやすい「絞り込み × 完了の非表示 × 件数の表示」を
 // ここに閉じ込めれば、組み合わせを単体テストで固定できる。
-import { type HealthPayload, type ListItem, hasFlags, resolveRunLimits } from "@/lib/tenmatsu/client";
+import {
+  type FlagKey,
+  type HealthPayload,
+  type ListItem,
+  TENMATSU_FLAG_KEYS,
+  hasFlags,
+  resolveRunLimits,
+} from "@/lib/tenmatsu/client";
 
-/** 一覧の絞り込み。completed は「両方 true」なので、下の2つとは排他になる */
+/**
+ * 一覧の絞り込み。completed は「全部 true」なので、フラグの絞り込みとは排他になる。
+ * **全種類の値を並べた閉じた合併**にしておく (綴り違いを型で捕まえる)。
+ */
 export type ListFilter = "all" | "budget" | "cloud";
 
-export const LIST_FILTERS: readonly { value: ListFilter; label: string }[] = [
-  { value: "all", label: "すべて" },
-  { value: "budget", label: "実行予算が未入力" },
-  { value: "cloud", label: "クラウド未格納" },
+/** 絞り込み1つ分。flagKey が null なら「すべて」 */
+export interface ListFilterDef {
+  value: ListFilter;
+  label: string;
+  flagKey: FlagKey | null;
+}
+
+/** 顛末書の絞り込み (種類を渡さない呼び出しの既定) */
+export const LIST_FILTERS: readonly ListFilterDef[] = [
+  { value: "all", label: "すべて", flagKey: null },
+  { value: "budget", label: "実行予算が未入力", flagKey: "budget_entered" },
+  { value: "cloud", label: "クラウド未格納", flagKey: "cloud_stored" },
 ];
 
 export interface ListViewOptions {
@@ -24,18 +42,25 @@ export interface ListViewOptions {
    * (2つ目にチェックを入れた瞬間に行が消えると、押し間違いを戻せないため)。
    */
   keepNos?: ReadonlySet<string>;
+  /**
+   * 絞り込みの定義と、この種類が使うフラグ。省略時は顛末書。
+   * 画面からは必ず種類の値を渡す (絞り込みと完了の非表示が別の種類を見ないよう
+   * 1つのオブジェクトにまとめてある)。
+   */
+  filters?: readonly ListFilterDef[];
+  flagKeys?: readonly FlagKey[];
 }
 
 /** 絞り込みだけを当てる (完了の非表示はまだ当てない) */
-function filtered(items: ListItem[], filter: ListFilter): ListItem[] {
+function filtered(items: ListItem[], options: ListViewOptions): ListItem[] {
+  const defs = options.filters ?? LIST_FILTERS;
+  const flagKeys = options.flagKeys ?? TENMATSU_FLAG_KEYS;
+  const def = defs.find((f) => f.value === options.filter);
+  // その種類に無い絞り込みが残っていても落とさない (「すべて」と同じ扱い)
+  if (!def?.flagKey) return items;
+  const key = def.flagKey;
   // フラグが分からない行は絞り込みでも落とさない (未入力とも入力済みとも言えないため)
-  if (filter === "budget") {
-    return items.filter((i) => !hasFlags(i) || i.budget_entered !== true);
-  }
-  if (filter === "cloud") {
-    return items.filter((i) => !hasFlags(i) || i.cloud_stored !== true);
-  }
-  return items;
+  return items.filter((i) => !hasFlags(i, flagKeys) || i[key] !== true);
 }
 
 /**
@@ -46,14 +71,16 @@ function filtered(items: ListItem[], filter: ListFilter): ListItem[] {
  */
 function hiddenAsCompleted(item: ListItem, options: ListViewOptions): boolean {
   if (options.showCompleted) return false;
-  if (!hasFlags(item) || item.completed !== true) return false;
+  if (!hasFlags(item, options.flagKeys ?? TENMATSU_FLAG_KEYS) || item.completed !== true) {
+    return false;
+  }
   if (!item.exists) return false;
   return !options.keepNos?.has(item.denpyo_no);
 }
 
 /** 画面に出す行。絞り込み → 完了の非表示 の順に当てる */
 export function visibleListItems(items: ListItem[], options: ListViewOptions): ListItem[] {
-  return filtered(items, options.filter).filter((i) => !hiddenAsCompleted(i, options));
+  return filtered(items, options).filter((i) => !hiddenAsCompleted(i, options));
 }
 
 /**
@@ -110,7 +137,7 @@ export interface ListCounts {
  * (未入力・未格納は完了と排他)、行が消えたのに何も説明されない状態になる。
  */
 export function listCounts(items: ListItem[], options: ListViewOptions): ListCounts {
-  const pool = filtered(items, options.filter);
+  const pool = filtered(items, options);
   const shown = pool.filter((i) => !hiddenAsCompleted(i, options)).length;
   return {
     shown,

@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <TenmatsuPage />;
+  return <TenmatsuPage kind="tenmatsu" />;
 }

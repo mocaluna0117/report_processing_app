@@ -4,8 +4,11 @@ import {
   clearAll,
   deleteMeta,
   hasStoredData,
+  loadMeta,
+  META_SENKETSU_LIST,
   META_TENMATSU_LIST,
   saveMeta,
+  SETTING_KEY_SENKETSU_MAX_PER_RUN,
   SETTING_KEY_TENMATSU_MAX_PER_RUN,
   SETTING_KEY_TENMATSU_TOKEN,
 } from "@/lib/storage";
@@ -48,8 +51,10 @@ const oldShapeItem = {
 
 beforeEach(async () => {
   await clearAll();
+  await deleteMeta(META_SENKETSU_LIST);
+  await deleteMeta(SETTING_KEY_SENKETSU_MAX_PER_RUN);
   await clearToken();
-  await clearCachedList();
+  await clearCachedList("tenmatsu");
   await deleteMeta(SETTING_KEY_TENMATSU_MAX_PER_RUN);
 });
 
@@ -75,59 +80,59 @@ describe("トークン", () => {
 describe("取得済み一覧のキャッシュ", () => {
   it("保存して読み直せる", async () => {
     const items = [item("TE00009001"), item("TE00009002", { exists: false, pages: null })];
-    await saveCachedList(items);
-    expect(await loadCachedList()).toEqual(items);
+    await saveCachedList("tenmatsu", items);
+    expect(await loadCachedList("tenmatsu")).toEqual(items);
   });
 
   it("0件はそのまま保存する (サーバー側の正しい状態なので守らない)", async () => {
-    await saveCachedList([item("TE00009001")]);
-    await saveCachedList([]);
-    expect(await loadCachedList()).toEqual([]);
+    await saveCachedList("tenmatsu", [item("TE00009001")]);
+    await saveCachedList("tenmatsu", []);
+    expect(await loadCachedList("tenmatsu")).toEqual([]);
   });
 
   it("形の合わない記録は捨てる", async () => {
     await saveMeta(META_TENMATSU_LIST, "なにか");
-    expect(await loadCachedList()).toEqual([]);
+    expect(await loadCachedList("tenmatsu")).toEqual([]);
     await saveMeta(META_TENMATSU_LIST, [{ denpyo_no: 1 }, item("TE00009001")]);
-    expect(await loadCachedList()).toEqual([item("TE00009001")]);
+    expect(await loadCachedList("tenmatsu")).toEqual([item("TE00009001")]);
   });
 
   it("キャッシュだけ消してもトークンは残る", async () => {
     await saveToken("t");
-    await saveCachedList([item("TE00009001")]);
-    await clearCachedList();
-    expect(await loadCachedList()).toEqual([]);
+    await saveCachedList("tenmatsu", [item("TE00009001")]);
+    await clearCachedList("tenmatsu");
+    expect(await loadCachedList("tenmatsu")).toEqual([]);
     expect(await loadToken()).toBe("t");
   });
 });
 
 describe("hasTenmatsuData", () => {
   it("トークンだけ・一覧だけでも true、両方消せば false", async () => {
-    expect(await hasTenmatsuData()).toBe(false);
+    expect(await hasTenmatsuData("tenmatsu")).toBe(false);
     await saveToken("t");
-    expect(await hasTenmatsuData()).toBe(true);
+    expect(await hasTenmatsuData("tenmatsu")).toBe(true);
     await clearToken();
-    await saveCachedList([item("TE00009001")]);
-    expect(await hasTenmatsuData()).toBe(true);
-    await clearCachedList();
-    expect(await hasTenmatsuData()).toBe(false);
+    await saveCachedList("tenmatsu", [item("TE00009001")]);
+    expect(await hasTenmatsuData("tenmatsu")).toBe(true);
+    await clearCachedList("tenmatsu");
+    expect(await hasTenmatsuData("tenmatsu")).toBe(false);
   });
 });
 
 describe("定期点検の「保存データを消去」との切り分け", () => {
   it("clearAll でも顛末書のトークン・一覧・件数は残る", async () => {
     await saveToken("t");
-    await saveCachedList([item("TE00009001", { budget_entered: true })]);
-    await saveMaxPerRun(30);
+    await saveCachedList("tenmatsu", [item("TE00009001", { budget_entered: true })]);
+    await saveMaxPerRun("tenmatsu", 30);
     await clearAll();
     expect(await loadToken()).toBe("t");
-    expect(await loadCachedList()).toEqual([item("TE00009001", { budget_entered: true })]);
-    expect(await loadMaxPerRun()).toBe(30);
+    expect(await loadCachedList("tenmatsu")).toEqual([item("TE00009001", { budget_entered: true })]);
+    expect(await loadMaxPerRun("tenmatsu")).toBe(30);
   });
 
   it("顛末書のデータだけでは定期点検の消去ボタンは出ない", async () => {
     await saveToken("t");
-    await saveCachedList([item("TE00009001")]);
+    await saveCachedList("tenmatsu", [item("TE00009001")]);
     expect(await hasStoredData()).toBe(false);
   });
 });
@@ -143,8 +148,8 @@ describe("完了フラグを含むキャッシュ", () => {
       }),
       item("TE00009001"),
     ];
-    await saveCachedList(rows);
-    expect(await loadCachedList()).toEqual(rows);
+    await saveCachedList("tenmatsu", rows);
+    expect(await loadCachedList("tenmatsu")).toEqual(rows);
   });
 
   it("フラグを持たない古いキャッシュも捨てない", async () => {
@@ -152,7 +157,7 @@ describe("完了フラグを含むキャッシュ", () => {
     // フラグを false で埋めるのも駄目 (入力し終えた伝票が未入力に見える) ので、
     // 「分からない」まま残して画面で「－」と出す
     await saveMeta(META_TENMATSU_LIST, [oldShapeItem]);
-    const loaded = await loadCachedList();
+    const loaded = await loadCachedList("tenmatsu");
     expect(loaded).toHaveLength(1);
     expect(loaded[0].budget_entered).toBeUndefined();
     expect(loaded[0].completed).toBeUndefined();
@@ -160,43 +165,79 @@ describe("完了フラグを含むキャッシュ", () => {
 
   it("フラグの型が違う行は捨てる", async () => {
     await saveMeta(META_TENMATSU_LIST, [{ ...oldShapeItem, budget_entered: 1 }]);
-    expect(await loadCachedList()).toEqual([]);
+    expect(await loadCachedList("tenmatsu")).toEqual([]);
   });
 });
 
 describe("1回に取る件数", () => {
   it("保存して読み直せる", async () => {
-    await saveMaxPerRun(30);
-    expect(await loadMaxPerRun()).toBe(30);
+    await saveMaxPerRun("tenmatsu", 30);
+    expect(await loadMaxPerRun("tenmatsu")).toBe(30);
   });
 
   it("未保存なら null", async () => {
-    expect(await loadMaxPerRun()).toBeNull();
+    expect(await loadMaxPerRun("tenmatsu")).toBeNull();
   });
 
   it("整数でない値は null で返す (サーバーの既定値を使わせる)", async () => {
     for (const raw of ["30", 10.5, Number.NaN, null, {}]) {
       await saveMeta(SETTING_KEY_TENMATSU_MAX_PER_RUN, raw);
-      expect(await loadMaxPerRun()).toBeNull();
+      expect(await loadMaxPerRun("tenmatsu")).toBeNull();
     }
   });
 
   it("範囲外でもそのまま保存する (丸めるのは使うとき)", async () => {
-    await saveMaxPerRun(150);
-    expect(await loadMaxPerRun()).toBe(150);
+    await saveMaxPerRun("tenmatsu", 150);
+    expect(await loadMaxPerRun("tenmatsu")).toBe(150);
   });
 
   it("一覧やトークンを消しても残る", async () => {
-    await saveMaxPerRun(30);
+    await saveMaxPerRun("tenmatsu", 30);
     await saveToken("t");
-    await saveCachedList([item("TE00009001")]);
-    await clearCachedList();
+    await saveCachedList("tenmatsu", [item("TE00009001")]);
+    await clearCachedList("tenmatsu");
     await clearToken();
-    expect(await loadMaxPerRun()).toBe(30);
+    expect(await loadMaxPerRun("tenmatsu")).toBe(30);
   });
 
   it("件数だけでは保存データありと見なさない", async () => {
-    await saveMaxPerRun(30);
-    expect(await hasTenmatsuData()).toBe(false);
+    await saveMaxPerRun("tenmatsu", 30);
+    expect(await hasTenmatsuData("tenmatsu")).toBe(false);
+  });
+});
+
+describe("種類ごとの保存キー", () => {
+  it("★専決決裁書は別のキーに書く", async () => {
+    await saveCachedList("senketsu", [item("SE00003001")]);
+    expect(await loadMeta(META_SENKETSU_LIST)).toHaveLength(1);
+    expect(await loadMeta(META_TENMATSU_LIST)).toBeUndefined();
+  });
+
+  it("★片方を消してももう片方は残る", async () => {
+    await saveCachedList("tenmatsu", [item("TE00009001")]);
+    await saveCachedList("senketsu", [item("SE00003001")]);
+    await clearCachedList("senketsu");
+    expect(await loadCachedList("tenmatsu")).toHaveLength(1);
+    expect(await loadCachedList("senketsu")).toHaveLength(0);
+  });
+
+  it("1回に取る件数も種類ごと", async () => {
+    await saveMaxPerRun("tenmatsu", 10);
+    await saveMaxPerRun("senketsu", 3);
+    expect(await loadMaxPerRun("tenmatsu")).toBe(10);
+    expect(await loadMaxPerRun("senketsu")).toBe(3);
+    expect(await loadMeta(SETTING_KEY_SENKETSU_MAX_PER_RUN)).toBe(3);
+  });
+
+  it("★トークンは共有する (同じサーバー・同じトークン)", async () => {
+    await saveToken("tok-1");
+    expect(await hasTenmatsuData("senketsu")).toBe(true);
+    expect(await hasTenmatsuData("tenmatsu")).toBe(true);
+  });
+
+  it("定期点検の「保存データを消去」では専決決裁書のキーも消えない", async () => {
+    await saveCachedList("senketsu", [item("SE00003001")]);
+    await clearAll();
+    expect(await loadCachedList("senketsu")).toHaveLength(1);
   });
 });

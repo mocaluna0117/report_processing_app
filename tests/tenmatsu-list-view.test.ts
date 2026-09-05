@@ -377,3 +377,63 @@ describe("sortListItems", () => {
     expect(nextListSort("file-desc")).toBe("default");
   });
 });
+
+describe("種類ごとの絞り込み (専決決裁書)", () => {
+  // 専決決裁書はクラウドの印だけ。budget_entered はキーごと来ない
+  const FILTERS = [
+    { value: "all", label: "すべて", flagKey: null },
+    { value: "cloud", label: "クラウド未格納", flagKey: "cloud_stored" },
+  ] as const;
+  const KEYS = ["cloud_stored"] as const;
+  const senketsu = (no: string, over: Partial<ListItem> = {}): ListItem => ({
+    denpyo_no: no,
+    file: `専決決裁書No.${no.slice(-4)}.pdf`,
+    at: null,
+    exists: true,
+    pages: 2,
+    size: 100,
+    cloud_stored: false,
+    completed: false,
+    ...over,
+  });
+  const view = (filter: ListFilter, showCompleted = false) => ({
+    filter,
+    showCompleted,
+    filters: FILTERS,
+    flagKeys: KEYS,
+  });
+
+  it("★クラウドの印だけでも「分かる行」として扱う", () => {
+    const items = [senketsu("SE00003001"), senketsu("SE00003002", { cloud_stored: true, completed: true })];
+    expect(visibleListItems(items, view("all")).map((i) => i.denpyo_no)).toEqual(["SE00003001"]);
+  });
+
+  it("完了したものも出せる", () => {
+    const items = [senketsu("SE00003001"), senketsu("SE00003002", { cloud_stored: true, completed: true })];
+    expect(visibleListItems(items, view("all", true))).toHaveLength(2);
+  });
+
+  it("クラウド未格納で絞れる", () => {
+    const items = [
+      senketsu("SE00003001"),
+      senketsu("SE00003002", { cloud_stored: true, completed: true }),
+    ];
+    expect(visibleListItems(items, view("cloud", true)).map((i) => i.denpyo_no))
+      .toEqual(["SE00003001"]);
+  });
+
+  it("★その種類に無い絞り込みが残っていても落とさない（すべて扱い）", () => {
+    const items = [senketsu("SE00003001"), senketsu("SE00003002")];
+    expect(visibleListItems(items, view("budget", true))).toHaveLength(2);
+  });
+
+  it("件数の内訳は3つに分かれたまま", () => {
+    const items = [
+      senketsu("SE00003001"),
+      senketsu("SE00003002", { cloud_stored: true, completed: true }),
+      senketsu("SE00003003", { cloud_stored: true, completed: true }),
+    ];
+    const c = listCounts(items, view("cloud"));
+    expect(c.shown + c.hiddenCompleted + c.hiddenByFilter).toBe(c.total);
+  });
+});

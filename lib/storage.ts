@@ -73,6 +73,14 @@ export const META_TENMATSU_LIST = "tenmatsu:list";
  */
 export const SETTING_KEY_TENMATSU_MAX_PER_RUN = "tenmatsu:maxPerRun";
 
+/**
+ * 専決決裁書の取得済み一覧と1回に取る件数。顛末書と同じ扱いで、
+ * 「保存データを消去」(定期点検) では消さない。
+ * ★トークンは種類で分けない (同じPCの同じサーバー・同じトークンのため)。
+ */
+export const META_SENKETSU_LIST = "senketsu:list";
+export const SETTING_KEY_SENKETSU_MAX_PER_RUN = "senketsu:maxPerRun";
+
 export function isStorageAvailable(): boolean {
   return typeof indexedDB !== "undefined";
 }

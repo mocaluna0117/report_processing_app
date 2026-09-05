@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StorageBanner } from "@/components/storage-banner";
-import { type FlagKey, TenmatsuList } from "@/components/tenmatsu/tenmatsu-list";
+import { TenmatsuList } from "@/components/tenmatsu/tenmatsu-list";
 import { TenmatsuPreviewDialog } from "@/components/tenmatsu/tenmatsu-preview-dialog";
 import { TenmatsuStaffSync } from "@/components/tenmatsu/tenmatsu-staff-sync";
 import { setNavigationGuard } from "@/lib/navigation-guard";
 import { isStorageAvailable } from "@/lib/storage";
 import {
+  type FlagKey,
+  type FlagUpdate,
   type HealthPayload,
   type ListItem,
   type StatusPayload,
@@ -20,7 +22,17 @@ import {
   isValidToken,
 } from "@/lib/tenmatsu/client";
 import { type ListFilter, resolvePerRun } from "@/lib/tenmatsu/list-view";
-import { type Connection, keepTenmatsuSession, tenmatsuSession } from "@/lib/tenmatsu/session";
+import {
+  DOC_KIND_BY_ID,
+  type DocKindId,
+  clearListConfirmText,
+  clearedNoticeText,
+  findHealthKind,
+  flagErrorText,
+  supportsKind,
+  unsupportedServerText,
+} from "@/lib/tenmatsu/kinds";
+import { type Connection, getSession, keepSession, shareToken } from "@/lib/tenmatsu/session";
 import {
   clearCachedList,
   clearToken,
@@ -41,7 +53,7 @@ const POLL_FAILURE_LIMIT = 5;
 
 /** サーバーがPDFに変換できる添付。サーバーのエラー文と同じ並び・同じ表記にしてある */
 const SUPPORTED_ATTACHMENTS =
-  "PDF, JPG, JPEG, PNG, XLSX, XLS, XLSM, DOCX, DOC, PPTX, PPT, MSG";
+  "PDF, JPG, JPEG, PNG, TXT, XLSX, XLS, XLSM, DOCX, DOC, PPTX, PPT, MSG";
 
 const SECTION_CLASS = "rounded-lg border border-slate-200 bg-white p-4";
 const SUBTITLE_CLASS = "ml-2 text-xs font-normal text-slate-500";
@@ -56,14 +68,18 @@ const WARN_CLASS =
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-export function TenmatsuPage() {
+export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
+  // 種類の設定 (文言・列・完了の印・保存先のキー)。
+  // ページ (サーバーコンポーネント) からは種類の名前だけを受け取り、
+  // ここで引く (設定には関数が入るので、そのままは渡せない)
+  const kind = DOC_KIND_BY_ID[kindId];
   /**
    * 画面の状態は「このページ読み込み限りの控え」から始める。
    * タブを移動して戻ってきたときに、接続し直さずに続きから使えるようにするため
    * (詳しい理由は lib/tenmatsu/session.ts)。
    * 控えが空 = この読み込みで初めて開いた ＝ 未接続から始まる。
    */
-  const kept = tenmatsuSession;
+  const kept = getSession(kind.id);
   const [token, setToken] = useState<string | null>(kept.token);
   const [tokenInput, setTokenInput] = useState("");
   const [tokenError, setTokenError] = useState<string | null>(null);
@@ -128,8 +144,25 @@ export function TenmatsuPage() {
     setOrigin(location.origin);
   }, []);
 
-  const client = useMemo(() => createTenmatsuClient({ token: token ?? "" }), [token]);
+  // ★client は必ずここから作る。種類を取り違えると、別の種類の一覧を取って
+  //   この種類のキャッシュへ上書きしてしまう
+  const makeClient = useCallback(
+    (value: string) =>
+      createTenmatsuClient({ token: value, ...(kind.apiKind ? { kind: kind.apiKind } : {}) }),
+    [kind.apiKind],
+  );
+  const client = useMemo(() => makeClient(token ?? ""), [makeClient, token]);
   const running = polling || starting;
+  /**
+   * PC側のツールがこの種類に未対応か。
+   * ★未対応のときは /status も /list も叩かない。古いサーバーは kind を無視して
+   *   顛末書の一覧を返すので、そのまま保存するとこの種類のキャッシュが汚れる。
+   */
+  const kindUnsupported = connection === "ok" && !supportsKind(kind, health);
+  /** 別の種類の取得が動いているか (同時に1つしか走らせられない) */
+  const foreignRun =
+    status?.kind && status.kind !== kind.id && !isFinished(status.state) ? status.kind : null;
+  const labelOf = (id: string) => findHealthKind(health, id)?.label ?? id;
 
   const storage = usePersistence({
     restore: async () => {
@@ -143,18 +176,18 @@ export function TenmatsuPage() {
         partialErrors.push(`トークン: ${errorText(e)}`);
       }
       try {
-        setItems(await loadCachedList());
+        setItems(await loadCachedList(kind.id));
       } catch (e) {
         partialErrors.push(`取得済み一覧: ${errorText(e)}`);
       }
       try {
-        setStoredMaxPerRun(await loadMaxPerRun());
+        setStoredMaxPerRun(await loadMaxPerRun(kind.id));
       } catch (e) {
         partialErrors.push(`取得件数: ${errorText(e)}`);
       }
       return { partialErrors };
     },
-    hasSaved: hasTenmatsuData,
+    hasSaved: () => hasTenmatsuData(kind.id),
   });
 
   /**
@@ -190,7 +223,7 @@ export function TenmatsuPage() {
       setItems(fresh);
       setListFresh(true);
       setRecentNos(new Set());
-      storage.persist(() => saveCachedList(fresh));
+      storage.persist(() => saveCachedList(kind.id, fresh));
     } catch (e) {
       if (e instanceof TenmatsuError && e.kind === "auth") setEditingToken(true);
       setListError(`一覧を取得できませんでした (${errorText(e)})`);
@@ -221,6 +254,9 @@ export function TenmatsuPage() {
       // 件数の初期値は 保存値 → 範囲内か → /health の既定値 の順で決める。
       // つなぎ直したときも入れ直す (サーバーを入れ替えて上下限が変わっていることがある)
       setMaxInput(String(resolvePerRun(storedMaxPerRun, h).value));
+      // PC側がこの種類に未対応なら、ここから先へは進まない。
+      // 古いサーバーは kind を無視して顛末書の一覧を返すので、取りに行ってはいけない
+      if (!supportsKind(kind, h)) return;
       if (!token) return; // トークン未登録。入力欄が出るのでここで止める
       // .bat から始めた分や別タブの実行にも合流できるようにする
       if (h.job_state === "running") {
@@ -256,14 +292,15 @@ export function TenmatsuPage() {
       setTokenInput("");
       setEditingToken(false);
       storage.persist(() => saveToken(value));
+      shareToken(value); // 種類が違うタブでも登録し直さずに使えるようにする
     };
     try {
       // 保存する前に1回使って確かめる (client は useMemo なのでこの時点ではまだ古い)
-      const fresh = await createTenmatsuClient({ token: value }).list();
+      const fresh = await makeClient(value).list();
       accept();
       setItems(fresh);
       setListFresh(true);
-      storage.persist(() => saveCachedList(fresh));
+      storage.persist(() => saveCachedList(kind.id, fresh));
     } catch (e) {
       if (e instanceof TenmatsuError && e.kind === "auth") {
         // 間違っているので保存しない (入力欄をそのまま残して直してもらう)
@@ -303,7 +340,7 @@ export function TenmatsuPage() {
         // サーバーが実際に使った件数を残す (次も同じ件数で始められる)
         setMaxInput(String(maxPerRun));
         setStoredMaxPerRun(maxPerRun);
-        storage.persist(() => saveMaxPerRun(maxPerRun));
+        storage.persist(() => saveMaxPerRun(kind.id, maxPerRun));
       }
       if (!started) {
         setRunNotice(
@@ -316,7 +353,7 @@ export function TenmatsuPage() {
       else setPolling(true);
     } catch (e) {
       if (e instanceof TenmatsuError && e.kind === "auth") setEditingToken(true);
-      setRunError(`顛末書を取得できませんでした (${errorText(e)})`);
+      setRunError(`${kind.label}を取得できませんでした (${errorText(e)})`);
     } finally {
       setStarting(false);
     }
@@ -402,7 +439,7 @@ export function TenmatsuPage() {
    * 保存ではなくこのページ読み込み限りの控え (lib/tenmatsu/session.ts)。
    */
   useEffect(() => {
-    keepTenmatsuSession({
+    keepSession(kind.id, {
       token,
       editingToken,
       connection,
@@ -426,26 +463,17 @@ export function TenmatsuPage() {
   useEffect(() => {
     setNavigationGuard(
       running
-        ? "顛末書を取得中です。画面を切り替えると進捗の表示が止まります (取得そのものはPC側で続き、顛末書へ戻れば進捗の表示も追いつきます)。移動しますか？"
+        ? `${kind.label}を取得中です。画面を切り替えると進捗の表示が止まります (取得そのものはPC側で続き、${kind.label}へ戻れば進捗の表示も追いつきます)。移動しますか？`
         : null,
     );
     return () => setNavigationGuard(null);
   }, [running]);
 
   const clearList = async () => {
-    if (
-      !confirm(
-        "この画面に保存している取得済み一覧 (物件名・申請者・支払先・支払金額を含みます) を" +
-          "このブラウザから消去します。" +
-          "PCに保存されたPDFと、実行予算入力済み・クラウド格納済みの印は消えません。" +
-          "再接続すれば元に戻ります。よろしいですか？",
-      )
-    ) {
-      return;
-    }
+    if (!confirm(clearListConfirmText(kind))) return;
     if (isStorageAvailable()) {
       try {
-        await clearCachedList();
+        await clearCachedList(kind.id);
       } catch (e) {
         storage.setStorageError(`一覧を消去できませんでした (${errorText(e)})`);
       }
@@ -457,11 +485,7 @@ export function TenmatsuPage() {
     setPreviewNo(null);
     setFlagError(null);
     setRecentNos(new Set());
-    setListNotice(
-      "この画面に保存していた分を消しました。" +
-        "「一覧を再読み込み」または「つなぎ直す」で元に戻ります" +
-        " (PDFと入力済み・格納済みの印はPCに残っています)",
-    );
+    setListNotice(clearedNoticeText(kind));
     storage.refreshHasSaved();
     storage.refreshUsage();
   };
@@ -495,6 +519,9 @@ export function TenmatsuPage() {
    * - exists=false の行でも変えられる (404 は記録の有無で決まる)
    */
   const toggleFlag = async (no: string, flag: FlagKey, next: boolean) => {
+    if (kindUnsupported) return;
+    const update: FlagUpdate = {};
+    update[flag] = next;
     setFlagError(null);
     markSaving(no, true);
     // ok でも item が無いことがある。そのときは一覧を取り直すが、
@@ -503,7 +530,7 @@ export function TenmatsuPage() {
     try {
       const updated = await client.setFlags(
         no,
-        flag === "budget_entered" ? { budget_entered: next } : { cloud_stored: next },
+        update,
       );
       if (updated) {
         // 一覧の再取得は不要。返ってきた行だけ差し替える
@@ -517,15 +544,10 @@ export function TenmatsuPage() {
       const definite =
         e instanceof TenmatsuError &&
         (e.kind === "badRequest" || e.kind === "notFound" || e.kind === "auth");
-      setFlagError(
-        definite
-          ? `伝票No. ${no} の入力済み・格納済みの印を変更できませんでした (${errorText(e)})`
-          : // 通信できなかった・時間切れ・500 は「書けたのに失敗に見える」ことがある
-            // (サーバーは書き込んだあとに落ちることがある)。ここで「保存されていません」と
-            // 言うと、実行予算をダイテックへ二重入力させてしまう
-            `伝票No. ${no} の入力済み・格納済みの印を保存できたか確認できませんでした (${errorText(e)})。` +
-            "「一覧を再読み込み」で確かめてください",
-      );
+      // definite でないとき (通信できなかった・時間切れ・500) は
+      // 「書けたのに失敗に見える」ことがある。そこで「保存されていません」と言うと、
+      // 実行予算をダイテックへ二重入力させてしまう
+      setFlagError(flagErrorText(kind, no, definite, errorText(e)));
     } finally {
       markSaving(no, false);
     }
@@ -554,13 +576,13 @@ export function TenmatsuPage() {
    * /status の done は次の実行まで残るので、この画面で始めた (合流した) 実行でなければ
    * 「前回このPCで実行した分」と断って出す。黙って隠すと「残りN件」を取り逃がす。
    */
-  const completion = status && !running ? describeCompletion(status) : null;
+  const completion = status && !running ? describeCompletion(status, kind.label) : null;
   const preview = previewNo ? (items.find((i) => i.denpyo_no === previewNo) ?? null) : null;
 
   return (
     <main>
       <p className="mt-4 text-sm text-slate-600">
-        楽楽精算で最終承認まで進んだ顛末書を、本体と添付書類を1つに結合してこのPCへ保存します。
+        楽楽精算で最終承認まで進んだ{kind.label}を、本体と添付書類を1つに結合してこのPCへ保存します。
         このPCで動いているツールに直接つなぐので、PDFが folio のサーバーを通ることはありません。
       </p>
 
@@ -637,6 +659,10 @@ export function TenmatsuPage() {
             </div>
           )}
 
+          {kindUnsupported && (
+            <div className={WARN_CLASS}>{unsupportedServerText(kind)}</div>
+          )}
+
           {showTokenForm ? (
             <div className="mt-3 border-t border-slate-100 pt-3">
               <p className="text-sm text-slate-600">
@@ -706,9 +732,9 @@ export function TenmatsuPage() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">
-                顛末書の取得
+                {kind.label}の取得
                 <span className={SUBTITLE_CLASS}>
-                  最終承認まで進んだ顛末書を、本体と添付を1つに結合してPCへ保存します
+                  最終承認まで進んだ{kind.label}を、本体と添付を1つに結合してPCへ保存します
                 </span>
               </h2>
               <p className="mt-1 text-sm text-slate-600">
@@ -720,7 +746,7 @@ export function TenmatsuPage() {
                     )}
                   </>
                 ) : health?.demo ? (
-                  "デモモード（架空データ）で動いています。楽楽精算には接続せず、架空の顛末書を作って一覧に足します。"
+                  `デモモード（架空データ）で動いています。楽楽精算には接続せず、架空の${kind.label}を作って一覧に足します。`
                 ) : (
                   "楽楽精算の画面がPC上で開き、数分かかることがあります (ログインを求められたらその画面で入力してください)。このタブを閉じても取得はPC側で続きます。"
                 )}
@@ -753,13 +779,22 @@ export function TenmatsuPage() {
               <button
                 type="button"
                 onClick={() => void startRun()}
-                disabled={connection !== "ok" || token === null || running || !storage.restored}
+                disabled={
+                  connection !== "ok" ||
+                  token === null ||
+                  running ||
+                  !storage.restored ||
+                  kindUnsupported ||
+                  foreignRun !== null
+                }
                 aria-busy={running}
                 className={PRIMARY_BUTTON_CLASS}
               >
                 {running
                   ? `処理中… (${status?.done ?? 0}/${status?.total ?? 0} 完了)`
-                  : "顛末書を取得"}
+                  : foreignRun
+                    ? `${labelOf(foreignRun)}を取得中…`
+                    : `${kind.label}を取得`}
               </button>
             </div>
           </div>
@@ -775,7 +810,7 @@ export function TenmatsuPage() {
             添付書類は {SUPPORTED_ATTACHMENTS} をPDFに変換して本体と結合します。
             Office の添付 (Excel・Word・PowerPoint・Outlookのメール) をPDFにできるのは、
             そのアプリが入ったWindowsだけです。メール (.msg) は本文だけをPDFにします。
-            変換できないときは、その顛末書は取得せずに止めます (添付が欠けた正式書類を作らないため)。
+            変換できないときは、その{kind.label}は取得せずに止めます (添付が欠けた正式書類を作らないため)。
             下に出るメッセージのとおり、手作業でPDFにしてから結合してください。
           </p>
 
@@ -826,6 +861,7 @@ export function TenmatsuPage() {
           {flagError && <p className={ERROR_CLASS}>{flagError}</p>}
 
           <TenmatsuList
+            kind={kind}
             items={items}
             filter={listFilter}
             onFilterChange={setListFilter}
@@ -841,8 +877,9 @@ export function TenmatsuPage() {
         </section>
 
         {/* 顛末書から読んだ監督・営業を、アフターメンテナンスのお客様の情報へ入れる。
+            専決決裁書には監督・営業が無いので出さない。
             顧客データを取り込んでいないブラウザでは何も出ない */}
-        {items.length > 0 && (
+        {kind.showStaffSync && items.length > 0 && (
           <TenmatsuStaffSync items={items} listFresh={listFresh} disabled={running} />
         )}
       </div>
@@ -860,7 +897,7 @@ export function TenmatsuPage() {
         <StorageBanner
           description={
             storage.canPersist
-              ? "顛末書の取得済み一覧には、伝票No.・物件名 (施主名を含むことがあります)・申請者・支払先・支払金額・入力済み/格納済みの印が入ります。これらはローカルサーバーのトークン・1回に取る件数とあわせて、このブラウザ内にだけ保存され、folio のサーバーには送信されません。印の正本はPCの記録で、この一覧はその写しです (消しても再接続すれば戻ります)。PDFの実体はこのPCの保存先フォルダにあり、ブラウザには保存しません。定期点検の「保存データを消去」では消えません。共有の端末では、使い終わったら「一覧を消去」を押してください。"
+              ? kind.text.storageDescription
               : "このタブでは保存を停止しています (再読み込みすると復元を試み直せます)。"
           }
           detail={`取得済み ${items.length}件 (未完了 ${items.filter((i) => i.completed !== true).length}件)${token !== null ? " / トークン登録済み" : ""}`}
@@ -880,7 +917,7 @@ export function TenmatsuPage() {
       )}
 
       <footer className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-400">
-        顛末書のPDFはこのPCのローカルサーバーとブラウザの間だけでやり取りされ、folio
+        {kind.label}のPDFはこのPCのローカルサーバーとブラウザの間だけでやり取りされ、folio
         のサーバーには送信されません。PDFの実体はPCの保存先フォルダにあり、ブラウザには保存しません。
       </footer>
     </main>

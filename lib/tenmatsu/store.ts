@@ -8,7 +8,9 @@
 // 一覧には伝票No.とファイル名が入るので、「一覧を消去」で消せるようにしている。
 // PDFの実体はここには入れない (PCの保存先フォルダにあり、見るときだけ取りに行く)。
 import {
+  META_SENKETSU_LIST,
   META_TENMATSU_LIST,
+  SETTING_KEY_SENKETSU_MAX_PER_RUN,
   SETTING_KEY_TENMATSU_MAX_PER_RUN,
   SETTING_KEY_TENMATSU_TOKEN,
   STORE_META,
@@ -19,6 +21,17 @@ import {
   withStore,
 } from "@/lib/storage";
 import { isListItemLike, type ListItem } from "@/lib/tenmatsu/client";
+import type { DocKindId } from "@/lib/tenmatsu/kinds";
+
+/**
+ * 種類ごとの保存キー。**トークンは共有**（同じサーバー・同じトークン）。
+ * ★キーと種類の対応はここ1か所だけで結ぶ。画面が種類を取り違えると
+ *   別の種類の一覧を上書きしてしまうので、引数に既定値は置かない。
+ */
+const KEYS: Record<DocKindId, { list: string; maxPerRun: string }> = {
+  tenmatsu: { list: META_TENMATSU_LIST, maxPerRun: SETTING_KEY_TENMATSU_MAX_PER_RUN },
+  senketsu: { list: META_SENKETSU_LIST, maxPerRun: SETTING_KEY_SENKETSU_MAX_PER_RUN },
+};
 
 export async function loadToken(): Promise<string | null> {
   const raw = await loadMeta<unknown>(SETTING_KEY_TENMATSU_TOKEN);
@@ -36,8 +49,8 @@ export async function clearToken(): Promise<void> {
 }
 
 /** 前回サーバーから取った一覧 (形の合わない記録は捨てる) */
-export async function loadCachedList(): Promise<ListItem[]> {
-  const raw = await withStore(STORE_META, "readonly", (s) => request(s.get(META_TENMATSU_LIST)));
+export async function loadCachedList(kind: DocKindId): Promise<ListItem[]> {
+  const raw = await withStore(STORE_META, "readonly", (s) => request(s.get(KEYS[kind].list)));
   return Array.isArray(raw) ? raw.filter(isListItemLike) : [];
 }
 
@@ -47,33 +60,33 @@ export async function loadCachedList(): Promise<ListItem[]> {
  * 0件はサーバー側の正しい状態であって「まだ復元できていない」ではないため。
  * そのかわり、呼ぶのは /list の応答を受けた直後だけにすること。
  */
-export async function saveCachedList(items: ListItem[]): Promise<void> {
-  await saveMeta(META_TENMATSU_LIST, items);
+export async function saveCachedList(kind: DocKindId, items: ListItem[]): Promise<void> {
+  await saveMeta(KEYS[kind].list, items);
 }
 
 /** 一覧のキャッシュだけを消す (「一覧を消去」ボタン。PCのPDFもトークンも消さない) */
-export async function clearCachedList(): Promise<void> {
-  await deleteMeta(META_TENMATSU_LIST);
+export async function clearCachedList(kind: DocKindId): Promise<void> {
+  await deleteMeta(KEYS[kind].list);
 }
 
 /**
  * 1回に取る件数。整数でなければ null (＝サーバーの既定値を使う)。
  * 上下限に収まっているかはここでは見ない (サーバーごとに違うので使うときに丸める)。
  */
-export async function loadMaxPerRun(): Promise<number | null> {
-  const raw = await loadMeta<unknown>(SETTING_KEY_TENMATSU_MAX_PER_RUN);
+export async function loadMaxPerRun(kind: DocKindId): Promise<number | null> {
+  const raw = await loadMeta<unknown>(KEYS[kind].maxPerRun);
   return typeof raw === "number" && Number.isInteger(raw) ? raw : null;
 }
 
-export async function saveMaxPerRun(value: number): Promise<void> {
-  await saveMeta(SETTING_KEY_TENMATSU_MAX_PER_RUN, value);
+export async function saveMaxPerRun(kind: DocKindId, value: number): Promise<void> {
+  await saveMeta(KEYS[kind].maxPerRun, value);
 }
 
 /**
  * この画面の保存データが残っているか (消去の導線を出すため)。
  * 件数は設定なので数えない (件数だけ残っている状態で消去のボタンを出す意味はない)。
  */
-export async function hasTenmatsuData(): Promise<boolean> {
-  const [token, items] = await Promise.all([loadToken(), loadCachedList()]);
+export async function hasTenmatsuData(kind: DocKindId): Promise<boolean> {
+  const [token, items] = await Promise.all([loadToken(), loadCachedList(kind)]);
   return token !== null || items.length > 0;
 }

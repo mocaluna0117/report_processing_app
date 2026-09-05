@@ -757,3 +757,88 @@ describe("完了フラグの更新", () => {
     expect(e.message).toBe(NETWORK_FAILURE_MESSAGE);
   });
 });
+
+describe("種類 (kind) の付け方", () => {
+  const senketsu = (impl: typeof fetch) =>
+    createTenmatsuClient({ token: "t", kind: "senketsu", fetchImpl: impl });
+
+  it("GET はクエリに kind を足す", async () => {
+    const { impl, calls } = fakeFetch(() => json({ ok: true, items: [] }));
+    const c = senketsu(impl);
+    await c.health();
+    await c.status();
+    await c.list();
+    expect(calls.map((x) => `${x.url.pathname}?${x.url.searchParams.get("kind")}`)).toEqual([
+      "/health?senketsu",
+      "/status?senketsu",
+      "/list?senketsu",
+    ]);
+  });
+
+  it("★すでにクエリがある /file にも足す (no はそのまま)", async () => {
+    const { impl, calls } = fakeFetch(() => new Response("%PDF-1.4", { status: 200 }));
+    await senketsu(impl).filePdf("TE 00#1");
+    expect(calls[0].url.searchParams.get("no")).toBe("TE 00#1");
+    expect(calls[0].url.searchParams.get("kind")).toBe("senketsu");
+  });
+
+  it("POST は本文に kind を足す", async () => {
+    const { impl, calls } = fakeFetch(() => json({ ok: true, status: status() }));
+    const c = senketsu(impl);
+    await c.run();
+    await c.run({ maxPerRun: 5 });
+    expect(calls.map((x) => bodyOf(x.init))).toEqual([
+      { kind: "senketsu" },
+      { max_per_run: 5, kind: "senketsu" },
+    ]);
+  });
+
+  it("/flags も本文に kind が入る", async () => {
+    const { impl, calls } = fakeFetch(() => json({ ok: true, item: null }));
+    await senketsu(impl).setFlags("SE00003001", { cloud_stored: true });
+    expect(bodyOf(calls[0].init)).toEqual({
+      denpyo_no: "SE00003001",
+      cloud_stored: true,
+      kind: "senketsu",
+    });
+  });
+
+  it("★顛末書 (kind なし) は今までどおり付けない", async () => {
+    const { impl, calls } = fakeFetch(() => json({ ok: true, items: [], status: status() }));
+    const c = createTenmatsuClient({ token: "t", fetchImpl: impl });
+    await c.list();
+    await c.run();
+    expect(calls[0].url.search).toBe("");
+    expect(calls[0].url.searchParams.has("kind")).toBe(false);
+    expect(bodyOf(calls[1].init)).toEqual({});
+  });
+});
+
+describe("種類ごとのフラグ", () => {
+  it("★その種類のフラグだけで「分かる行」を判定する", () => {
+    const onlyCloud: ListItem = {
+      denpyo_no: "SE00003001",
+      file: "専決決裁書No.3001.pdf",
+      at: null,
+      exists: true,
+      pages: 2,
+      size: 100,
+      cloud_stored: false,
+      completed: false,
+    };
+    expect(hasFlags(onlyCloud, ["cloud_stored"])).toBe(true);
+    expect(hasFlags(onlyCloud)).toBe(false); // 顛末書の判定では「分からない行」
+  });
+
+  it("表題を通す (専決決裁書だけが返す)", () => {
+    expect(isListItemLike({ ...listItem(), title: "外壁補修" })).toBe(true);
+    expect(isListItemLike({ ...listItem(), title: null })).toBe(true);
+    expect(isListItemLike({ ...listItem(), title: 1 })).toBe(false);
+  });
+
+  it("完了の文言に種類の名前を入れられる", () => {
+    const done = status({ state: "done", processed: 0, remaining: 0 });
+    expect(describeCompletion(done)?.message).toContain("顛末書");
+    expect(describeCompletion(done, "専決決裁書")?.message).toContain("専決決裁書");
+  });
+});

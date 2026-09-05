@@ -5,13 +5,17 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SIGNED_IN_COOKIE } from "@/lib/auth";
 import { getNavigationGuard } from "@/lib/navigation-guard";
+import { DOC_KINDS } from "@/lib/tenmatsu/kinds";
 
-/** 画面 (処理の種類)。扱うデータが別なのでURLも分ける */
-export const MODES = [
+/**
+ * 画面 (処理の種類)。扱うデータが別なのでURLも分ける。
+ * 顛末書と専決決裁書は同じ作りなので、種類の設定から並べる。
+ */
+export const MODES: readonly { href: string; label: string }[] = [
   { href: "/", label: "定期点検" },
   { href: "/after", label: "アフターメンテナンス" },
-  { href: "/tenmatsu", label: "顛末書" },
-] as const;
+  ...DOC_KINDS.map((k) => ({ href: k.route, label: k.menuLabel })),
+];
 
 export function ModeNav() {
   const pathname = usePathname();
