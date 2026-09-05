@@ -159,6 +159,10 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
    *   顛末書の一覧を返すので、そのまま保存するとこの種類のキャッシュが汚れる。
    */
   const kindUnsupported = connection === "ok" && !supportsKind(kind, health);
+  // refreshList はポーリングからも呼ぶので、判定は ref でも持つ
+  // （関数を作り直しても最新の値を見られるように）
+  const kindUnsupportedRef = useRef(false);
+  kindUnsupportedRef.current = kindUnsupported;
   /** 別の種類の取得が動いているか (同時に1つしか走らせられない) */
   const foreignRun =
     status?.kind && status.kind !== kind.id && !isFinished(status.state) ? status.kind : null;
@@ -207,6 +211,8 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
   };
 
   const refreshList = async () => {
+    // 呼び出し口が複数あるので、ここでも止める（未対応の種類では一覧を取らない）
+    if (kindUnsupportedRef.current) return;
     // チェックの保存中に取り直すと、古い /list が新しい書き込みを上書きしてしまう。
     // 見送ったことを覚えておき、保存が終わってから取り直す
     if (savingFlagsRef.current.size > 0) {
@@ -258,8 +264,14 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
       // 古いサーバーは kind を無視して顛末書の一覧を返すので、取りに行ってはいけない
       if (!supportsKind(kind, h)) return;
       if (!token) return; // トークン未登録。入力欄が出るのでここで止める
-      // .bat から始めた分や別タブの実行にも合流できるようにする
-      if (h.job_state === "running") {
+      // .bat から始めた分や別タブの実行にも合流できるようにする。
+      // ★ただし**別の種類**の実行には合流しない。合流すると、専決決裁書の進捗が
+      //   顛末書の欄に出て、終わったときに「N件を保存しました」と嘘を言ってしまう
+      const jobKind = h.job_kind ?? null;
+      const foreign = jobKind !== null && jobKind !== kind.id;
+      if (h.job_state === "running" && foreign) {
+        setStatus(await client.status().catch(() => null));
+      } else if (h.job_state === "running") {
         setRunObserved(true);
         setPolling(true);
       } else if (isFinished(h.job_state)) {
@@ -416,6 +428,9 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
    */
   useEffect(() => {
     if (connection !== "ok" || token === null || !storage.restored) return;
+    // ★PC側がこの種類に未対応なら撃たない。古いサーバーは kind を無視して
+    //   顛末書の一覧を返すので、この種類のキャッシュに書くと中身が入れ替わる
+    if (kindUnsupported) return;
     // 配列の同一性で見ると毎回 new になって無限に回る
     if (items.length > 0 || listFresh) return;
     if (listLoading || running || listError !== null) return;
@@ -425,6 +440,7 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
     connection,
     token,
     storage.restored,
+    kindUnsupported,
     items.length,
     listFresh,
     listLoading,
@@ -504,6 +520,7 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
       }
     }
     setToken(null);
+    shareToken(null); // 別の種類のタブでも「登録済み」と出さない
     setEditingToken(false);
     setTokenError(null);
     storage.refreshHasSaved();
@@ -848,7 +865,7 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
             <button
               type="button"
               onClick={() => void refreshList()}
-              disabled={connection !== "ok" || token === null || listLoading}
+              disabled={connection !== "ok" || token === null || listLoading || kindUnsupported}
               className={SECONDARY_BUTTON_CLASS}
             >
               {listLoading ? "読み込んでいます…" : "一覧を再読み込み"}
