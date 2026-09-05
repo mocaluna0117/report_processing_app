@@ -12,8 +12,10 @@ import {
   normalizeHandoverDate,
   normalizeOwnerKana,
   normalizeOwnerName,
+  normalizePostalCode,
   normalizeQuery,
   parsePhoneCell,
+  pickPostalCode,
 } from "@/lib/after/normalize";
 import { managementIdToPj, parseBukkenNumber } from "@/lib/after/pj";
 import type { CustomerFields } from "@/lib/after/types";
@@ -320,10 +322,12 @@ describe("検索キー", () => {
     propertyName: "セキュレア架空町1丁目 2号地",
     ownerName: "山田　太郎",
     ownerKana: "ヤマダ　タロウ",
+    postalCode: "",
     address: "東京都架空区北町1-2-3",
     contacts: [{ phone: "090-0000-1234", relation: "", confidence: "ok" }],
     emails: ["taro@example.com"],
     handoverDate: "2025/09/26",
+    supervisor: "",
     salesRep: "",
     memo: "",
   };
@@ -348,5 +352,54 @@ describe("isCorporateName", () => {
     expect(isCorporateName("㈱架空")).toBe(true);
     expect(isCorporateName("架空建設")).toBe(true);
     expect(isCorporateName("山田　太郎")).toBe(false);
+  });
+});
+
+describe("normalizePostalCode", () => {
+  it("7桁を 123-4567 に揃える (全角・〒・空白・ハイフンの有無を吸収)", () => {
+    for (const raw of ["1234567", "123-4567", "１２３４５６７", "〒123-4567", " 123 - 4567 ", "123ー4567"]) {
+      expect(normalizePostalCode(raw).postalCode).toBe("123-4567");
+    }
+  });
+
+  it("空欄は空欄のまま。要確認にしない", () => {
+    for (const raw of ["", "   ", "　"]) {
+      const got = normalizePostalCode(raw);
+      expect(got.postalCode).toBe("");
+      expect(got.issue).toBeUndefined();
+    }
+  });
+
+  it("★7桁として読めない値は捨てて要確認にする (推測で直さない)", () => {
+    for (const raw of ["123", "12345", "東京都架空区", "123-45678"]) {
+      const got = normalizePostalCode(raw);
+      expect(got.postalCode).toBe("");
+      expect(got.issue).toContain("郵便番号を読めませんでした");
+      expect(got.unreadable).toBe(raw.trim());
+    }
+  });
+});
+
+describe("pickPostalCode", () => {
+  it("先に書いたものを優先する", () => {
+    expect(pickPostalCode("1234567", "7654321").postalCode).toBe("123-4567");
+  });
+
+  it("★空欄なら次の値で埋める", () => {
+    expect(pickPostalCode("", "7654321").postalCode).toBe("765-4321");
+  });
+
+  it("読めない値なら次の値を試す", () => {
+    expect(pickPostalCode("123", "7654321").postalCode).toBe("765-4321");
+  });
+
+  it("全部空欄なら要確認を出さない", () => {
+    const got = pickPostalCode("", "");
+    expect(got.postalCode).toBe("");
+    expect(got.issue).toBeUndefined();
+  });
+
+  it("値はあるが全部読めないときだけ要確認にする", () => {
+    expect(pickPostalCode("123", "abc").issue).toContain("123");
   });
 });

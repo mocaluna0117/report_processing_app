@@ -10,6 +10,31 @@ export function baseFields(customer: Customer): CustomerFields {
   return { ...customer.imported, ...customer.supplements };
 }
 
+/**
+ * 項目を増やしたときに、古い保存データへ当てる既定値。
+ * IndexedDB は保存したときの形をそのまま返すので、後から増やした項目は
+ * 実体が undefined になる。**新しい項目を足したらここにも足すこと。**
+ */
+const STORED_DEFAULTS = {
+  postalCode: "",
+  supervisor: "",
+} as const satisfies Partial<CustomerFields>;
+
+/**
+ * 保存済みの顧客を今の形に揃える (何度通しても同じ結果)。
+ * 足りない項目を空値で埋め、埋めたときだけ検索キーを作り直す。
+ * ★顧客を読み出すところすべてで通すこと (loadCustomers だけでは漏れる)。
+ */
+export function normalizeStoredCustomer(customer: Customer): Customer {
+  const keys = Object.keys(STORED_DEFAULTS) as (keyof typeof STORED_DEFAULTS)[];
+  const missing = keys.filter((key) => customer.imported[key] === undefined);
+  if (missing.length === 0) return customer;
+  const imported = { ...customer.imported };
+  for (const key of missing) imported[key] = STORED_DEFAULTS[key];
+  const next: Customer = { ...customer, imported };
+  return { ...next, searchKey: buildSearchKey(effectiveFields(next)) };
+}
+
 /** 表示・出力に使う値 (取り込み値・補完・利用者の修正をこの順に重ねたもの) */
 export function effectiveFields(customer: Customer): CustomerFields {
   return { ...customer.imported, ...customer.supplements, ...customer.edits };
@@ -30,8 +55,14 @@ export function needsReview(customer: Customer): boolean {
 
 const sameValue = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
+// undefined も空として扱う。項目を増やす前に保存された顧客は、その項目を
+// 持っていない (型では string でも実体は undefined)。ここで空と見なさないと、
+// 「台帳が空欄なら助っ人クラウドから補う」が古いレコードに効かなくなる
 const isEmptyValue = (value: unknown): boolean =>
-  value === null || value === "" || (Array.isArray(value) && value.length === 0);
+  value === undefined ||
+  value === null ||
+  value === "" ||
+  (Array.isArray(value) && value.length === 0);
 
 /**
  * 補完を差し替える (助っ人クラウドから補った値)。

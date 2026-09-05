@@ -8,6 +8,7 @@ import {
   applyReportHandoverDate,
   mergeImported,
   needsReview,
+  normalizeStoredCustomer,
   withSupplements,
 } from "@/lib/after/customer";
 import { resolveDuplicates, withDuplicateIssue } from "@/lib/after/dedup";
@@ -40,7 +41,9 @@ export interface ImportReport {
 
 export async function loadCustomers(): Promise<Customer[]> {
   const all = await withStore(STORE_CUSTOMERS, "readonly", (s) => request(s.getAll()));
-  return (all as Customer[]).filter((c) => c && typeof c.id === "string");
+  return (all as Customer[])
+    .filter((c) => c && typeof c.id === "string")
+    .map(normalizeStoredCustomer);
 }
 
 export async function countCustomers(): Promise<{
@@ -82,7 +85,7 @@ export async function saveImport(parsed: ParsedImport): Promise<ImportReport> {
 
   // 解析はトランザクションの外で終えてあるので、ここでは IndexedDB の操作だけを流す
   await withStore(STORE_CUSTOMERS, "readwrite", async (store) => {
-    const existing = (await request(store.getAll())) as Customer[];
+    const existing = ((await request(store.getAll())) as Customer[]).map(normalizeStoredCustomer);
     const previous = new Map(existing.map((c) => [c.id, c]));
 
     // 取り込んだ分に、前回の修正・補完を引き継ぐ
@@ -169,7 +172,7 @@ export async function saveCustomerEdits(
   await withStore(STORE_CUSTOMERS, "readwrite", async (store) => {
     const current = (await request(store.get(id))) as Customer | undefined;
     if (!current) return;
-    next = applyEdits(current, patch, now);
+    next = applyEdits(normalizeStoredCustomer(current), patch, now);
     store.put(next);
   });
   return next;
@@ -198,7 +201,8 @@ export async function saveReportHandoverDates(
     for (const update of updates) {
       const current = (await request(store.get(update.id))) as Customer | undefined;
       if (!current) continue;
-      const next = applyReportHandoverDate(current, update.date, update.pj, now);
+      const next = applyReportHandoverDate(
+        normalizeStoredCustomer(current), update.date, update.pj, now);
       store.put(next);
       saved.push(next);
     }

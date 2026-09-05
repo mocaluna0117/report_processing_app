@@ -14,6 +14,8 @@ const SUKETTO_HEADER = [
   "住宅名(物件名)(区画番号)など",
   "※必須\n建築地都道府県",
   "※必須\n建築地市区町村番地",
+  "建築地郵便番号",
+  "現住所郵便番号",
   "管理ID",
   "引渡日",
   "担当支店",
@@ -30,6 +32,8 @@ const suketRow = (over: Partial<Record<string, string>> = {}) => {
     property: "架空台1丁目　A号棟　新築工事",
     prefecture: "東京都",
     city: "架空区北町1-2-3",
+    postal: "1234567",
+    postalHome: "",
     managementId: "1234-5",
     handover: "2025/09/26",
     branch: "エンドユーザー",
@@ -45,6 +49,8 @@ const suketRow = (over: Partial<Record<string, string>> = {}) => {
     base.property,
     base.prefecture,
     base.city,
+    base.postal,
+    base.postalHome,
     base.managementId,
     base.handover,
     base.branch,
@@ -65,6 +71,7 @@ const DX_HEADER = [
   "居住者名カナ",
   "所在地住居表示",
   "所在地住居表示 - 建物名",
+  "所在地住居表示 郵便番号",
   "居住者 連絡先1 - TEL1",
   "居住者 連絡先1 - email1",
   "居住者 連絡先1 - TEL2",
@@ -85,6 +92,7 @@ const dxRow = (over: Partial<Record<string, string>> = {}) => {
     kana: "カクウ　ハナコ",
     address: "東京都架空区北町1-2-3",
     building: "",
+    postal: "123-4567",
     tel1: "080-0000-5678",
     email1: "hanako@example.com",
     tel2: "",
@@ -104,6 +112,7 @@ const dxRow = (over: Partial<Record<string, string>> = {}) => {
     base.kana,
     base.address,
     base.building,
+    base.postal,
     base.tel1,
     base.email1,
     base.tel2,
@@ -128,6 +137,15 @@ const DX_TECHNICAL_ROW = dxRow({
 
 const dxFile = (rows: string[][]) =>
   buildXlsx([{ name: "Sheet1", rows: [DX_HEADER, ...rows] }], { mode: "inline" });
+
+/** 指定した見出しの列を落とす (郵便番号の列が無かった頃のファイルを作る) */
+const withoutColumns = (header: string[], rows: string[][], drop: readonly string[]) => {
+  const keep = header.map((h, i) => [h, i] as const).filter(([h]) => !drop.includes(h));
+  return {
+    header: keep.map(([h]) => h),
+    rows: rows.map((row) => keep.map(([, i]) => row[i])),
+  };
+};
 
 describe("parseCustomerFile (助っ人クラウド)", () => {
   it("列を対応付けて顧客にする", () => {
@@ -532,5 +550,84 @@ describe("searchCustomers", () => {
     const result = searchCustomers(customers, "架空", 1);
     expect(result.matched).toHaveLength(1);
     expect(result.total).toBe(2);
+  });
+});
+
+describe("郵便番号の取り込み", () => {
+  it("点検保守台帳の「所在地住居表示 郵便番号」を読む", async () => {
+    const parsed = await parseCustomerFile(dxFile([dxRow()]), "dx.xlsx");
+    expect(effectiveFields(parsed.customers[0]).postalCode).toBe("123-4567");
+  });
+
+  it("ハイフン無し・全角・〒付きでも 123-4567 に揃う", async () => {
+    for (const raw of ["1234567", "１２３４５６７", "〒123-4567", " 123 - 4567 "]) {
+      const parsed = await parseCustomerFile(dxFile([dxRow({ postal: raw })]), "dx.xlsx");
+      expect(effectiveFields(parsed.customers[0]).postalCode).toBe("123-4567");
+    }
+  });
+
+  it("空欄は要確認にしない (空の行が大量にあるため)", async () => {
+    const parsed = await parseCustomerFile(dxFile([dxRow({ postal: "" })]), "dx.xlsx");
+    expect(effectiveFields(parsed.customers[0]).postalCode).toBe("");
+    expect(openIssues(parsed.customers[0]).some((i) => i.field === "postalCode")).toBe(false);
+  });
+
+  it("★読めない値は捨てて要確認にする (推測で直さない)", async () => {
+    const parsed = await parseCustomerFile(dxFile([dxRow({ postal: "123" })]), "dx.xlsx");
+    expect(effectiveFields(parsed.customers[0]).postalCode).toBe("");
+    const issue = openIssues(parsed.customers[0]).find((i) => i.field === "postalCode");
+    expect(issue?.message).toContain("123");
+  });
+
+  it("助っ人クラウドは建築地郵便番号を使う", async () => {
+    const parsed = await parseCustomerFile(
+      suketFile([suketRow({ postal: "1234567", postalHome: "7654321" })]),
+      "suket.xlsx",
+    );
+    expect(effectiveFields(parsed.customers[0]).postalCode).toBe("123-4567");
+  });
+
+  it("★建築地が空欄なら現住所郵便番号で埋める", async () => {
+    const parsed = await parseCustomerFile(
+      suketFile([suketRow({ postal: "", postalHome: "7654321" })]),
+      "suket.xlsx",
+    );
+    expect(effectiveFields(parsed.customers[0]).postalCode).toBe("765-4321");
+  });
+
+  it("郵便番号の列が無い古いファイルもそのまま取り込める", async () => {
+    const { header, rows } = withoutColumns(
+      DX_HEADER, [dxRow()], ["所在地住居表示 郵便番号"],
+    );
+    const bytes = buildXlsx([{ name: "Sheet1", rows: [header, ...rows] }], { mode: "inline" });
+    const parsed = await parseCustomerFile(bytes, "old.xlsx");
+    expect(parsed.customers).toHaveLength(1);
+    expect(effectiveFields(parsed.customers[0]).postalCode).toBe("");
+  });
+
+  it("★郵便番号の列が増えても助っ人クラウドの顧客IDが変わらない (手直しが消えないこと)", async () => {
+    const withPostal = await parseCustomerFile(suketFile([suketRow()]), "new.xlsx");
+    const { header, rows } = withoutColumns(
+      SUKETTO_HEADER, [suketRow()], ["建築地郵便番号", "現住所郵便番号"],
+    );
+    const old = await parseCustomerFile(
+      buildXlsx([{ name: "住宅情報登録用シート", rows: [header, ...rows] }]),
+      "old.xlsx",
+    );
+    expect(withPostal.customers[0].id).toBe(old.customers[0].id);
+  });
+
+  it("郵便番号を手直ししても、取り込み直しで残る", async () => {
+    const first = await parseCustomerFile(suketFile([suketRow()]), "suket.xlsx");
+    const edited = applyEdits(first.customers[0], { postalCode: "999-9999" }, 1);
+    const again = await parseCustomerFile(suketFile([suketRow()]), "suket.xlsx");
+    const merged = mergeImported(edited, again.customers[0]);
+    expect(effectiveFields(merged).postalCode).toBe("999-9999");
+  });
+
+  it("郵便番号で検索できる (ハイフンの有無は問わない)", async () => {
+    const parsed = await parseCustomerFile(dxFile([dxRow()]), "dx.xlsx");
+    expect(searchCustomers(parsed.customers, "1234567").total).toBe(1);
+    expect(searchCustomers(parsed.customers, "123-4567").total).toBe(1);
   });
 });

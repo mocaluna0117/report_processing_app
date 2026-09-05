@@ -17,10 +17,12 @@ const fields: CustomerFields = {
   propertyName: "架空台1丁目 A号棟",
   ownerName: "山田　太郎",
   ownerKana: "ヤマダ　タロウ",
+  postalCode: "",
   address: "東京都架空区北町1-2-3",
   contacts: [{ phone: "090-0000-1234", relation: "", confidence: "ok" }],
   emails: ["taro@example.com"],
   handoverDate: "2025/09/26",
+  supervisor: "",
   salesRep: "",
   memo: "",
 };

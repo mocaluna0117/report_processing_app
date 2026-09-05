@@ -16,11 +16,15 @@ export interface CustomerFields {
   ownerName: string;
   /** カタカナ・全角スペース区切り */
   ownerKana: string;
+  /** 123-4567 (半角・ハイフン付き)。読めない・無いときは空文字 */
+  postalCode: string;
   address: string;
   contacts: Contact[];
   emails: string[];
   /** yyyy/mm/dd (ゼロ埋め)。無ければ null */
   handoverDate: string | null;
+  /** 監督。顛末書の「どこで」から反映する (取り込み元には無い項目) */
+  supervisor: string;
   salesRep: string;
   memo: string;
 }

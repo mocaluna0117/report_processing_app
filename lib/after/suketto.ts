@@ -11,6 +11,7 @@ import {
   normalizeOwnerKana,
   normalizeOwnerName,
   parsePhoneCell,
+  pickPostalCode,
 } from "@/lib/after/normalize";
 import { managementIdToPj } from "@/lib/after/pj";
 import type { Customer, CustomerFields, CustomerIssue } from "@/lib/after/types";
@@ -28,6 +29,8 @@ export const SUKETTO_HEADERS = {
   property: "住宅名(物件名)(区画番号)など",
   prefecture: "建築地都道府県",
   city: "建築地市区町村番地",
+  postal: "建築地郵便番号",
+  postalHome: "現住所郵便番号",
   managementId: "管理ID",
   handover: "引渡日",
   branch: "担当支店",
@@ -79,6 +82,12 @@ export function suketToCustomer(
   if (!developer) issues.push({ field: "developer", message: "担当支店が空のため事業者が未設定です" });
 
   const address = `${trimWide(get(SUKETTO_HEADERS.prefecture))}${trimWide(get(SUKETTO_HEADERS.city))}`;
+  // 住所は建築地なので郵便番号も建築地を優先し、空欄なら現住所で埋める
+  const postal = pickPostalCode(
+    get(SUKETTO_HEADERS.postal),
+    get(SUKETTO_HEADERS.postalHome),
+  );
+  if (postal.issue) issues.push({ field: "postalCode", message: postal.issue });
 
   const imported: CustomerFields = {
     pj: conversion.pj,
@@ -86,16 +95,22 @@ export function suketToCustomer(
     propertyName: cleanPropertyName(get(SUKETTO_HEADERS.property)),
     ownerName: owner.name,
     ownerKana: kana.kana,
+    postalCode: postal.postalCode,
     address,
     contacts,
     emails: [],
     handoverDate: handover.date,
+    supervisor: "",
     salesRep: "",
     memo: "",
   };
 
   // 管理IDは重複するので、取り込んだ内容そのものをIDにする
   // (完全に同じ行は同じIDになり1件にまとまる。再取込でも同じIDなので編集が残る)
+  // ★ここに項目を足してはいけない。足すと同じ行でもIDが変わり、助っ人の取り込みは
+  //   全置換なので前のIDのレコードが消える = 利用者の手直し(edits)が全部失われる。
+  //   郵便番号を足しても列の有無でIDが変わらないのはこのため
+  //   (tests/after-import.test.ts で固定してある)。
   const fingerprint = [
     managementId,
     imported.pj ?? "",

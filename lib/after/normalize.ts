@@ -245,6 +245,46 @@ export function normalizeHandoverDate(raw: string): HandoverResult {
   return { date: `${y}/${String(m).padStart(2, "0")}/${String(d).padStart(2, "0")}` };
 }
 
+export interface PostalResult {
+  /** 123-4567。読めなければ空文字 */
+  postalCode: string;
+  issue?: string;
+  /** 郵便番号として読めなかった元の値 (どの列かは呼び出し側が付ける) */
+  unreadable?: string;
+}
+
+/** 郵便番号から落とす区切り (空白・全角空白・〒・全角のハイフン類/長音記号) */
+const POSTAL_NOISE = new RegExp(`[\\s\u3000〒${HYPHENS}]`, "g");
+
+/**
+ * 郵便番号を `123-4567` に揃える。
+ * 全角数字・`〒`・ハイフンの有無・前後の空白を吸収する。
+ * ★空欄は要確認にしない (空の行が大量にあるため)。
+ *   値はあるが7桁として読めないときだけ、値を捨てて要確認に回す (推測で直さない)。
+ */
+export function normalizePostalCode(raw: string): PostalResult {
+  const text = trimWide(raw ?? "");
+  if (!text) return { postalCode: "" };
+  const digits = toHalfWidthAlnum(text).replace(POSTAL_NOISE, "");
+  if (/^\d{7}$/.test(digits)) return { postalCode: `${digits.slice(0, 3)}-${digits.slice(3)}` };
+  return { postalCode: "", issue: `郵便番号を読めませんでした (${text})`, unreadable: text };
+}
+
+/**
+ * 先に書いたものを優先して、最初に読めた郵便番号を採る
+ * (助っ人クラウドの「建築地郵便番号」→ 空欄なら「現住所郵便番号」)。
+ * どれも空欄なら要確認は出さない。値はあるが全部読めないときだけ要確認にする。
+ */
+export function pickPostalCode(...raws: readonly string[]): PostalResult {
+  let firstIssue: PostalResult | null = null;
+  for (const raw of raws) {
+    const got = normalizePostalCode(raw);
+    if (got.postalCode) return got;
+    if (got.issue && !firstIssue) firstIssue = got;
+  }
+  return firstIssue ?? { postalCode: "" };
+}
+
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function isEmail(s: string): boolean {
@@ -258,13 +298,16 @@ export function normalizeSearchText(s: string): string {
   return hiraganaToKatakana(s.normalize("NFKC")).toLowerCase().replace(SEARCH_NOISE, "");
 }
 
-/** 検索キー (氏名・カナ・PJ・物件名・住所・電話・メールをまとめて正規化) */
+/** 検索キー (氏名・カナ・PJ・物件名・郵便番号・住所・電話・メールをまとめて正規化) */
 export function buildSearchKey(fields: CustomerFields): string {
   const parts = [
     fields.pj ?? "",
     fields.ownerName,
     fields.ownerKana,
     fields.propertyName,
+    // 項目を増やす前に保存された顧客には無いので ?? "" を通す
+    // (undefined のまま join すると検索キーに "undefined" が焼き付く)
+    fields.postalCode ?? "",
     fields.address,
     ...fields.contacts.map((c) => c.phone),
     ...fields.emails,

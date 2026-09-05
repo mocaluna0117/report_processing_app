@@ -2,19 +2,47 @@
 
 import { effectiveFields, isReportHandover, openIssues } from "@/lib/after/customer";
 import type { Customer, CustomerFields } from "@/lib/after/types";
-import { parsePhoneCell } from "@/lib/after/normalize";
+import { normalizePostalCode, parsePhoneCell } from "@/lib/after/normalize";
 
-type TextField = "pj" | "developer" | "propertyName" | "ownerName" | "ownerKana" | "address" | "handoverDate";
+type TextField =
+  | "pj"
+  | "developer"
+  | "propertyName"
+  | "ownerName"
+  | "ownerKana"
+  | "postalCode"
+  | "address"
+  | "handoverDate"
+  | "supervisor"
+  | "salesRep";
 
-/** nullable な項目は空欄を null にする (未設定と空文字を区別するため) */
-const FIELD_LABELS: { key: TextField; label: string; placeholder?: string; nullable?: boolean }[] = [
+/**
+ * nullable な項目は空欄を null にする (未設定と空文字を区別するため)。
+ * normalize は入力欄から離れたときだけ当てる (打っている途中に整えると入力できなくなる)。
+ */
+const FIELD_LABELS: {
+  key: TextField;
+  label: string;
+  placeholder?: string;
+  nullable?: boolean;
+  normalize?: (value: string) => string;
+}[] = [
   { key: "pj", label: "PJ", placeholder: "2101230101", nullable: true },
   { key: "developer", label: "事業者", placeholder: "大和ハウス工業", nullable: true },
   { key: "propertyName", label: "物件名称" },
   { key: "ownerName", label: "お客様氏名", placeholder: "山田　太郎" },
   { key: "ownerKana", label: "お客様氏名 (カナ)", placeholder: "ヤマダ　タロウ" },
+  {
+    key: "postalCode",
+    label: "郵便番号",
+    placeholder: "123-4567",
+    // 7桁として読めたときだけ 123-4567 に整える。読めない値はそのまま残す
+    normalize: (value) => normalizePostalCode(value).postalCode || value,
+  },
   { key: "address", label: "住所" },
   { key: "handoverDate", label: "引渡日", placeholder: "2025/09/26", nullable: true },
+  { key: "supervisor", label: "監督", placeholder: "山田 太郎" },
+  { key: "salesRep", label: "営業", placeholder: "佐藤 花子" },
 ];
 
 /** 選んだお客様の内容。取り込みで判断できなかった項目はここで直す (再取り込みしても残る) */
@@ -56,7 +84,7 @@ export function CustomerCard({
       </div>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        {FIELD_LABELS.map(({ key, label, placeholder, nullable }) => {
+        {FIELD_LABELS.map(({ key, label, placeholder, nullable, normalize }) => {
           const issue = issueOf(key);
           return (
             <label key={key} className="block text-sm">
@@ -80,6 +108,13 @@ export function CustomerCard({
                     [key]: nullable ? e.target.value || null : e.target.value,
                   } as Partial<CustomerFields>)
                 }
+                onBlur={(e) => {
+                  if (!normalize) return;
+                  const tidy = normalize(e.target.value);
+                  if (tidy !== e.target.value) {
+                    onChange({ [key]: tidy } as Partial<CustomerFields>);
+                  }
+                }}
                 className={`mt-1 w-full rounded border px-2 py-1.5 text-sm ${
                   issue ? "border-amber-300 bg-amber-50" : "border-slate-300 bg-white"
                 }`}

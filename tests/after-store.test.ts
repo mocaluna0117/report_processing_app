@@ -36,10 +36,12 @@ const fields = (over: Partial<CustomerFields> = {}): CustomerFields => ({
   propertyName: "架空台1丁目 A号棟",
   ownerName: "山田　太郎",
   ownerKana: "ヤマダ　タロウ",
+  postalCode: "",
   address: "東京都架空区北町1-2-3",
   contacts: [{ phone: "090-0000-1234", relation: "", confidence: "ok" }],
   emails: [],
   handoverDate: "2025/09/26",
+  supervisor: "",
   salesRep: "",
   memo: "",
   ...over,
@@ -509,5 +511,63 @@ describe("報告書の引渡日の反映", () => {
     expect(stored.edits.handoverDate).toBeUndefined();
     expect(effectiveFields(stored).handoverDate).toBe("2024/04/01");
     expect(isReportHandover(stored)).toBe(false);
+  });
+});
+
+describe("項目を増やす前に保存された顧客", () => {
+  beforeEach(async () => {
+    await clearCustomers();
+  });
+
+  /** 郵便番号・監督を持たない、古い形のレコードをそのまま書き込む */
+  const putOldCustomer = async () => {
+    const old = customer("dx:2101230101");
+    const imported = { ...old.imported } as Record<string, unknown>;
+    delete imported.postalCode;
+    delete imported.supervisor;
+    await saveImport({
+      source: "dx",
+      fileName: "old.xlsx",
+      sheetName: "Sheet1",
+      totalRows: 1,
+      customers: [{ ...old, imported: imported as CustomerFields }],
+      skipped: [],
+    } satisfies ParsedImport);
+  };
+
+  it("★読み出すときに空欄で埋める (undefined のままにしない)", async () => {
+    await putOldCustomer();
+    const [got] = await loadCustomers();
+    expect(effectiveFields(got).postalCode).toBe("");
+    expect(effectiveFields(got).supervisor).toBe("");
+  });
+
+  it("★検索キーに \"undefined\" が焼き付かない", async () => {
+    await putOldCustomer();
+    const [got] = await loadCustomers();
+    expect(got.searchKey).not.toContain("undefined");
+  });
+
+  it("★古い記録でも「台帳が空欄なら助っ人クラウドから補う」が効く", async () => {
+    await putOldCustomer();
+    const suket = customer("sk:aaa", "suketto", { postalCode: "123-4567" });
+    await saveImport({
+      source: "suketto",
+      fileName: "suket.xlsx",
+      sheetName: "住宅情報登録用シート",
+      totalRows: 1,
+      customers: [suket],
+      skipped: [],
+    } satisfies ParsedImport);
+    const list = await loadCustomers();
+    const dx = list.find((c) => c.source === "dx");
+    expect(effectiveFields(dx!).postalCode).toBe("123-4567");
+  });
+
+  it("古い記録に手直しを足しても壊れない", async () => {
+    await putOldCustomer();
+    const saved = await saveCustomerEdits("dx:2101230101", { supervisor: "架空 一郎" });
+    expect(effectiveFields(saved!).supervisor).toBe("架空 一郎");
+    expect(effectiveFields(saved!).postalCode).toBe("");
   });
 });

@@ -8,6 +8,7 @@ import {
   normalizeHandoverDate,
   normalizeOwnerKana,
   normalizeOwnerName,
+  normalizePostalCode,
   parsePhoneCell,
 } from "@/lib/after/normalize";
 import { parseBukkenNumber } from "@/lib/after/pj";
@@ -25,6 +26,7 @@ export const DX_HEADERS = {
   kana: "居住者名カナ",
   address: "所在地住居表示",
   building: "所在地住居表示-建物名",
+  postal: "所在地住居表示郵便番号",
   tel1: "居住者連絡先1-TEL1",
   tel2: "居住者連絡先1-TEL2",
   email1: "居住者連絡先1-email1",
@@ -123,16 +125,23 @@ export function dxRowToCustomer(
   const address = addressParts.filter(Boolean).join("　");
   if (!address) issues.push({ field: "address", message: "所在地住居表示が空です" });
 
+  // 郵便番号の列は後から増えた。無いファイルでも取り込めるよう、必須列にはしない
+  const postal = normalizePostalCode(get(DX_HEADERS.postal));
+  if (postal.issue) issues.push({ field: "postalCode", message: postal.issue });
+
   const imported: CustomerFields = {
     pj: bukken.pj,
     developer,
     propertyName,
     ownerName: owner.name,
     ownerKana: kana.kana,
+    postalCode: postal.postalCode,
     address,
     contacts,
     emails,
     handoverDate,
+    // 監督は台帳に列が無い。顛末書タブから反映する (列が増えたらここで読む)
+    supervisor: "",
     salesRep: trimWide(get(DX_HEADERS.sales)),
     memo: trimWide(get(DX_HEADERS.memo)),
   };

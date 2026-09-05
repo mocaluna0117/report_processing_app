@@ -127,10 +127,12 @@ const FIELD_KEYS = [
   "propertyName",
   "ownerName",
   "ownerKana",
+  "postalCode",
   "address",
   "contacts",
   "emails",
   "handoverDate",
+  "supervisor",
   "salesRep",
   "memo",
 ] as const satisfies readonly (keyof CustomerFields)[];
