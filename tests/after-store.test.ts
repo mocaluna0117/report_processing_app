@@ -530,7 +530,7 @@ describe("項目を増やす前に保存された顧客", () => {
       fileName: "old.xlsx",
       sheetName: "Sheet1",
       totalRows: 1,
-      customers: [{ ...old, imported: imported as CustomerFields }],
+      customers: [{ ...old, imported: imported as unknown as CustomerFields }],
       skipped: [],
     } satisfies ParsedImport);
   };
