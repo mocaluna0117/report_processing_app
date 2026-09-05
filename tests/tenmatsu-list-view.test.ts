@@ -4,7 +4,9 @@ import {
   LIST_FILTERS,
   type ListFilter,
   listCounts,
+  nextListSort,
   resolvePerRun,
+  sortListItems,
   visibleListItems,
 } from "@/lib/tenmatsu/list-view";
 
@@ -298,5 +300,80 @@ describe("resolvePerRun", () => {
       fromServer: false,
       clamped: false,
     });
+  });
+});
+
+describe("sortListItems", () => {
+  const files = (list: ListItem[]) => list.map((i) => i.file);
+  // 桁数の違う名前。★ここが素の文字列比較との差が出る唯一の形
+  // (1455/1476/9001 は桁が同じなので文字列比較でも同じ順になり、テストにならない)
+  const mixed = () => [
+    item("TE00001476", { file: "顛末書No.1476.pdf" }),
+    item("TE00000999", { file: "顛末書No.999.pdf" }),
+    item("TE00001000", { file: "顛末書No.1000.pdf" }),
+  ];
+
+  it("既定はサーバーが返した順のまま", () => {
+    const src = mixed();
+    expect(files(sortListItems(src, "default"))).toEqual([
+      "顛末書No.1476.pdf",
+      "顛末書No.999.pdf",
+      "顛末書No.1000.pdf",
+    ]);
+  });
+
+  it("★昇順は数字を数の大きさで比べる (999 が 1000 より前)", () => {
+    expect(files(sortListItems(mixed(), "file-asc"))).toEqual([
+      "顛末書No.999.pdf",
+      "顛末書No.1000.pdf",
+      "顛末書No.1476.pdf",
+    ]);
+  });
+
+  it("降順は昇順の逆", () => {
+    expect(files(sortListItems(mixed(), "file-desc"))).toEqual(
+      files(sortListItems(mixed(), "file-asc")).reverse(),
+    );
+  });
+
+  it("★元の配列を書き換えない (画面の items をそのまま渡すため)", () => {
+    const src = mixed();
+    const before = files(src);
+    const sorted = sortListItems(src, "file-asc");
+    expect(files(src)).toEqual(before);
+    expect(sorted).not.toBe(src);
+  });
+
+  it("ファイル名が同じ行は元の順のまま (並べ替えは安定)", () => {
+    const src = [
+      item("TE00000002", { file: "顛末書No.1476.pdf" }),
+      item("TE00000001", { file: "顛末書No.1476.pdf" }),
+    ];
+    expect(sortListItems(src, "file-asc").map((i) => i.denpyo_no)).toEqual([
+      "TE00000002",
+      "TE00000001",
+    ]);
+  });
+
+  it("伝票No.で始まる名前・拡張子違いでも落ちない", () => {
+    const src = [
+      item("TE00001476", { file: "顛末書No.TE00001476.pdf" }),
+      item("TE00001475", { file: "顛末書No.1475.pdf" }),
+    ];
+    expect(files(sortListItems(src, "file-asc"))).toHaveLength(2);
+  });
+
+  it("並べ替えても件数の内訳は変わらない", () => {
+    const src = [both("TE00000001"), item("TE00000002"), unknownFlags("TE00000003")];
+    const options = view();
+    const counts = listCounts(src, options);
+    const shown = sortListItems(visibleListItems(src, options), "file-desc");
+    expect(shown).toHaveLength(counts.shown);
+  });
+
+  it("見出しを押すと 既定 → 昇順 → 降順 → 既定 と回る", () => {
+    expect(nextListSort("default")).toBe("file-asc");
+    expect(nextListSort("file-asc")).toBe("file-desc");
+    expect(nextListSort("file-desc")).toBe("default");
   });
 });

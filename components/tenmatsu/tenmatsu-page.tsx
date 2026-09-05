@@ -19,6 +19,7 @@ import {
   isValidToken,
 } from "@/lib/tenmatsu/client";
 import { type ListFilter, resolvePerRun } from "@/lib/tenmatsu/list-view";
+import { type Connection, keepTenmatsuSession, tenmatsuSession } from "@/lib/tenmatsu/session";
 import {
   clearCachedList,
   clearToken,
@@ -51,36 +52,41 @@ const ERROR_CLASS =
 const WARN_CLASS =
   "mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800";
 
-/** ローカルサーバーに繋がっているか */
-type Connection = "idle" | "checking" | "ok" | "unreachable";
-
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function TenmatsuPage() {
-  const [token, setToken] = useState<string | null>(null);
+  /**
+   * 画面の状態は「このページ読み込み限りの控え」から始める。
+   * タブを移動して戻ってきたときに、接続し直さずに続きから使えるようにするため
+   * (詳しい理由は lib/tenmatsu/session.ts)。
+   * 控えが空 = この読み込みで初めて開いた ＝ 未接続から始まる。
+   */
+  const kept = tenmatsuSession;
+  const [token, setToken] = useState<string | null>(kept.token);
   const [tokenInput, setTokenInput] = useState("");
   const [tokenError, setTokenError] = useState<string | null>(null);
-  const [editingToken, setEditingToken] = useState(false);
+  const [editingToken, setEditingToken] = useState(kept.editingToken);
 
-  const [connection, setConnection] = useState<Connection>("idle");
-  const [health, setHealth] = useState<HealthPayload | null>(null);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [connection, setConnection] = useState<Connection>(kept.connection);
+  const [health, setHealth] = useState<HealthPayload | null>(kept.health);
+  const [connectionError, setConnectionError] = useState<string | null>(kept.connectionError);
 
-  const [items, setItems] = useState<ListItem[]>([]);
+  const [items, setItems] = useState<ListItem[]>(kept.items);
   /** この画面でサーバーから取り直したか (false なら前回このブラウザで見た内容) */
-  const [listFresh, setListFresh] = useState(false);
+  const [listFresh, setListFresh] = useState(kept.listFresh);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
 
-  const [status, setStatus] = useState<StatusPayload | null>(null);
+  const [status, setStatus] = useState<StatusPayload | null>(kept.status);
   const [starting, setStarting] = useState(false);
-  const [polling, setPolling] = useState(false);
+  // 戻ってきたときは進捗の追いかけも再開する (タブを離れている間は止まる)
+  const [polling, setPolling] = useState(kept.polling);
   /**
    * この画面で実行を始めた / 進行中の処理に合流したか。
    * /status の done は次の実行まで残るので、これが無いと画面を開いただけの人に
    * 前回の「10件を保存しました」が出てしまう。
    */
-  const [runObserved, setRunObserved] = useState(false);
+  const [runObserved, setRunObserved] = useState(kept.runObserved);
   const [runError, setRunError] = useState<string | null>(null);
   const [runNotice, setRunNotice] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -97,20 +103,20 @@ export function TenmatsuPage() {
    * これが無いと2つ目にチェックを入れた瞬間に行が消えて、押し間違いを戻せない。
    * 表示の都合だけで、チェックの値は /list のもの。
    */
-  const [recentNos, setRecentNos] = useState<ReadonlySet<string>>(new Set());
-  const [showCompleted, setShowCompleted] = useState(false);
-  const [listFilter, setListFilter] = useState<ListFilter>("all");
+  const [recentNos, setRecentNos] = useState<ReadonlySet<string>>(kept.recentNos);
+  const [showCompleted, setShowCompleted] = useState(kept.showCompleted);
+  const [listFilter, setListFilter] = useState<ListFilter>(kept.listFilter);
   /** 1回に取る件数の下書き。数字かどうかは押したときに見る (入力中は弾かない) */
-  const [maxInput, setMaxInput] = useState("");
+  const [maxInput, setMaxInput] = useState(kept.maxInput);
   /** 保存されていた件数 (null なら未保存)。/health と合わせて入力欄の初期値にする */
-  const [storedMaxPerRun, setStoredMaxPerRun] = useState<number | null>(null);
+  const [storedMaxPerRun, setStoredMaxPerRun] = useState<number | null>(kept.storedMaxPerRun);
   const [listNotice, setListNotice] = useState<string | null>(null);
   /**
    * 「一覧を消去」で消した直後か。自動の取り直しを止めるために持つ
    * (消した瞬間に戻ってきたら、消したことにならない)。
    * 「接続する」と「一覧を再読み込み」で下ろす。
    */
-  const clearedRef = useRef(false);
+  const clearedRef = useRef(kept.cleared);
 
   const [previewNo, setPreviewNo] = useState<string | null>(null);
   /** 案内に出す自分のURL (サーバーの許可オリジンに足してもらうため) */
@@ -125,6 +131,9 @@ export function TenmatsuPage() {
 
   const storage = usePersistence({
     restore: async () => {
+      // 戻ってきたときは控えがそのまま最新なので、IndexedDB からは読み直さない
+      // (読み直すと listFresh が下りて、繋がっているのに印を押せなくなる)
+      if (kept.hydrated) return { partialErrors: [] };
       const partialErrors: string[] = [];
       try {
         setToken(await loadToken());
@@ -385,11 +394,37 @@ export function TenmatsuPage() {
     savingFlags.size,
   ]);
 
+  /**
+   * 画面の状態を控える。依存は付けない (毎レンダーの後にそのまま写す)。
+   * これがあるので、タブを移動して戻ってきても「接続する」を押し直さずに済む。
+   * 保存ではなくこのページ読み込み限りの控え (lib/tenmatsu/session.ts)。
+   */
+  useEffect(() => {
+    keepTenmatsuSession({
+      token,
+      editingToken,
+      connection,
+      health,
+      connectionError,
+      items,
+      listFresh,
+      cleared: clearedRef.current,
+      recentNos,
+      showCompleted,
+      listFilter,
+      status,
+      polling,
+      runObserved,
+      storedMaxPerRun,
+      maxInput,
+    });
+  });
+
   // 取得中に画面を切り替えると進捗が見えなくなるので確認を出す
   useEffect(() => {
     setNavigationGuard(
       running
-        ? "顛末書を取得中です。画面を切り替えると進捗の表示が止まります (取得そのものはPC側で続きます)。移動しますか？"
+        ? "顛末書を取得中です。画面を切り替えると進捗の表示が止まります (取得そのものはPC側で続き、顛末書へ戻れば進捗の表示も追いつきます)。移動しますか？"
         : null,
     );
     return () => setNavigationGuard(null);

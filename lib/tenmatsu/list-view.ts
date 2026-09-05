@@ -56,6 +56,37 @@ export function visibleListItems(items: ListItem[], options: ListViewOptions): L
   return filtered(items, options.filter).filter((i) => !hiddenAsCompleted(i, options));
 }
 
+/**
+ * 一覧の並べ替え。default は**サーバーが返した順**
+ * (PC側の記録に足した順の逆。取得日時の並べ替えではない)。
+ */
+export type ListSort = "default" | "file-asc" | "file-desc";
+
+/** 見出しを押すたびに 既定 → 昇順 → 降順 → 既定 と回る */
+export function nextListSort(sort: ListSort): ListSort {
+  if (sort === "default") return "file-asc";
+  if (sort === "file-asc") return "file-desc";
+  return "default";
+}
+
+/**
+ * ファイル名の比較。**数字は数値として比べる。**
+ * 名前が「顛末書No.1476.pdf」の形なので、素の文字列比較だと
+ * 1476 < 9001 < 999 の順になってしまう (先頭の文字から1桁ずつ比べるため)。
+ */
+const fileCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+/**
+ * ファイル名で並べ替える。元の配列は変えない。
+ * default はサーバーの順をそのまま返す (並べ替えない、が「元に戻せる」ことになる)。
+ */
+export function sortListItems(items: ListItem[], sort: ListSort): ListItem[] {
+  if (sort === "default") return items;
+  const sign = sort === "file-asc" ? 1 : -1;
+  // sort は安定なので、ファイル名が同じ行はサーバーの順のまま並ぶ
+  return [...items].sort((a, b) => sign * fileCollator.compare(a.file, b.file));
+}
+
 export interface ListCounts {
   /** 画面に出ている件数 */
   shown: number;

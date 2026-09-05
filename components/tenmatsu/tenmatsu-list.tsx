@@ -5,7 +5,10 @@ import { type ListItem, formatFileSize, hasFlags } from "@/lib/tenmatsu/client";
 import {
   LIST_FILTERS,
   type ListFilter,
+  type ListSort,
   listCounts,
+  nextListSort,
+  sortListItems,
   visibleListItems,
 } from "@/lib/tenmatsu/list-view";
 
@@ -64,6 +67,18 @@ const LEFT_TH_CLASS = "sticky top-0 z-30 border-b border-slate-200 bg-slate-50 p
 const LEFT_TD_CLASS = "sticky z-10 bg-white px-3 py-2 group-hover:bg-slate-50";
 const LEFT_EDGE_CLASS = "border-r-2 border-r-slate-300";
 
+/** ファイル名の見出しに出す印と説明 (押すたびに 既定 → 昇順 → 降順 と回る) */
+const SORT_MARK: Record<ListSort, string> = {
+  default: "↕",
+  "file-asc": "↑",
+  "file-desc": "↓",
+};
+const SORT_TITLE: Record<ListSort, string> = {
+  default: "押すとファイル名の昇順に並べ替えます (数字は数の大きさで比べます)",
+  "file-asc": "ファイル名の昇順です。押すと降順にします",
+  "file-desc": "ファイル名の降順です。押すと元の順 (取得した順の逆) に戻します",
+};
+
 /** 空欄の表示。値が無いことを黙って隠さない */
 const dash = (value: string | null | undefined) => (value ? value : "－");
 
@@ -109,7 +124,12 @@ export function TenmatsuList({
     () => ({ filter, showCompleted, keepNos: recentNos }),
     [filter, showCompleted, recentNos],
   );
-  const visible = useMemo(() => visibleListItems(items, view), [items, view]);
+  // 並べ替えはこの表の中だけの話なので、ここで持つ (絞り込みと同じく保存しない)
+  const [sort, setSort] = useState<ListSort>("default");
+  const visible = useMemo(
+    () => sortListItems(visibleListItems(items, view), sort),
+    [items, view, sort],
+  );
   const counts = useMemo(() => listCounts(items, view), [items, view]);
 
   // 左端の固定列の幅。table-auto では列幅が内容で決まるので、描いた後に測る。
@@ -200,7 +220,7 @@ export function TenmatsuList({
         <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
           {/* scroll-pt / scroll-pr / scroll-padding-left は Tab移動でセルが固定した見出し・左右の固定列の下に潜らないための余白 */}
           <div
-            className="max-h-[60vh] scroll-pt-10 scroll-pr-96 overflow-auto"
+            className="max-h-[75vh] scroll-pt-10 scroll-pr-96 overflow-auto"
             style={{ scrollPaddingLeft: leftWidths.no + leftWidths.file }}
           >
             {/* whitespace-nowrap は継承するので、見出しもセルも1つも折り返さない。
@@ -212,16 +232,45 @@ export function TenmatsuList({
                   <th
                     ref={noHeadRef}
                     className={`left-0 ${LEFT_TH_CLASS}`}
-                    title="PC側の記録に足した順の逆に並びます (申請日での並べ替えではありません)"
+                    title={
+                      sort === "default"
+                        ? "PC側の記録に足した順の逆に並びます (申請日での並べ替えではありません)"
+                        : "いまはファイル名で並べ替えています"
+                    }
                   >
                     伝票No.
                   </th>
                   <th
                     ref={fileHeadRef}
+                    // aria-sort は「今どう並んでいるか」を読み上げに伝えるためのもの
+                    aria-sort={
+                      sort === "file-asc"
+                        ? "ascending"
+                        : sort === "file-desc"
+                          ? "descending"
+                          : "none"
+                    }
                     className={`${LEFT_TH_CLASS} ${LEFT_EDGE_CLASS}`}
                     style={{ left: leftWidths.no }}
                   >
-                    ファイル名
+                    <button
+                      type="button"
+                      onClick={() => setSort(nextListSort(sort))}
+                      title={SORT_TITLE[sort]}
+                      className="flex cursor-pointer items-center gap-1 font-medium text-slate-500 hover:text-slate-900"
+                    >
+                      ファイル名
+                      {/* 幅を固定する。ここが伸び縮みすると ResizeObserver 経由で
+                          左固定列の left と scroll-padding-left が動いてガタつく */}
+                      <span
+                        aria-hidden
+                        className={`inline-block w-3 text-center ${
+                          sort === "default" ? "text-slate-300" : ""
+                        }`}
+                      >
+                        {SORT_MARK[sort]}
+                      </span>
+                    </button>
                   </th>
                   <th className={TH_CLASS}>物件名</th>
                   <th className={TH_CLASS}>申請日</th>
