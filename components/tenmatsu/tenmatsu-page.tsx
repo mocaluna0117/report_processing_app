@@ -12,6 +12,7 @@ import {
   type FlagUpdate,
   type HealthPayload,
   type ListItem,
+  type PendingFile,
   type RunLogLine,
   type StatusPayload,
   TENMATSU_BASE_URL,
@@ -20,6 +21,7 @@ import {
   createTenmatsuClient,
   describeCompletion,
   isFinished,
+  isPending,
   isValidToken,
 } from "@/lib/tenmatsu/client";
 import { type ListFilter, resolvePerRun } from "@/lib/tenmatsu/list-view";
@@ -34,6 +36,8 @@ import {
   unsupportedServerText,
 } from "@/lib/tenmatsu/kinds";
 import { appendRunLog, nextLogSince } from "@/lib/tenmatsu/run-log";
+import { TenmatsuPendingDialog } from "@/components/tenmatsu/tenmatsu-pending-dialog";
+import { ATTACHMENT_TYPES_TEXT } from "@/lib/tenmatsu/pending";
 import { type Connection, getSession, keepSession, shareToken } from "@/lib/tenmatsu/session";
 import { TenmatsuRunLog } from "@/components/tenmatsu/tenmatsu-run-log";
 import {
@@ -55,9 +59,6 @@ const POLL_MS = 2000;
 const POLL_FAILURE_LIMIT = 5;
 
 /** サーバーがPDFに変換できる添付。サーバーのエラー文と同じ並び・同じ表記にしてある */
-const SUPPORTED_ATTACHMENTS =
-  "PDF, JPG, JPEG, PNG, TXT, XLSX, XLS, XLSM, DOCX, DOC, PPTX, PPT, MSG";
-
 const SECTION_CLASS = "rounded-lg border border-slate-200 bg-white p-4";
 const SUBTITLE_CLASS = "ml-2 text-xs font-normal text-slate-500";
 const PRIMARY_BUTTON_CLASS =
@@ -151,6 +152,8 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
   const clearedRef = useRef(kept.cleared);
 
   const [previewNo, setPreviewNo] = useState<string | null>(null);
+  // 保留の確定ダイアログ。プレビューと同じく控えには置かない (開いたままにはしない)
+  const [pendingNo, setPendingNo] = useState<string | null>(null);
   /** 案内に出す自分のURL (サーバーの許可オリジンに足してもらうため) */
   const [origin, setOrigin] = useState("");
 
@@ -522,6 +525,7 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
     setItems([]);
     setListFresh(false);
     setPreviewNo(null);
+    setPendingNo(null);
     setFlagError(null);
     setRecentNos(new Set());
     setListNotice(clearedNoticeText(kind));
@@ -558,6 +562,37 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
    *      成功したように見えることもない。チェックは常に /list の値の写しになる
    * - exists=false の行でも変えられる (404 は記録の有無で決まる)
    */
+  /**
+   * 保留を確定する。toggleFlag と同じく、応答で返ってきた行だけを差し替える
+   * (キャッシュへの保存はしない。保存は /list を取り直したときだけ、という決まり)。
+   * 文言はダイアログが出すので、ここでは投げ直す。
+   */
+  const completePending = async (no: string, files: PendingFile[], acceptMissing: boolean) => {
+    try {
+      const updated = await client.completePending(no, { files, acceptMissing });
+      if (updated) setItems((prev) => prev.map((i) => (i.denpyo_no === no ? updated : i)));
+      else await refreshListRef.current();
+      setRecentNos((prev) => new Set(prev).add(no));
+    } catch (e) {
+      if (e instanceof TenmatsuError && e.kind === "auth") setEditingToken(true);
+      throw e;
+    }
+  };
+
+  /** 保留をやめる。行は一覧から消える (次の取得で取り直される) */
+  const retryPending = async (no: string) => {
+    try {
+      await client.retryPending(no);
+    } catch (e) {
+      // すでに保留でなくなっていたときも、画面からは消してよい
+      if (!(e instanceof TenmatsuError && e.kind === "notFound")) {
+        if (e instanceof TenmatsuError && e.kind === "auth") setEditingToken(true);
+        throw e;
+      }
+    }
+    setItems((prev) => prev.filter((i) => i.denpyo_no !== no));
+  };
+
   const toggleFlag = async (no: string, flag: FlagKey, next: boolean) => {
     if (kindUnsupported) return;
     const update: FlagUpdate = {};
@@ -612,12 +647,26 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
           ? "一覧を読み込んでいます"
           : null;
   /**
+   * 「添付を足す」を押せない理由。印と同じ条件に、取得中を足す。
+   * ★取得中はサーバーも 409 で断る (Office の変換が重なると失敗しやすく、
+   *   記録の書き込みもぶつかるため)。画面でも押せなくして待たせる。
+   */
+  const resolveDisabledReason =
+    flagDisabledReason ??
+    (running || foreignRun !== null
+      ? "取得中は添付を結合できません。取得が終わってから操作してください"
+      : null);
+  /**
    * 終わった実行の1行。
    * /status の done は次の実行まで残るので、この画面で始めた (合流した) 実行でなければ
    * 「前回このPCで実行した分」と断って出す。黙って隠すと「残りN件」を取り逃がす。
    */
   const completion = status && !running ? describeCompletion(status, kind.label) : null;
   const preview = previewNo ? (items.find((i) => i.denpyo_no === previewNo) ?? null) : null;
+  // 解消済み・消えた行なら自動で閉じる
+  const pending = pendingNo
+    ? (items.find((i) => i.denpyo_no === pendingNo && isPending(i)) ?? null)
+    : null;
 
   return (
     <main>
@@ -847,14 +896,16 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
           )}
 
           <p className="mt-2 text-xs text-slate-500">
-            添付書類は {SUPPORTED_ATTACHMENTS} をPDFに変換して本体と結合します。
+            添付書類は {ATTACHMENT_TYPES_TEXT} をPDFに変換して本体と結合します。
             Office の添付 (Excel・Word・PowerPoint・Outlookのメール) をPDFにできるのは、
             そのアプリが入ったWindowsだけです。テキスト (.txt) も Word で変換するので同じ条件です。
             メール (.msg) は本文だけをPDFにします。
             動画・音声 (.mp4 .mov .mp3 など) は紙にできないので結合せず飛ばし、
             その行に「動画は未結合」と出します。
-            変換できないときは、その{kind.label}は取得せずに止めます (添付が欠けた正式書類を作らないため)。
-            下に出るメッセージのとおり、手作業でPDFにしてから結合してください。
+            結合できない添付があるときは、その{kind.label}を保留にして、
+            本体と結合できた添付だけのPDFをPCの _保留 フォルダに置き、残りの取得は続けます。
+            一覧の「添付を足す」から、手作業でPDFにしたものをアップロードして確定してください
+            (どうしても手に入らないときは、欠けたまま確定することもできます)。
           </p>
 
           {runNotice && <p className={WARN_CLASS}>{runNotice}</p>}
@@ -919,6 +970,8 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
             onToggleFlag={(no, flag, next) => void toggleFlag(no, flag, next)}
             canPreview={connection === "ok" && token !== null}
             onPreview={setPreviewNo}
+            resolveDisabledReason={resolveDisabledReason}
+            onResolvePending={setPendingNo}
           />
         </section>
 
@@ -936,6 +989,18 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
           saveDir={health?.save_dir ?? null}
           load={loadPdf}
           onClose={() => setPreviewNo(null)}
+        />
+      )}
+
+      {pending && (
+        <TenmatsuPendingDialog
+          kind={kind}
+          item={pending}
+          complete={(files, acceptMissing) =>
+            completePending(pending.denpyo_no, files, acceptMissing)
+          }
+          retry={() => retryPending(pending.denpyo_no)}
+          onClose={() => setPendingNo(null)}
         />
       )}
 

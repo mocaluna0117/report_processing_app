@@ -213,6 +213,15 @@ describe("種類ごとの保存キー", () => {
     expect(await loadMeta(META_TENMATSU_LIST)).toBeUndefined();
   });
 
+  it("★保留の行もそのまま保存して読み直せる", async () => {
+    const row = item("TE00009010", {
+      pending: true,
+      missing_attachments: [{ index: 2, name: "見積.pdf", reason: "0バイト" }],
+    });
+    await saveCachedList("tenmatsu", [row]);
+    expect(await loadCachedList("tenmatsu")).toEqual([row]);
+  });
+
   it("★片方を消してももう片方は残る", async () => {
     await saveCachedList("tenmatsu", [item("TE00009001")]);
     await saveCachedList("senketsu", [item("SE00003001")]);

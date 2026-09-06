@@ -9,6 +9,9 @@ import {
   hasFlags,
   type HealthPayload,
   isFinished,
+  bytesToBase64,
+  EMPTY_PENDING_FILES_MESSAGE,
+  MAX_PENDING_UPLOAD_BYTES,
   isListItemLike,
   isValidToken,
   type ListItem,
@@ -368,6 +371,138 @@ describe("実行の開始", () => {
   });
 });
 
+describe("保留の確定", () => {
+  const held = () => ({
+    ...listItem(),
+    pending: true,
+    missing_attachments: [{ index: 2, name: "見積.pdf", reason: "0バイト" }],
+  });
+
+  it("★添付を base64 にして送る", async () => {
+    const { impl, calls } = fakeFetch(() => json({ ok: true, item: listItem() }));
+    const c = createTenmatsuClient({ token: "t", fetchImpl: impl });
+    await c.completePending("TE00009001", {
+      files: [{ index: 2, name: "見積.pdf", bytes: new Uint8Array([1, 2, 3]) }],
+      acceptMissing: false,
+    });
+    expect(calls[0].url.pathname).toBe("/pending");
+    expect(calls[0].init?.method).toBe("POST");
+    expect(bodyOf(calls[0].init)).toEqual({
+      denpyo_no: "TE00009001",
+      action: "complete",
+      accept_missing: false,
+      files: [{ index: 2, name: "見積.pdf", data: "AQID" }],
+    });
+  });
+
+  it("★大きなファイルでも base64 にできる (一度に展開しない)", () => {
+    for (const size of [0, 1, 2, 3, 0x7fff, 0x8000, 0x8001, 200_003]) {
+      const bytes = new Uint8Array(size);
+      for (let i = 0; i < size; i++) bytes[i] = (i * 31) % 256;
+      expect(bytesToBase64(bytes)).toBe(Buffer.from(bytes).toString("base64"));
+    }
+  });
+
+  it("★何も選ばず「欠けたまま」でもなければ通信しない", async () => {
+    const { impl, calls } = fakeFetch(() => json({ ok: true }));
+    const c = createTenmatsuClient({ token: "t", fetchImpl: impl });
+    await expect(c.completePending("TE00009001", { files: [], acceptMissing: false })).rejects.toThrow(
+      EMPTY_PENDING_FILES_MESSAGE,
+    );
+    expect(calls).toHaveLength(0);
+  });
+
+  it("欠けたまま確定するなら、ファイルが無くても送る", async () => {
+    const { impl, calls } = fakeFetch(() => json({ ok: true, item: listItem() }));
+    await createTenmatsuClient({ token: "t", fetchImpl: impl }).completePending("TE00009001", {
+      files: [],
+      acceptMissing: true,
+    });
+    expect(bodyOf(calls[0].init)).toMatchObject({ accept_missing: true, files: [] });
+  });
+
+  it("★上限を超えるファイルは送る前に断る (送ってから413を受けない)", async () => {
+    const { impl, calls } = fakeFetch(() => json({ ok: true }));
+    const c = createTenmatsuClient({ token: "t", fetchImpl: impl });
+    const big = { index: 2, name: "大.pdf", bytes: new Uint8Array(MAX_PENDING_UPLOAD_BYTES + 1) };
+    await expect(
+      c.completePending("TE00009001", { files: [big], acceptMissing: false }),
+    ).rejects.toThrow(/大きすぎます/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("種類を付けると本文にも入る", async () => {
+    const { impl, calls } = fakeFetch(() => json({ ok: true, item: listItem() }));
+    await createTenmatsuClient({
+      token: "t",
+      kind: "senketsu",
+      fetchImpl: impl,
+    }).completePending("SE00002267", { files: [], acceptMissing: true });
+    expect(bodyOf(calls[0].init)).toMatchObject({ kind: "senketsu" });
+  });
+
+  it("更新後の行を返す。形が違えば null (呼ぶ側は一覧を取り直す)", async () => {
+    const ok = fakeFetch(() => json({ ok: true, item: held() }));
+    const got = await createTenmatsuClient({ token: "t", fetchImpl: ok.impl }).completePending(
+      "TE00009001",
+      { files: [], acceptMissing: true },
+    );
+    expect(got?.pending).toBe(true);
+    const bad = fakeFetch(() => json({ ok: true, item: { denpyo_no: 1 } }));
+    expect(
+      await createTenmatsuClient({ token: "t", fetchImpl: bad.impl }).completePending(
+        "TE00009001",
+        { files: [], acceptMissing: true },
+      ),
+    ).toBeNull();
+  });
+
+  it("★結合し直せなかったときはサーバーの理由をそのまま出す", async () => {
+    const { impl } = fakeFetch(() =>
+      json({ error: "Excelを起動できませんでした（図面.xlsx）" }, 400),
+    );
+    await expect(
+      createTenmatsuClient({ token: "t", fetchImpl: impl }).completePending("TE00009001", {
+        files: [],
+        acceptMissing: true,
+      }),
+    ).rejects.toThrow("Excelを起動できませんでした（図面.xlsx）");
+  });
+
+  it("★取得中は断られる (409)", async () => {
+    const { impl } = fakeFetch(() => json({ error: "取得中は添付を結合できません" }, 409));
+    await expect(
+      createTenmatsuClient({ token: "t", fetchImpl: impl }).completePending("TE00009001", {
+        files: [],
+        acceptMissing: true,
+      }),
+    ).rejects.toThrow("取得中は添付を結合できません");
+  });
+
+  it("413 は「大きすぎる」として扱う", async () => {
+    const { impl } = fakeFetch(() => json({}, 413));
+    await expect(
+      createTenmatsuClient({ token: "t", fetchImpl: impl }).completePending("TE00009001", {
+        files: [],
+        acceptMissing: true,
+      }),
+    ).rejects.toMatchObject({ kind: "tooLarge" });
+  });
+
+  it("やり直しは action だけ送る", async () => {
+    const { impl, calls } = fakeFetch(() => json({ ok: true }));
+    await createTenmatsuClient({ token: "t", fetchImpl: impl }).retryPending("TE00009001");
+    expect(bodyOf(calls[0].init)).toEqual({ denpyo_no: "TE00009001", action: "retry" });
+  });
+
+  it("すでに保留でなければ 404", async () => {
+    const { impl } = fakeFetch(() => json({ error: "保留になっていません" }, 404));
+    await expect(
+      createTenmatsuClient({ token: "t", fetchImpl: impl }).retryPending("TE00009001"),
+    ).rejects.toMatchObject({ kind: "notFound" });
+  });
+});
+
 describe("取得の記録 (コンソール出力)", () => {
   it("★since を渡したときだけクエリに付ける", async () => {
     const { impl, calls } = fakeFetch(() => json(status()));
@@ -449,6 +584,29 @@ describe("describeCompletion", () => {
     expect(describeCompletion(status({ state: "running" }))).toBeNull();
     expect(describeCompletion(status({ state: "idle" }))).toBeNull();
   });
+  it("★保留があれば件数を添えて、目に留まる色で出す", () => {
+    const got = describeCompletion(
+      status({ state: "done", processed: 8, pending: [{ denpyo_no: "TE1", missing: ["見積.pdf"] }] }),
+    );
+    expect(got).toEqual({ tone: "notice", message: "8件を保存しました (1件は添付を結合できず保留)" });
+  });
+
+  it("★1件も保存できなくても、保留があれば「無かった」とは言わない", () => {
+    const got = describeCompletion(
+      status({ state: "done", processed: 0, pending: [{ denpyo_no: "TE1", missing: [] }] }),
+    );
+    expect(got?.message).toBe("0件を保存しました (1件は添付を結合できず保留)");
+    expect(got?.message).not.toContain("ありませんでした");
+  });
+
+  it("見送った分と保留の両方を伝える", () => {
+    const got = describeCompletion(
+      status({ state: "done", processed: 3, remaining: 5, pending: [{ denpyo_no: "TE1", missing: [] }] }),
+    );
+    expect(got?.message).toContain("(1件は添付を結合できず保留)");
+    expect(got?.message).toContain("残り5件");
+  });
+
 });
 
 describe("トークンの検証", () => {
@@ -877,6 +1035,23 @@ describe("種類ごとのフラグ", () => {
     expect(isListItemLike({ ...listItem(), skipped_attachments: null })).toBe(true);
     expect(isListItemLike({ ...listItem(), skipped_attachments: "現場動画.mp4" })).toBe(false);
     expect(isListItemLike({ ...listItem(), skipped_attachments: [1] })).toBe(false);
+
+    // 保留と、結合できなかった添付
+    expect(isListItemLike({ ...listItem(), pending: true })).toBe(true);
+    expect(isListItemLike({ ...listItem(), pending: "yes" })).toBe(false);
+    const miss = { index: 2, name: "見積.pdf", reason: "0バイト" };
+    expect(isListItemLike({ ...listItem(), missing_attachments: [miss] })).toBe(true);
+    expect(isListItemLike({ ...listItem(), missing_attachments: [] })).toBe(true);
+    expect(isListItemLike({ ...listItem(), missing_attachments: null })).toBe(true);
+    expect(isListItemLike({ ...listItem(), missing_attachments: [{ name: "x" }] })).toBe(false);
+    expect(
+      isListItemLike({ ...listItem(), missing_attachments: [{ ...miss, index: "2" }] }),
+    ).toBe(false);
+    expect(isListItemLike({ ...listItem(), replaced_attachments: ["見積.pdf"] })).toBe(true);
+    expect(isListItemLike({ ...listItem(), replaced_attachments: [1] })).toBe(false);
+    // サーバーの応答は JSON を往復しても形が変わらない
+    const row = { ...listItem(), pending: true, missing_attachments: [miss] };
+    expect(isListItemLike(JSON.parse(JSON.stringify(row)))).toBe(true);
   });
 
   it("完了の文言に種類の名前を入れられる", () => {

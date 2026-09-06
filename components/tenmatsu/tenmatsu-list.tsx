@@ -1,7 +1,13 @@
 "use client";
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { type FlagKey, type ListItem, formatFileSize, hasFlags } from "@/lib/tenmatsu/client";
+import {
+  type FlagKey,
+  type ListItem,
+  formatFileSize,
+  hasFlags,
+  isPending,
+} from "@/lib/tenmatsu/client";
 import {
   type ListFilter,
   type ListSort,
@@ -9,8 +15,11 @@ import {
   nextListSort,
   sortListItems,
   visibleListItems,
+  type StatusBadgeKey,
+  statusBadges,
 } from "@/lib/tenmatsu/list-view";
 import type { DocKind } from "@/lib/tenmatsu/kinds";
+import { pendingBadgeTitle } from "@/lib/tenmatsu/pending";
 
 
 /**
@@ -21,6 +30,20 @@ const FLAG_BUTTON_BASE =
   "rounded-md border px-2 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50";
 const FLAG_BUTTON_TODO = "border-slate-300 bg-white text-slate-500 hover:bg-slate-50";
 const FLAG_BUTTON_DONE = "border-emerald-300 bg-emerald-100 text-emerald-800 hover:bg-emerald-200";
+/** 保留中の行に出す「添付を足す」。印とは別の色にして、やることが残っていると分かるようにする */
+const RESOLVE_BUTTON_CLASS =
+  "border-orange-300 bg-orange-50 text-orange-900 hover:bg-orange-100";
+
+/** 状態の印の色。何を出すかは list-view.ts の statusBadges が決める */
+const BADGE_CLASS: Record<StatusBadgeKey, string> = {
+  pending: "bg-orange-100 text-orange-900",
+  fetched: "bg-emerald-100 text-emerald-800",
+  missingFile: "bg-slate-100 text-slate-500",
+  // 取得済み (emerald) と混ざらない色にする
+  completed: "bg-blue-100 text-blue-900",
+  skipped: "bg-amber-100 text-amber-900",
+  missingAttachments: "bg-amber-100 text-amber-900",
+};
 
 const CHECKBOX_CLASS =
   "h-4 w-4 rounded border-slate-300 disabled:cursor-not-allowed disabled:opacity-50";
@@ -95,6 +118,8 @@ export function TenmatsuList({
   onToggleFlag,
   canPreview,
   onPreview,
+  resolveDisabledReason,
+  onResolvePending,
 }: {
   /** 書類の種類 (列・完了の印・絞り込み・文言をここから引く) */
   kind: DocKind;
@@ -113,6 +138,9 @@ export function TenmatsuList({
   onToggleFlag: (no: string, flag: FlagKey, next: boolean) => void;
   canPreview: boolean;
   onPreview: (no: string) => void;
+  /** 「添付を足す」を押せない理由。null なら押せる */
+  resolveDisabledReason: string | null;
+  onResolvePending: (no: string) => void;
 }) {
   const view = useMemo(
     () => ({
@@ -199,6 +227,12 @@ export function TenmatsuList({
             // 絞り込みで見えていなくても件数だけは必ず伝える
             <span className="ml-1 text-amber-700">
               ファイルが消えている記録が {counts.missingFile}件あります
+            </span>
+          )}
+          {counts.pending > 0 && (
+            // 添付を足すという作業が残っている行。同上
+            <span className="ml-1 text-orange-800">
+              添付を結合できず保留中の{kind.label}が {counts.pending}件あります
             </span>
           )}
         </p>
@@ -324,36 +358,53 @@ export function TenmatsuList({
                       <td className="px-3 py-2 text-slate-600">{item.pages ?? "－"}</td>
                       <td className="px-3 py-2 text-slate-600">{formatFileSize(item.size)}</td>
                       <td className="px-3 py-2">
-                        <span
-                          className={`rounded px-1.5 py-0.5 text-xs ${
-                            item.exists
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-slate-100 text-slate-500"
-                          }`}
-                        >
-                          {item.exists ? "取得済み" : "ファイルなし"}
-                        </span>
-                        {item.completed === true && (
-                          // 取得済み (emerald) と混ざらない色にする
-                          <span className="ml-1 rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-900">
-                            完了
-                          </span>
-                        )}
-                        {item.skipped_attachments && item.skipped_attachments.length > 0 && (
-                          // 動画はPDFにできないので結合していない。
-                          // 黙って落とすと「添付ごと1つのPDF」の約束が崩れるため必ず出す
+                        {/* 何を出すかは list-view.ts の statusBadges が決める（単体テストのため） */}
+                        {statusBadges(item).map((badge, i) => (
                           <span
-                            className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900"
-                            title={`PDFに入っていません: ${item.skipped_attachments.join(", ")}`}
+                            key={badge.key}
+                            title={badge.title}
+                            className={`${i === 0 ? "" : "ml-1 "}rounded px-1.5 py-0.5 text-xs ${
+                              BADGE_CLASS[badge.key]
+                            }`}
                           >
-                            動画は未結合
+                            {badge.text}
                           </span>
-                        )}
+                        ))}
                       </td>
                       {/* 右端の固定枠: 完了フラグ2つ + プレビュー */}
                       <td className={FRAME_TD_CLASS}>
                         <div className="flex items-center gap-2">
-                          {kind.flagColumns.map((col) => {
+                          {isPending(item) ? (
+                            // 保留中は印を付けられない (サーバーが 409)。
+                            // 印の場所に「次にやること」を出す。
+                            // 幅は印のスロット (w-24 = 6rem) と gap-2 (0.5rem) の合計に
+                            // 合わせて、見出しや他の行とずれないようにする
+                            <span
+                              className="flex items-center"
+                              style={{
+                                width: `calc(${kind.flagColumns.length} * 6rem + ${
+                                  kind.flagColumns.length - 1
+                                } * 0.5rem)`,
+                              }}
+                            >
+                              <button
+                                type="button"
+                                aria-label={`${item.denpyo_no} の欠けた添付を足す`}
+                                disabled={resolveDisabledReason !== null}
+                                title={
+                                  resolveDisabledReason ??
+                                  pendingBadgeTitle(item.missing_attachments ?? [])
+                                }
+                                onClick={() => onResolvePending(item.denpyo_no)}
+                                className={`${FLAG_BUTTON_BASE} ${RESOLVE_BUTTON_CLASS} ${
+                                  resolveDisabledReason === null ? "cursor-pointer" : ""
+                                }`}
+                              >
+                                添付を足す
+                              </button>
+                            </span>
+                          ) : (
+                            kind.flagColumns.map((col) => {
                             if (!known) {
                               // フラグに未対応のサーバー・この機能より前のキャッシュ。
                               // 「未入力」と見せると嘘になるので「－」にする
@@ -394,15 +445,18 @@ export function TenmatsuList({
                                 </button>
                               </span>
                             );
-                          })}
+                            })
+                          )}
                           <button
                             type="button"
                             onClick={() => onPreview(item.denpyo_no)}
                             disabled={!item.exists || !canPreview}
                             title={
-                              item.exists
-                                ? undefined
-                                : "PCの保存先からファイルが消えています。もう一度取得してください"
+                              !item.exists
+                                ? "PCの保存先からファイルが消えています。もう一度取得してください"
+                                : isPending(item)
+                                  ? "保留中のPDF (本体と結合できた添付) を表示します"
+                                  : undefined
                             }
                             className={`${FRAME_BUTTON_SLOT_CLASS} cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50`}
                           >

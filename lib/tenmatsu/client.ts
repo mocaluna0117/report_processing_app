@@ -16,6 +16,16 @@ export interface SavedItem {
   file: string;
 }
 
+/**
+ * 結合できなかった添付1つ。
+ * index は元の添付の位置 (本体が 0)。確定するときに files[].index で送り返す。
+ */
+export interface MissingAttachment {
+  index: number;
+  name: string;
+  reason: string;
+}
+
 /** 取得中にPCのコンソールへ出た1行 */
 export interface RunLogLine {
   /** 1から増える通し番号。次に取りに行く位置 (since) に使う */
@@ -57,6 +67,11 @@ export interface StatusPayload {
    * (/run の応答と since 無しの /status には入らない)。
    */
   log?: RunLogLine[];
+  /**
+   * この実行で添付を結合できず保留にした伝票。無い＝この機能に未対応の古いサーバー。
+   * 完了の1行に件数を出す。
+   */
+  pending?: { denpyo_no: string; missing: string[] }[];
 }
 
 /**
@@ -131,6 +146,16 @@ export interface ListItem {
    * アフターメンテナンスのお客様の情報とは**この上8桁**で突き合わせる。
    */
   pj?: string | null;
+  /**
+   * 添付を結合できず保留中か。
+   * PDFはPCの _保留 フォルダにあり、正式なフォルダにはまだ入っていない。
+   * 印は変えられない (サーバーが 409)。無い＝古いサーバー・古いキャッシュ。
+   */
+  pending?: boolean;
+  /** 結合できなかった添付。保留中の行と、欠けたまま確定した行の両方に入る */
+  missing_attachments?: MissingAttachment[] | null;
+  /** アップロードして補った添付の名前 */
+  replaced_attachments?: string[] | null;
   /** 監督。「どこで」の「監督：〇〇/営業：〇〇」から読んだ値 */
   supervisor?: string | null;
   /** 営業。同上 */
@@ -200,6 +225,18 @@ const TOKEN_HEADER = "X-Tenmatsu-Token";
 const TIMEOUT_MS = 15_000;
 /** PDFの読み出しだけは大きいので長めに取る */
 const FILE_TIMEOUT_MS = 60_000;
+/**
+ * 保留の確定はPC側で結合し直すので長めに取る。
+ * Office の変換は1本 10〜30秒かかることがあり、添付が数本あると60秒では足りない。
+ */
+const PENDING_TIMEOUT_MS = 180_000;
+/**
+ * 1回に送れる添付の合計 (実体のバイト数)。
+ * server.py の PENDING_BODY_MAX は base64 後の 80MB なので、その手前で止める。
+ * ★サーバー側の定数と対で決めてある (片方だけ増やさないこと)。
+ */
+export const MAX_PENDING_UPLOAD_BYTES = 50 * 1024 * 1024;
+export const EMPTY_PENDING_FILES_MESSAGE = "結合する添付が選ばれていません";
 
 export type FailureKind =
   | "network" // fetch 自体が失敗した (原因は特定できない)
@@ -208,6 +245,7 @@ export type FailureKind =
   | "badRequest" // 400
   | "notFound" // 404
   | "conflict" // 409
+  | "tooLarge" // 413
   | "forbidden" // 403 (ブラウザからは通常見えない。下の注記を参照)
   | "server"
   | "unknown";
@@ -285,6 +323,12 @@ export function describeFailure(
       return { kind: "notFound", message: detail ?? "見つかりませんでした" };
     case 409:
       return { kind: "conflict", message: detail ?? "すでに実行中です" };
+    case 413:
+      return {
+        kind: "tooLarge",
+        message:
+          detail ?? "送るファイルが大きすぎます。ファイルを小さくするか、分けて確定してください",
+      };
     default:
       if (status >= 500) {
         return {
@@ -337,9 +381,12 @@ export function describeCompletion(
     return { tone: "error", message: `エラーで停止しました (${reason})${log}` };
   }
   if (status.state !== "done") return null;
+  // 保留があるのに「1件も無かった」と言うのは嘘なので、0件でも保存の形で出す
+  const held = status.pending?.length ?? 0;
   const base =
-    status.processed > 0
-      ? `${status.processed}件を保存しました`
+    status.processed > 0 || held > 0
+      ? `${status.processed}件を保存しました` +
+        (held > 0 ? ` (${held}件は添付を結合できず保留)` : "")
       : `新しく取得できる${docLabel}はありませんでした`;
   // remaining は「今回の残り」ではなく「1回の上限で見送った分」。黙って切り捨てない
   if (status.remaining > 0) {
@@ -348,7 +395,8 @@ export function describeCompletion(
       message: `${base}。残り${status.remaining}件は次回実行してください (1回あたりの上限があります)`,
     };
   }
-  return { tone: "ok", message: base };
+  // 保留は「あとでやることが残っている」ので、済んだ緑ではなく目に留まる色で出す
+  return { tone: held > 0 ? "notice" : "ok", message: base };
 }
 
 /** 取得日時の表示。サーバーが返すのはタイムゾーンなしのローカル時刻なので、文字列のまま整える */
@@ -366,6 +414,13 @@ export function formatFileSize(size: number | null): string {
 }
 
 const optionalBool = (v: unknown): boolean => v === undefined || typeof v === "boolean";
+const isMissingAttachmentLike = (v: unknown): v is MissingAttachment => {
+  if (typeof v !== "object" || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return (
+    Number.isInteger(o.index) && typeof o.name === "string" && typeof o.reason === "string"
+  );
+};
 const optionalText = (v: unknown): boolean =>
   v === undefined || v === null || typeof v === "string";
 
@@ -410,7 +465,17 @@ export function isListItemLike(v: unknown): v is ListItem {
     (o.skipped_attachments === undefined ||
       o.skipped_attachments === null ||
       (Array.isArray(o.skipped_attachments) &&
-        o.skipped_attachments.every((x) => typeof x === "string")))
+        o.skipped_attachments.every((x) => typeof x === "string"))) &&
+    // 添付を結合できず保留中か / 結合できなかった添付 / 補った添付
+    optionalBool(o.pending) &&
+    (o.missing_attachments === undefined ||
+      o.missing_attachments === null ||
+      (Array.isArray(o.missing_attachments) &&
+        o.missing_attachments.every(isMissingAttachmentLike))) &&
+    (o.replaced_attachments === undefined ||
+      o.replaced_attachments === null ||
+      (Array.isArray(o.replaced_attachments) &&
+        o.replaced_attachments.every((x) => typeof x === "string")))
   );
 }
 
@@ -425,6 +490,27 @@ export function hasFlags(
   flagKeys: readonly FlagKey[] = TENMATSU_FLAG_KEYS,
 ): boolean {
   return flagKeys.every((key) => typeof item[key] === "boolean");
+}
+
+/**
+ * 添付を結合できず保留中の行か。
+ * undefined (古いサーバー・古いキャッシュ) は保留ではないとみなす。
+ */
+export function isPending(item: ListItem): boolean {
+  return item.pending === true;
+}
+
+/**
+ * バイト列を base64 にする。
+ * ★0x8000 ずつに区切る。`String.fromCharCode(...bytes)` のように一度に展開すると、
+ *   数十万バイトで「Maximum call stack size exceeded」になる (lib/auth.ts はその形)。
+ */
+export function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
 }
 
 /**
@@ -494,6 +580,19 @@ export const RUN_COUNT_FORMAT_MESSAGE = "取得件数は整数で指定してく
 /** 取得後の手作業の進捗。変えるものだけ入れる (両方省略は不可) */
 export type FlagUpdate = Partial<Record<FlagKey, boolean>>;
 
+/** 保留の確定で送る添付1つ。index は /list の missing_attachments[].index */
+export interface PendingFile {
+  index: number;
+  name: string;
+  bytes: Uint8Array;
+}
+
+export interface PendingUpload {
+  files: PendingFile[];
+  /** 欠けたままでも確定するか (一覧に「添付が欠けています」と残る) */
+  acceptMissing: boolean;
+}
+
 export const EMPTY_FLAGS_MESSAGE = "変更するフラグが指定されていません";
 
 /** POST /run の応答。max_per_run / headless は新しいサーバーだけが返す */
@@ -525,6 +624,13 @@ export interface TenmatsuClient {
    * 失敗ではない ＝ その場合は一覧を取り直すこと。
    */
   setFlags(denpyoNo: string, flags: FlagUpdate): Promise<ListItem | null>;
+  /**
+   * 保留中の伝票に添付を足して確定する。
+   * 戻り値は setFlags と同じ規則で、null なら一覧を取り直すこと。
+   */
+  completePending(denpyoNo: string, upload: PendingUpload): Promise<ListItem | null>;
+  /** 保留をやめる。次回の取得で取り直す (行は一覧から消える) */
+  retryPending(denpyoNo: string): Promise<void>;
   filePdf(no: string): Promise<Blob>;
 }
 
@@ -686,6 +792,52 @@ export function createTenmatsuClient(options: {
       // サーバーは item を null で返せる (更新後の行を引き当てられなかったとき)。
       // 保存は済んでいるので失敗にはしない。呼ぶ側は null なら一覧を取り直す
       return isListItemLike(parsed.item) ? parsed.item : null;
+    },
+    completePending: async (no, upload) => {
+      const total = upload.files.reduce((sum, f) => sum + f.bytes.length, 0);
+      // 送る前に断る。送ってから 413 を受けるより、理由が具体的に出せる
+      if (total > MAX_PENDING_UPLOAD_BYTES) {
+        throw new TenmatsuError(
+          "tooLarge",
+          null,
+          `送るファイルの合計が大きすぎます (${formatFileSize(total)})。` +
+            `1回に送れるのは ${formatFileSize(MAX_PENDING_UPLOAD_BYTES)} までです`,
+        );
+      }
+      if (upload.files.length === 0 && !upload.acceptMissing) {
+        throw new TenmatsuError("badRequest", null, EMPTY_PENDING_FILES_MESSAGE);
+      }
+      const res = await call("/pending", {
+        auth: true,
+        method: "POST",
+        timeoutMs: PENDING_TIMEOUT_MS,
+        json: {
+          denpyo_no: no,
+          action: "complete",
+          accept_missing: upload.acceptMissing,
+          files: upload.files.map((f) => ({
+            index: f.index,
+            name: f.name,
+            data: bytesToBase64(f.bytes),
+          })),
+        },
+      });
+      if (!res.ok) throw await fail(res);
+      let parsed: { item?: unknown } = {};
+      try {
+        parsed = (await res.json()) as { item?: unknown };
+      } catch {
+        // 本文が読めなくても確定は済んでいる。呼ぶ側は null なら一覧を取り直す
+      }
+      return isListItemLike(parsed.item) ? parsed.item : null;
+    },
+    retryPending: async (no) => {
+      const res = await call("/pending", {
+        auth: true,
+        method: "POST",
+        json: { denpyo_no: no, action: "retry" },
+      });
+      if (!res.ok) throw await fail(res);
     },
     filePdf: async (no) => {
       // トークンはヘッダーだけ。クエリには載せない (URLは履歴やログに残るため)

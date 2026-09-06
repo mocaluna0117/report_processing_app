@@ -9,8 +9,10 @@ import {
   type ListItem,
   TENMATSU_FLAG_KEYS,
   hasFlags,
+  isPending,
   resolveRunLimits,
 } from "@/lib/tenmatsu/client";
+import { missingBadgeTitle, pendingBadgeTitle } from "@/lib/tenmatsu/pending";
 
 /**
  * 一覧の絞り込み。completed は「全部 true」なので、フラグの絞り込みとは排他になる。
@@ -71,6 +73,9 @@ function filtered(items: ListItem[], options: ListViewOptions): ListItem[] {
  */
 function hiddenAsCompleted(item: ListItem, options: ListViewOptions): boolean {
   if (options.showCompleted) return false;
+  // 保留中は「あとで添付を足す」作業が残っている。サーバーの不具合で completed が
+  // 付いていても隠さない（隠すと、やることがあるのに気づけない）
+  if (isPending(item)) return false;
   if (!hasFlags(item, options.flagKeys ?? TENMATSU_FLAG_KEYS) || item.completed !== true) {
     return false;
   }
@@ -127,6 +132,11 @@ export interface ListCounts {
    * (完了の非表示では隠していないので hiddenCompleted には入らない)。
    */
   missingFile: number;
+  /**
+   * 添付を結合できず保留中の件数。**missingFile と同じく絞り込みの前の全件から数える。**
+   * 絞り込みで見えなくなっていても、やることが残っていることは必ず伝える。
+   */
+  pending: number;
   total: number;
 }
 
@@ -144,8 +154,62 @@ export function listCounts(items: ListItem[], options: ListViewOptions): ListCou
     hiddenCompleted: pool.length - shown,
     hiddenByFilter: items.length - pool.length,
     missingFile: items.filter((i) => !i.exists).length,
+    pending: items.filter(isPending).length,
     total: items.length,
   };
+}
+
+/**
+ * 行の「状態」欄に出す印。
+ * 何を出すかはコンポーネントの外で決める（node 環境の vitest で確かめられるように）。
+ */
+export type StatusBadgeKey =
+  | "pending"
+  | "fetched"
+  | "missingFile"
+  | "completed"
+  | "skipped"
+  | "missingAttachments";
+
+export interface StatusBadge {
+  key: StatusBadgeKey;
+  text: string;
+  title?: string;
+}
+
+export function statusBadges(item: ListItem): StatusBadge[] {
+  const badges: StatusBadge[] = [];
+  const missing = item.missing_attachments ?? [];
+  if (isPending(item)) {
+    // 保留中は正式なフォルダにまだ入っていないので「取得済み」とは言わない
+    badges.push({ key: "pending", text: "保留", title: pendingBadgeTitle(missing) });
+    if (!item.exists) {
+      badges.push({ key: "missingFile", text: "ファイルなし" });
+    }
+  } else {
+    badges.push(
+      item.exists
+        ? { key: "fetched", text: "取得済み" }
+        : { key: "missingFile", text: "ファイルなし" },
+    );
+  }
+  if (item.completed === true) badges.push({ key: "completed", text: "完了" });
+  if (item.skipped_attachments && item.skipped_attachments.length > 0) {
+    badges.push({
+      key: "skipped",
+      text: "動画は未結合",
+      title: `PDFに入っていません: ${item.skipped_attachments.join(", ")}`,
+    });
+  }
+  // 欠けたまま確定した行。保留中はもう「保留」で伝えているので出さない
+  if (!isPending(item) && missing.length > 0) {
+    badges.push({
+      key: "missingAttachments",
+      text: "添付が欠けています",
+      title: missingBadgeTitle(missing),
+    });
+  }
+  return badges;
 }
 
 export interface PerRun {

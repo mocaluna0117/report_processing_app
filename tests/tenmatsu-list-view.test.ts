@@ -4,6 +4,7 @@ import {
   LIST_FILTERS,
   type ListFilter,
   listCounts,
+  statusBadges,
   nextListSort,
   resolvePerRun,
   sortListItems,
@@ -150,6 +151,7 @@ describe("件数の内訳", () => {
       hiddenCompleted: 2,
       hiddenByFilter: 0,
       missingFile: 1,
+      pending: 0,
       total: 6,
     });
     expect(c.shown + c.hiddenCompleted + c.hiddenByFilter).toBe(c.total);
@@ -188,6 +190,7 @@ describe("件数の内訳", () => {
       hiddenCompleted: 1,
       hiddenByFilter: 0,
       missingFile: 1,
+      pending: 0,
       total: 2,
     });
   });
@@ -199,6 +202,7 @@ describe("件数の内訳", () => {
       hiddenCompleted: 0,
       hiddenByFilter: 0,
       missingFile: 0,
+      pending: 0,
       total: 2,
     });
   });
@@ -209,8 +213,90 @@ describe("件数の内訳", () => {
       hiddenCompleted: 0,
       hiddenByFilter: 0,
       missingFile: 0,
+      pending: 0,
       total: 0,
     });
+  });
+});
+
+describe("保留（添付を結合できなかった行）", () => {
+  const held = (no: string, over: Partial<ListItem> = {}) =>
+    item(no, {
+      pending: true,
+      missing_attachments: [{ index: 2, name: "見積.pdf", reason: "0バイト" }],
+      ...over,
+    });
+
+  it("★既定でも隠さない（やることが残っている行なので）", () => {
+    const items = [held("TE00009001"), both("TE00009002")];
+    const shown = visibleListItems(items, view()).map((i) => i.denpyo_no);
+    expect(shown).toEqual(["TE00009001"]);
+  });
+
+  it("★完了の印が付いていても隠さない（サーバーの不具合への備え）", () => {
+    const items = [held("TE00009001", { budget_entered: true, cloud_stored: true, completed: true })];
+    expect(visibleListItems(items, view())).toHaveLength(1);
+  });
+
+  it("★件数は絞り込みの前の全件から数える", () => {
+    const items = [held("TE00009001"), both("TE00009002"), item("TE00009003")];
+    expect(listCounts(items, view()).pending).toBe(1);
+    // 「クラウド未格納」で絞ると保留行は残り、完了行は外れる
+    expect(listCounts(items, view("cloud")).pending).toBe(1);
+  });
+
+  it("件数の内訳は保留を足しても全件に分割されたまま", () => {
+    const items = [held("TE00009001"), both("TE00009002"), item("TE00009003")];
+    const c = listCounts(items, view());
+    expect(c.shown + c.hiddenCompleted + c.hiddenByFilter).toBe(c.total);
+  });
+
+  it("★保留中でPDFも無い行は、保留にもファイルなしにも数える", () => {
+    const items = [held("TE00009001", { exists: false, pages: null, size: null })];
+    const c = listCounts(items, view());
+    expect(c.pending).toBe(1);
+    expect(c.missingFile).toBe(1);
+  });
+});
+
+describe("状態の印", () => {
+  const keys = (i: ListItem) => statusBadges(i).map((b) => b.key);
+
+  it("★保留中は「取得済み」と言わない", () => {
+    const held = item("TE00009001", {
+      pending: true,
+      missing_attachments: [{ index: 2, name: "見積.pdf", reason: "0バイト" }],
+    });
+    expect(statusBadges(held).map((b) => b.text)).toEqual(["保留"]);
+    expect(statusBadges(held)[0].title).toContain("見積.pdf");
+  });
+
+  it("保留中でPDFも無ければ両方出す", () => {
+    expect(keys(item("TE00009001", { pending: true, exists: false }))).toEqual([
+      "pending",
+      "missingFile",
+    ]);
+  });
+
+  it("★欠けたまま確定した行は「添付が欠けています」", () => {
+    const done = item("TE00009001", {
+      missing_attachments: [{ index: 2, name: "見積.pdf", reason: "0バイト" }],
+    });
+    expect(statusBadges(done).map((b) => b.text)).toEqual(["取得済み", "添付が欠けています"]);
+    expect(statusBadges(done)[1].title).toContain("見積.pdf (0バイト)");
+  });
+
+  it("今までの印は文言も説明も変わらない", () => {
+    expect(statusBadges(item("TE00009001")).map((b) => b.text)).toEqual(["取得済み"]);
+    expect(statusBadges(item("TE00009001", { exists: false })).map((b) => b.text)).toEqual([
+      "ファイルなし",
+    ]);
+    expect(
+      statusBadges(item("TE00009001", { completed: true })).map((b) => b.text),
+    ).toEqual(["取得済み", "完了"]);
+    const movie = item("TE00009001", { skipped_attachments: ["現場動画.mp4"] });
+    expect(statusBadges(movie).map((b) => b.text)).toEqual(["取得済み", "動画は未結合"]);
+    expect(statusBadges(movie)[1].title).toBe("PDFに入っていません: 現場動画.mp4");
   });
 });
 

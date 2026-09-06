@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ModalShell } from "@/components/modal-shell";
-import { type ListItem, formatFetchedAt } from "@/lib/tenmatsu/client";
+import { type ListItem, formatFetchedAt, isPending } from "@/lib/tenmatsu/client";
 
 /**
  * 取得済み顛末書のプレビュー。
@@ -35,7 +35,10 @@ export function TenmatsuPreviewDialog({
     // 一覧に記録はあるが実ファイルが消えている行 (呼ぶ側でも押せなくしてあるが念のため)
     if (!item.exists) {
       setError(
-        "このPDFはPCの保存先フォルダから消えています。もう一度「顛末書を取得」で取得し直してください",
+        isPending(item)
+          ? "保留中のPDFがPCの _保留 フォルダから消えています。" +
+              "一覧の「添付を足す」から「取り消して次回取り直す」を押してください"
+          : "このPDFはPCの保存先フォルダから消えています。もう一度「顛末書を取得」で取得し直してください",
       );
       return;
     }
@@ -77,6 +80,14 @@ export function TenmatsuPreviewDialog({
             <span className="ml-2">取得 {formatFetchedAt(item.at)}</span>
             {saveDir && <span className="ml-2">保存先: {saveDir}</span>}
           </p>
+          {isPending(item) && (
+            // ファイル名は「確定したときに付く予定の名前」なので、
+            // いま見ているものが不完全であることをはっきり言う
+            <p className="mt-1 text-xs text-orange-800">
+              保留中のPDFです。添付 {item.missing_attachments?.length ?? 0}件が入っていません
+              (正式なフォルダにはまだ保存されていません)
+            </p>
+          )}
         </div>
         <button
           ref={closeRef}
