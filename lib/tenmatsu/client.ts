@@ -72,6 +72,11 @@ export interface StatusPayload {
    * 完了の1行に件数を出す。
    */
   pending?: { denpyo_no: string; missing: string[] }[];
+  /**
+   * 本体PDFを取れず見送った伝票。記録に残らないので**次回の取得でやり直される**
+   * （一覧には出ない）。無い＝この機能に未対応の古いサーバー。
+   */
+  skipped?: string[];
 }
 
 /**
@@ -383,10 +388,12 @@ export function describeCompletion(
   if (status.state !== "done") return null;
   // 保留があるのに「1件も無かった」と言うのは嘘なので、0件でも保存の形で出す
   const held = status.pending?.length ?? 0;
+  const missed = status.skipped?.length ?? 0;
   const base =
-    status.processed > 0 || held > 0
+    status.processed > 0 || held > 0 || missed > 0
       ? `${status.processed}件を保存しました` +
-        (held > 0 ? ` (${held}件は添付を結合できず保留)` : "")
+        (held > 0 ? ` (${held}件は添付を結合できず保留)` : "") +
+        (missed > 0 ? ` (${missed}件は本体PDFを取れず見送り。次回やり直します)` : "")
       : `新しく取得できる${docLabel}はありませんでした`;
   // remaining は「今回の残り」ではなく「1回の上限で見送った分」。黙って切り捨てない
   if (status.remaining > 0) {
@@ -395,8 +402,8 @@ export function describeCompletion(
       message: `${base}。残り${status.remaining}件は次回実行してください (1回あたりの上限があります)`,
     };
   }
-  // 保留は「あとでやることが残っている」ので、済んだ緑ではなく目に留まる色で出す
-  return { tone: held > 0 ? "notice" : "ok", message: base };
+  // 保留・見送りは「あとでやることが残っている」ので、済んだ緑ではなく目に留まる色で出す
+  return { tone: held > 0 || missed > 0 ? "notice" : "ok", message: base };
 }
 
 /** 取得日時の表示。サーバーが返すのはタイムゾーンなしのローカル時刻なので、文字列のまま整える */

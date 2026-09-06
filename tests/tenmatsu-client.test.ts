@@ -599,6 +599,36 @@ describe("describeCompletion", () => {
     expect(got?.message).not.toContain("ありませんでした");
   });
 
+  it("★本体PDFを取れず見送った件も伝える（次回やり直すことまで）", () => {
+    const got = describeCompletion(
+      status({ state: "done", processed: 9, skipped: ["TE00001742"] }),
+    );
+    expect(got).toEqual({
+      tone: "notice",
+      message: "9件を保存しました (1件は本体PDFを取れず見送り。次回やり直します)",
+    });
+  });
+
+  it("保留と見送りが同時でも両方出す", () => {
+    const got = describeCompletion(
+      status({
+        state: "done",
+        processed: 5,
+        pending: [{ denpyo_no: "TE1", missing: ["見積.pdf"] }],
+        skipped: ["TE2", "TE3"],
+      }),
+    );
+    expect(got?.message).toContain("(1件は添付を結合できず保留)");
+    expect(got?.message).toContain("(2件は本体PDFを取れず見送り");
+  });
+
+  it("見送りが空なら今までと1文字も変えない", () => {
+    expect(describeCompletion(status({ state: "done", processed: 3, skipped: [] }))).toEqual({
+      tone: "ok",
+      message: "3件を保存しました",
+    });
+  });
+
   it("見送った分と保留の両方を伝える", () => {
     const got = describeCompletion(
       status({ state: "done", processed: 3, remaining: 5, pending: [{ denpyo_no: "TE1", missing: [] }] }),
