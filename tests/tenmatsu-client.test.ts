@@ -368,6 +368,34 @@ describe("実行の開始", () => {
   });
 });
 
+describe("取得の記録 (コンソール出力)", () => {
+  it("★since を渡したときだけクエリに付ける", async () => {
+    const { impl, calls } = fakeFetch(() => json(status()));
+    const c = createTenmatsuClient({ token: "t", fetchImpl: impl });
+    await c.status();
+    await c.status(0);
+    await c.status(12);
+    expect(calls.map((x) => x.url.search)).toEqual(["", "?since=0", "?since=12"]);
+  });
+
+  it("★log を返さない古いサーバーの応答でも読める", async () => {
+    const { impl } = fakeFetch(() => json(status({ state: "running" })));
+    const got = await createTenmatsuClient({ token: "t", fetchImpl: impl }).status(0);
+    expect(got.state).toBe("running");
+    expect(got.log).toBeUndefined();
+    expect(got.log_seq).toBeUndefined();
+  });
+
+  it("log と log_seq をそのまま受け取る", async () => {
+    const { impl } = fakeFetch(() =>
+      json(status({ log_seq: 7, log: [{ seq: 6, text: "  OK 保存: x" }, { seq: 7, text: "" }] })),
+    );
+    const got = await createTenmatsuClient({ token: "t", fetchImpl: impl }).status(5);
+    expect(got.log_seq).toBe(7);
+    expect(got.log?.map((l) => l.text)).toEqual(["  OK 保存: x", ""]);
+  });
+});
+
 describe("isFinished", () => {
   it("done と error で止める", () => {
     expect(isFinished("idle")).toBe(false);
@@ -773,6 +801,14 @@ describe("種類 (kind) の付け方", () => {
       "/status?senketsu",
       "/list?senketsu",
     ]);
+  });
+
+  it("★取得の記録の since と kind を両方付ける", async () => {
+    const { impl, calls } = fakeFetch(() => json(status()));
+    await senketsu(impl).status(3);
+    expect(calls[0].url.pathname).toBe("/status");
+    expect(calls[0].url.searchParams.get("since")).toBe("3");
+    expect(calls[0].url.searchParams.get("kind")).toBe("senketsu");
   });
 
   it("★すでにクエリがある /file にも足す (no はそのまま)", async () => {

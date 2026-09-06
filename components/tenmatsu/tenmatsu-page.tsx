@@ -12,6 +12,7 @@ import {
   type FlagUpdate,
   type HealthPayload,
   type ListItem,
+  type RunLogLine,
   type StatusPayload,
   TENMATSU_BASE_URL,
   TOKEN_FORMAT_MESSAGE,
@@ -32,7 +33,9 @@ import {
   supportsKind,
   unsupportedServerText,
 } from "@/lib/tenmatsu/kinds";
+import { appendRunLog, nextLogSince } from "@/lib/tenmatsu/run-log";
 import { type Connection, getSession, keepSession, shareToken } from "@/lib/tenmatsu/session";
+import { TenmatsuRunLog } from "@/components/tenmatsu/tenmatsu-run-log";
 import {
   clearCachedList,
   clearToken,
@@ -105,6 +108,17 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
    * 前回の「10件を保存しました」が出てしまう。
    */
   const [runObserved, setRunObserved] = useState(kept.runObserved);
+  /**
+   * 取得中にPCのコンソールへ出た行 (「取得の記録」の欄)。
+   * ★どこまで受け取ったかは ref で持つ。state にすると、ポーリングの useEffect
+   *   (依存が [polling, client]) が毎回張り直されてタイマーがずれる
+   */
+  const [logLines, setLogLines] = useState<RunLogLine[]>(kept.logLines);
+  const logSinceRef = useRef(kept.logSince);
+  const resetRunLog = () => {
+    setLogLines([]);
+    logSinceRef.current = 0;
+  };
   const [runError, setRunError] = useState<string | null>(null);
   const [runNotice, setRunNotice] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -273,6 +287,8 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
         setStatus(await client.status().catch(() => null));
       } else if (h.job_state === "running") {
         setRunObserved(true);
+        // since=0 から始めて、PC側に残っている分をまとめて受け取る
+        resetRunLog();
         setPolling(true);
       } else if (isFinished(h.job_state)) {
         // 終わっている実行の結果も出す。「残りN件」を取り逃がさないため
@@ -339,6 +355,7 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
       setRunError(`1回に取る件数は半角の数字で入力してください (${perRun.min}〜${perRun.max})`);
       return;
     }
+    resetRunLog();   // 前の実行の記録は残さない (PC側も同じときに消える)
     setStarting(true);
     try {
       const {
@@ -379,9 +396,13 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = async () => {
       try {
-        const s = await client.status();
+        const s = await client.status(logSinceRef.current);
         if (cancelled) return;
         failures = 0;
+        // 次の since は応答の log_seq を使う (最後の行の seq ではない)。
+        // 新しい実行で番号が0に戻っても、次の1回で全行を取り直せる
+        logSinceRef.current = nextLogSince(s, logSinceRef.current);
+        setLogLines((prev) => appendRunLog(prev, s));
         setStatus(s);
         setStatusError(null);
         if (isFinished(s.state)) {
@@ -470,6 +491,8 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
       status,
       polling,
       runObserved,
+      logLines,
+      logSince: logSinceRef.current,
       storedMaxPerRun,
       maxInput,
     });
@@ -853,6 +876,9 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
               <p className={WARN_CLASS}>前回このPCで実行した分: {completion.message}</p>
             ))}
           {runError && <p className={ERROR_CLASS}>{runError}</p>}
+
+          {/* PCの黒い画面と同じ行。0行 (古いサーバー・まだ実行していない) なら出さない */}
+          {logLines.length > 0 && <TenmatsuRunLog lines={logLines} />}
         </section>
 
         {/* ---------- 一覧 ---------- */}

@@ -27,6 +27,15 @@ describe("種類ごとの控え", () => {
     expect(s.items).toEqual([]);
   });
 
+  it("★取得の記録も種類ごとに分かれ、最初は空", () => {
+    expect(getSession("tenmatsu").logLines).toEqual([]);
+    expect(getSession("tenmatsu").logSince).toBe(0);
+    keepSession("tenmatsu", snapshot({ logLines: [{ seq: 1, text: "OK 保存: x" }], logSince: 1 }));
+    expect(getSession("tenmatsu").logLines).toHaveLength(1);
+    expect(getSession("senketsu").logLines).toEqual([]);
+    expect(getSession("senketsu").logSince).toBe(0);
+  });
+
   it("★控えた内容が別の種類へ漏れない", () => {
     keepSession("tenmatsu", snapshot({ connection: "ok", listFresh: true }));
     expect(getSession("tenmatsu").connection).toBe("ok");

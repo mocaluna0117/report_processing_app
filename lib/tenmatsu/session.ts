@@ -14,7 +14,7 @@
 //
 // ★ここに置くのは「戻ってきたときに続きから始めるために要るもの」だけにする。
 //   下書き (トークンの入力欄)・一時的な失敗の文言・開いているプレビューは置かない。
-import type { HealthPayload, ListItem, StatusPayload } from "@/lib/tenmatsu/client";
+import type { HealthPayload, ListItem, RunLogLine, StatusPayload } from "@/lib/tenmatsu/client";
 import type { DocKindId } from "@/lib/tenmatsu/kinds";
 import type { ListFilter } from "@/lib/tenmatsu/list-view";
 
@@ -44,6 +44,14 @@ export interface TenmatsuSession {
   /** 取得の進捗を追っている最中か。戻ってきたら追い直す */
   polling: boolean;
   runObserved: boolean;
+  /**
+   * 取得中にPCのコンソールへ出た行。タブを行き来しても消えないようにここへ置く。
+   * ★IndexedDB には保存しない (再読み込みで消えるのは意図どおり)。
+   *   行にはログインID・PCのパス・添付名が入るので、残し続けない
+   */
+  logLines: RunLogLine[];
+  /** どこまで受け取ったか。次の /status に since として渡す */
+  logSince: number;
   storedMaxPerRun: number | null;
   maxInput: string;
 }
@@ -64,6 +72,8 @@ const initialSession = (token: string | null): TenmatsuSession => ({
   status: null,
   polling: false,
   runObserved: false,
+  logLines: [],
+  logSince: 0,
   storedMaxPerRun: null,
   maxInput: "",
 });

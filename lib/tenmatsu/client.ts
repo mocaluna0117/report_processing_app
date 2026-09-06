@@ -16,7 +16,14 @@ export interface SavedItem {
   file: string;
 }
 
-/** GET /status の中身 (10個のキーは常に揃う) */
+/** 取得中にPCのコンソールへ出た1行 */
+export interface RunLogLine {
+  /** 1から増える通し番号。次に取りに行く位置 (since) に使う */
+  seq: number;
+  text: string;
+}
+
+/** GET /status の中身 (下の2つ以外の10個は常に揃う) */
 export interface StatusPayload {
   /**
    * 実行中 / 最後に実行した書類の種類。
@@ -39,6 +46,17 @@ export interface StatusPayload {
   /** 1回あたりの上限で今回は見送った件数。0 でなければ必ず画面に出す (黙って切り捨てない) */
   remaining: number;
   saved: SavedItem[];
+  /**
+   * これまでにPCのコンソールへ出た行数。**無い＝この機能に未対応の古いサーバー**
+   * (version では判定しない。既存の作法に合わせてキーの有無で見る)。
+   * 次に取りに行く since はこの値を使う (最後の行の seq ではない)。
+   */
+  log_seq?: number;
+  /**
+   * since より後のコンソール出力。**?since= を付けて呼んだときだけ入る**
+   * (/run の応答と since 無しの /status には入らない)。
+   */
+  log?: RunLogLine[];
 }
 
 /**
@@ -493,7 +511,8 @@ interface FlagsResponseBody {
 export interface TenmatsuClient {
   /** 疎通確認。トークンは送らない (プリフライトを増やさず、最初の1回を単純なGETに保つ) */
   health(): Promise<HealthPayload>;
-  status(): Promise<StatusPayload>;
+  /** since を渡すと、その番号より後のコンソール出力も一緒に取る */
+  status(since?: number): Promise<StatusPayload>;
   list(): Promise<ListItem[]>;
   /** 実行を始める。すでに実行中 (409) はエラーにせず started:false で返す */
   run(options?: RunOptions): Promise<RunResult>;
@@ -591,7 +610,10 @@ export function createTenmatsuClient(options: {
 
   return {
     health: () => getJson<HealthPayload>("/health", false),
-    status: () => getJson<StatusPayload>("/status"),
+      // since を渡すと、その番号より後のコンソール出力も一緒に返る。
+    // kind は call() が「?」の有無を見て & で足すので、ここでは付けない
+    status: (since?: number) =>
+      getJson<StatusPayload>(since === undefined ? "/status" : `/status?since=${since}`),
     list: async () => {
       const body = await getJson<{ items?: unknown }>("/list");
       return Array.isArray(body.items) ? body.items.filter(isListItemLike) : [];
