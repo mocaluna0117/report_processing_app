@@ -12,7 +12,7 @@ import {
   isPending,
   resolveRunLimits,
 } from "@/lib/tenmatsu/client";
-import { missingBadgeTitle, pendingBadgeTitle } from "@/lib/tenmatsu/pending";
+import { hasAwaiting, missingBadgeTitle, pendingBadgeTitle } from "@/lib/tenmatsu/pending";
 
 /**
  * 一覧の絞り込み。completed は「全部 true」なので、フラグの絞り込みとは排他になる。
@@ -137,6 +137,8 @@ export interface ListCounts {
    * 絞り込みで見えなくなっていても、やることが残っていることは必ず伝える。
    */
   pending: number;
+  /** そのうち、あとから書類を入れるのを待っている件数（pending に含まれる） */
+  awaiting: number;
   total: number;
 }
 
@@ -155,6 +157,9 @@ export function listCounts(items: ListItem[], options: ListViewOptions): ListCou
     hiddenByFilter: items.length - pool.length,
     missingFile: items.filter((i) => !i.exists).length,
     pending: items.filter(isPending).length,
+    awaiting: items.filter(
+      (i) => isPending(i) && hasAwaiting(i.missing_attachments ?? []),
+    ).length,
     total: items.length,
   };
 }
@@ -165,6 +170,7 @@ export function listCounts(items: ListItem[], options: ListViewOptions): ListCou
  */
 export type StatusBadgeKey =
   | "pending"
+  | "awaiting"
   | "fetched"
   | "missingFile"
   | "completed"
@@ -181,8 +187,14 @@ export function statusBadges(item: ListItem): StatusBadge[] {
   const badges: StatusBadge[] = [];
   const missing = item.missing_attachments ?? [];
   if (isPending(item)) {
-    // 保留中は正式なフォルダにまだ入っていないので「取得済み」とは言わない
-    badges.push({ key: "pending", text: "保留", title: pendingBadgeTitle(missing) });
+    // 保留中は正式なフォルダにまだ入っていないので「取得済み」とは言わない。
+    // ★あとから書類を入れる種類（捺印決裁書）は「結合できなかった」のではないので、
+    //   「アップロード待ち」と言い分ける
+    badges.push(
+      hasAwaiting(missing)
+        ? { key: "awaiting", text: "アップロード待ち", title: pendingBadgeTitle(missing) }
+        : { key: "pending", text: "保留", title: pendingBadgeTitle(missing) },
+    );
     if (!item.exists) {
       badges.push({ key: "missingFile", text: "ファイルなし" });
     }

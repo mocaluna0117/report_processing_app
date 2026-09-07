@@ -24,6 +24,12 @@ export interface MissingAttachment {
   index: number;
   name: string;
   reason: string;
+  /**
+   * 利用者があとからアップロードする書類の置き場か (捺印決裁書)。
+   * true の欠けは「結合できなかった」のではなく**最初から入れる前提**のもので、
+   * これが残ったままでは確定できない (サーバーが断る)。無い＝古いサーバー。
+   */
+  awaiting?: boolean;
 }
 
 /** 取得中にPCのコンソールへ出た1行 */
@@ -71,7 +77,7 @@ export interface StatusPayload {
    * この実行で添付を結合できず保留にした伝票。無い＝この機能に未対応の古いサーバー。
    * 完了の1行に件数を出す。
    */
-  pending?: { denpyo_no: string; missing: string[] }[];
+  pending?: { denpyo_no: string; missing: string[]; awaiting?: boolean }[];
   /**
    * 本体PDFを取れず見送った伝票。記録に残らないので**次回の取得でやり直される**
    * （一覧には出ない）。無い＝この機能に未対応の古いサーバー。
@@ -141,6 +147,10 @@ export interface ListItem {
   final_approved_at?: string | null;
   /** 表題。専決決裁書だけが返す (顛末書には無い項目) */
   title?: string | null;
+  /** 内容。捺印決裁書だけが返す */
+  content?: string | null;
+  /** 紐づく専決決裁書の伝票No.。捺印決裁書だけが返す */
+  senketsu_no?: string | null;
   /**
    * 動画・音声のため結合しなかった添付の名前。
    * 空・無しは「飛ばしたものは無い」。PDFに入っていない中身があることを画面に出す。
@@ -386,15 +396,25 @@ export function describeCompletion(
     return { tone: "error", message: `エラーで停止しました (${reason})${log}` };
   }
   if (status.state !== "done") return null;
-  // 保留があるのに「1件も無かった」と言うのは嘘なので、0件でも保存の形で出す
-  const held = status.pending?.length ?? 0;
+  // 保留があるのに「1件も無かった」と言うのは嘘なので、0件でも保存の形で出す。
+  // ★あとから書類を入れる種類（捺印決裁書）は「結合できなかった」のではないので分けて数える
+  const all = status.pending ?? [];
+  const awaiting = all.filter((p) => p.awaiting === true).length;
+  const held = all.length - awaiting;
   const missed = status.skipped?.length ?? 0;
+  const tail =
+    (missed > 0 ? ` (${missed}件は本体PDFを取れず見送り。次回やり直します)` : "");
   const base =
-    status.processed > 0 || held > 0 || missed > 0
-      ? `${status.processed}件を保存しました` +
-        (held > 0 ? ` (${held}件は添付を結合できず保留)` : "") +
-        (missed > 0 ? ` (${missed}件は本体PDFを取れず見送り。次回やり直します)` : "")
-      : `新しく取得できる${docLabel}はありませんでした`;
+    // 全部がアップロード待ちなら「保存しました」ではなく「取得しました」と言う
+    // （捺印決裁書は取得しただけでは保存されず、書類を入れて確定してから保存される）
+    status.processed === 0 && held === 0 && awaiting > 0
+      ? `${awaiting}件を取得しました (アップロード待ち)` + tail
+      : status.processed > 0 || held > 0 || awaiting > 0 || missed > 0
+        ? `${status.processed}件を保存しました` +
+          (held > 0 ? ` (${held}件は添付を結合できず保留)` : "") +
+          (awaiting > 0 ? ` (${awaiting}件はアップロード待ち)` : "") +
+          tail
+        : `新しく取得できる${docLabel}はありませんでした`;
   // remaining は「今回の残り」ではなく「1回の上限で見送った分」。黙って切り捨てない
   if (status.remaining > 0) {
     return {
@@ -403,7 +423,10 @@ export function describeCompletion(
     };
   }
   // 保留・見送りは「あとでやることが残っている」ので、済んだ緑ではなく目に留まる色で出す
-  return { tone: held > 0 || missed > 0 ? "notice" : "ok", message: base };
+  return {
+    tone: held > 0 || awaiting > 0 || missed > 0 ? "notice" : "ok",
+    message: base,
+  };
 }
 
 /** 取得日時の表示。サーバーが返すのはタイムゾーンなしのローカル時刻なので、文字列のまま整える */
@@ -425,7 +448,10 @@ const isMissingAttachmentLike = (v: unknown): v is MissingAttachment => {
   if (typeof v !== "object" || v === null) return false;
   const o = v as Record<string, unknown>;
   return (
-    Number.isInteger(o.index) && typeof o.name === "string" && typeof o.reason === "string"
+    Number.isInteger(o.index) &&
+    typeof o.name === "string" &&
+    typeof o.reason === "string" &&
+    optionalBool(o.awaiting)
   );
 };
 const optionalText = (v: unknown): boolean =>
@@ -465,6 +491,8 @@ export function isListItemLike(v: unknown): v is ListItem {
     optionalText(o.property_name) &&
     optionalText(o.final_approved_at) &&
     optionalText(o.title) &&
+    optionalText(o.content) &&
+    optionalText(o.senketsu_no) &&
     optionalText(o.pj) &&
     optionalText(o.supervisor) &&
     optionalText(o.sales_rep) &&

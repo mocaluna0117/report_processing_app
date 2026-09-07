@@ -152,6 +152,7 @@ describe("件数の内訳", () => {
       hiddenByFilter: 0,
       missingFile: 1,
       pending: 0,
+      awaiting: 0,
       total: 6,
     });
     expect(c.shown + c.hiddenCompleted + c.hiddenByFilter).toBe(c.total);
@@ -191,6 +192,7 @@ describe("件数の内訳", () => {
       hiddenByFilter: 0,
       missingFile: 1,
       pending: 0,
+      awaiting: 0,
       total: 2,
     });
   });
@@ -203,6 +205,7 @@ describe("件数の内訳", () => {
       hiddenByFilter: 0,
       missingFile: 0,
       pending: 0,
+      awaiting: 0,
       total: 2,
     });
   });
@@ -214,6 +217,7 @@ describe("件数の内訳", () => {
       hiddenByFilter: 0,
       missingFile: 0,
       pending: 0,
+      awaiting: 0,
       total: 0,
     });
   });
@@ -521,5 +525,71 @@ describe("種類ごとの絞り込み (専決決裁書)", () => {
     ];
     const c = listCounts(items, view("cloud"));
     expect(c.shown + c.hiddenCompleted + c.hiddenByFilter).toBe(c.total);
+  });
+});
+
+describe("アップロード待ちの見せ方（捺印決裁書）", () => {
+  const waiting = (over: Partial<ListItem> = {}): ListItem =>
+    item("NA00001002", {
+      pending: true,
+      missing_attachments: [
+        {
+          index: 0,
+          name: "あとからアップロードする書類",
+          reason: "あとからアップロードする書類",
+          awaiting: true,
+        },
+      ],
+      ...over,
+    });
+
+  it("★「保留」ではなく「アップロード待ち」と出す", () => {
+    const badges = statusBadges(waiting());
+    expect(badges.map((b) => b.text)).toEqual(["アップロード待ち"]);
+    expect(badges[0].key).toBe("awaiting");
+    expect(badges[0].title).toContain("入れると確定できます");
+  });
+
+  it("結合できなかった添付が混ざっていても「アップロード待ち」のまま", () => {
+    const mixed = waiting({
+      missing_attachments: [
+        {
+          index: 0,
+          name: "あとからアップロードする書類",
+          reason: "あとからアップロードする書類",
+          awaiting: true,
+        },
+        { index: 3, name: "専決決裁書 本体（No.2267）", reason: "見つかりませんでした" },
+      ],
+    });
+    const badges = statusBadges(mixed);
+    expect(badges.map((b) => b.text)).toEqual(["アップロード待ち"]);
+    expect(badges[0].title).toContain("専決決裁書 本体（No.2267）");
+  });
+
+  it("★ふつうの保留は今までどおり「保留」", () => {
+    const held = item("TE00009010", {
+      pending: true,
+      missing_attachments: [{ index: 2, name: "見積.pdf", reason: "0バイト" }],
+    });
+    expect(statusBadges(held).map((b) => b.text)).toEqual(["保留"]);
+  });
+
+  it("PDFが消えていれば両方出す", () => {
+    expect(statusBadges(waiting({ exists: false })).map((b) => b.key))
+      .toEqual(["awaiting", "missingFile"]);
+  });
+
+  it("★件数は保留の内訳として数える", () => {
+    const held = item("TE00009010", {
+      pending: true,
+      missing_attachments: [{ index: 2, name: "見積.pdf", reason: "0バイト" }],
+    });
+    const counts = listCounts([waiting(), held, item("TE00009001")], {
+      showCompleted: true,
+      filter: "all",
+    });
+    expect(counts.pending).toBe(2);
+    expect(counts.awaiting).toBe(1);
   });
 });

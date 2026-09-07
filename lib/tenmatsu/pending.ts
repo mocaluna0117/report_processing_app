@@ -58,6 +58,30 @@ export interface PendingPlan {
   tooLarge: boolean;
   /** 元の添付と拡張子が変わるもの (止めはしない。Wordを手でPDFにするのが普通の使い方) */
   extensionChanged: MissingAttachment[];
+  /**
+   * あとからアップロードする書類がまだ選ばれていないか (捺印決裁書)。
+   * true のあいだは「欠けたまま確定」を出さない（入れないと書類として成り立たない）。
+   */
+  hasAwaiting: boolean;
+}
+
+/** あとから利用者がアップロードする書類の置き場か */
+export const isAwaiting = (m: MissingAttachment): boolean => m.awaiting === true;
+
+/**
+ * 欠けの中にアップロード待ちが含まれるか。
+ * ★1つでも含めば「アップロード待ち」と呼ぶ。専決決裁書の本体も欠けた行で
+ *   「保留」に戻すと、捺印決裁書だけ否定的な言い方になってしまう。
+ */
+export function hasAwaiting(missing: readonly MissingAttachment[]): boolean {
+  return missing.some(isAwaiting);
+}
+
+/** 欠け1つの説明。アップロード待ちは「結合できなかった」ではなく前向きな文にする */
+export function missingReasonText(m: MissingAttachment): string {
+  return isAwaiting(m)
+    ? "あとからアップロードする書類です。ここに入れて確定してください"
+    : m.reason;
 }
 
 const extOf = (name: string): string => {
@@ -76,7 +100,8 @@ export function pendingPlan(
     const file = chosen.get(m.index);
     if (!file) continue;
     totalBytes += file.size;
-    if (extOf(file.name) !== extOf(m.name)) extensionChanged.push(m);
+    // アップロード待ちの枠は元の名前に拡張子が無いので、比べても意味がない
+    if (!isAwaiting(m) && extOf(file.name) !== extOf(m.name)) extensionChanged.push(m);
   }
   return {
     ready: unfilled.length === 0,
@@ -84,23 +109,54 @@ export function pendingPlan(
     totalBytes,
     tooLarge: totalBytes > MAX_PENDING_UPLOAD_BYTES,
     extensionChanged,
+    hasAwaiting: unfilled.some(isAwaiting),
   };
 }
 
 const listNames = (items: readonly { name: string }[]): string =>
   items.map((m) => m.name).join("、");
 
-/** 一覧の「保留」バッジに出す説明 */
+/** 一覧の「保留」「アップロード待ち」バッジに出す説明 */
 export function pendingBadgeTitle(missing: readonly MissingAttachment[]): string {
+  if (hasAwaiting(missing)) {
+    const rest = missing.filter((m) => !isAwaiting(m));
+    return (
+      "あとからアップロードする書類を入れると確定できます" +
+      (rest.length > 0 ? `。結合できなかった添付 (${listNames(rest)}) も足してください` : "")
+    );
+  }
   return (
     "添付を結合できなかったので保留にしています。" +
     `欠けているのは ${listNames(missing)} です`
   );
 }
 
+/** ダイアログの冒頭に出す説明。アップロード待ちが無ければ今までの文と同じ */
+export function pendingIntroText(
+  kind: DocKind,
+  missing: readonly MissingAttachment[],
+): string {
+  if (!hasAwaiting(missing)) {
+    return (
+      "本体と結合できた添付は、保留中のPDFに入っています。" +
+      `結合できなかったのは次の ${missing.length}件です。` +
+      "ファイルを入れて「確定する」を押すと、元の順番で結合して正式なフォルダへ保存します。"
+    );
+  }
+  const rest = missing.filter((m) => !isAwaiting(m)).length;
+  return (
+    `この${kind.label}には、あとからアップロードする書類が必要です。` +
+    (rest > 0 ? `結合できなかった添付も ${rest}件あります。` : "") +
+    "下の置き場にファイルを入れて「確定する」を押すと、元の順番で結合して正式なフォルダへ保存します。"
+  );
+}
+
 /** 一覧の「添付が欠けています」バッジに出す説明 */
 export function missingBadgeTitle(missing: readonly MissingAttachment[]): string {
-  return `PDFに入っていません: ${missing.map((m) => `${m.name} (${m.reason})`).join(" / ")}`;
+  return (
+    "PDFに入っていません: " +
+    missing.map((m) => `${m.name} (${missingReasonText(m)})`).join(" / ")
+  );
 }
 
 export function acceptMissingConfirmText(

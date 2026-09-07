@@ -10,11 +10,13 @@
 import type { FlagKey, HealthPayload } from "@/lib/tenmatsu/client";
 import { type ListFilterDef, LIST_FILTERS } from "@/lib/tenmatsu/list-view";
 
-export type DocKindId = "tenmatsu" | "senketsu";
+export type DocKindId = "tenmatsu" | "senketsu" | "natsuin";
 
 /** 一覧に出す、楽楽精算から読んだ文字列の項目 */
 export type TextField =
   | "title"
+  | "content"
+  | "senketsu_no"
   | "property_name"
   | "shinsei_date"
   | "shinseisha"
@@ -47,7 +49,7 @@ export interface DocKind {
   apiKind: DocKindId | null;
   /** 文中に差し込む名詞 */
   label: string;
-  route: "/tenmatsu" | "/senketsu";
+  route: "/tenmatsu" | "/senketsu" | "/natsuin";
   menuLabel: string;
   pageTitle: string;
   pageDescription: string;
@@ -69,6 +71,13 @@ export interface DocKind {
     storageDescription: string;
     /** 「完了したものも表示」の説明 */
     completedHint: string;
+    /** 保留中の行の右端に出すボタンの文字（説明文でも同じ名前を使う） */
+    resolveButton: string;
+    /**
+     * 取得のところに常時出す、この種類だけの流れの説明。無ければ null。
+     * 「取得しただけでは終わらない」ような、他と違う進み方を伝えるために使う。
+     */
+    flowNote: string | null;
   };
 }
 
@@ -104,6 +113,8 @@ export const TENMATSU: DocKind = defineKind({
     sensitiveFields: "物件名・申請者・支払先・支払金額",
     flagMarks: "入力済み・格納済みの印",
     completedHint: "実行予算入力済みとクラウド格納済みの両方にチェックが付いた行のことです",
+    resolveButton: "添付を足す",
+    flowNote: null,
     storageDescription:
       "顛末書の取得済み一覧には、伝票No.・物件名 (施主名を含むことがあります)・申請者・支払先・支払金額・入力済み/格納済みの印・結合できなかった添付の名前が入ります。これらはローカルサーバーのトークン・1回に取る件数とあわせて、このブラウザ内にだけ保存され、folio のサーバーには送信されません。印の正本はPCの記録で、この一覧はその写しです (消しても再接続すれば戻ります)。PDFの実体はこのPCの保存先フォルダにあり、ブラウザには保存しません。定期点検の「保存データを消去」では消えません。共有の端末では、使い終わったら「一覧を消去」を押してください。",
   },
@@ -141,15 +152,64 @@ export const SENKETSU: DocKind = defineKind({
     sensitiveFields: "表題・物件名・申請者・支払先・決裁申請額",
     flagMarks: "格納済みの印",
     completedHint: "クラウド格納済みにチェックが付いた行のことです",
+    resolveButton: "添付を足す",
+    flowNote: null,
     storageDescription:
       "専決決裁書の取得済み一覧には、伝票No.・表題・物件名 (施主名を含むことがあります)・申請者・支払先・決裁申請額・格納済みの印・結合できなかった添付の名前が入ります。これらはローカルサーバーのトークン・1回に取る件数とあわせて、このブラウザ内にだけ保存され、folio のサーバーには送信されません。印の正本はPCの記録で、この一覧はその写しです (消しても再接続すれば戻ります)。PDFの実体はこのPCの保存先フォルダにあり、ブラウザには保存しません。定期点検の「保存データを消去」では消えません。共有の端末では、使い終わったら「一覧を消去」を押してください。",
   },
 });
 
-export const DOC_KINDS: readonly DocKind[] = [TENMATSU, SENKETSU];
+/**
+ * 捺印決裁書。専決決裁書とほぼ同じだが、次の2点が違う:
+ *   - **すべての件で、あとから利用者がアップロードする書類が1つ必要**。
+ *     取得しただけでは完成せず、一覧では「アップロード待ち」になる。
+ *   - 紐づく専決決裁書（一覧の「専決決裁書№」）の本体と、要件に合う添付を一緒に結合する。
+ * 確定したファイル名は伝票ごとに変わる（お見積書（〇〇）.pdf / 保険金請求書（〇〇）.pdf）。
+ */
+export const NATSUIN: DocKind = defineKind({
+  id: "natsuin",
+  apiKind: "natsuin",
+  label: "捺印決裁書",
+  route: "/natsuin",
+  menuLabel: "捺印決裁書",
+  pageTitle: "Folio — 捺印決裁書",
+  pageDescription: "捺印決裁書PDFの取得 (このPCのローカルサーバー経由) と取得済み一覧の確認",
+  filePrefix: "捺印決裁書No.",
+  showStaffSync: false,
+  flagColumns: [
+    { key: "cloud_stored", head: "クラウド", label: "クラウド格納済み", todo: "未格納", done: "格納済み" },
+  ],
+  listFilters: [
+    { value: "all", label: "すべて", flagKey: null },
+    { value: "cloud", label: "クラウド未格納", flagKey: "cloud_stored" },
+  ],
+  dataColumns: [
+    { head: "内容", field: "content" },
+    { head: "専決決裁書№", field: "senketsu_no" },
+    { head: "物件名", field: "property_name" },
+    { head: "申請日", field: "shinsei_date" },
+    { head: "申請者", field: "shinseisha" },
+    { head: "決裁申請額(税込)", field: "amount", align: "right" },
+    { head: "支払先", field: "payee" },
+    { head: "最終承認日", field: "final_approved_at" },
+  ],
+  text: {
+    sensitiveFields: "内容・専決決裁書№・物件名・申請者・支払先・決裁申請額",
+    flagMarks: "格納済みの印",
+    completedHint: "クラウド格納済みにチェックが付いた行のことです",
+    resolveButton: "書類を足す",
+    flowNote:
+      "捺印決裁書には、あとからアップロードする書類が必要です。そのため取得した直後はすべて「アップロード待ち」で一覧に入ります。右端の「書類を足す」から書類を入れて確定すると、捺印決裁書の本体・紐づく専決決裁書とその添付・入れた書類を1つのPDFにして、保存先フォルダへ入れます。",
+    storageDescription:
+      "捺印決裁書の取得済み一覧には、伝票No.・内容・専決決裁書№・物件名 (施主名を含むことがあります)・申請者・支払先・決裁申請額・格納済みの印・結合できなかった添付の名前が入ります。これらはローカルサーバーのトークン・1回に取る件数とあわせて、このブラウザ内にだけ保存され、folio のサーバーには送信されません。印の正本はPCの記録で、この一覧はその写しです (消しても再接続すれば戻ります)。PDFの実体はこのPCの保存先フォルダにあり、ブラウザには保存しません。定期点検の「保存データを消去」では消えません。共有の端末では、使い終わったら「一覧を消去」を押してください。",
+  },
+});
+
+export const DOC_KINDS: readonly DocKind[] = [TENMATSU, SENKETSU, NATSUIN];
 export const DOC_KIND_BY_ID: Record<DocKindId, DocKind> = {
   tenmatsu: TENMATSU,
   senketsu: SENKETSU,
+  natsuin: NATSUIN,
 };
 
 /** 「一覧を消去」の確認文 */

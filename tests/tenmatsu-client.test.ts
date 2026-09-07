@@ -599,6 +599,54 @@ describe("describeCompletion", () => {
     expect(got?.message).not.toContain("ありませんでした");
   });
 
+  it("★全部がアップロード待ちなら「取得しました」と言う（捺印決裁書）", () => {
+    const got = describeCompletion(
+      status({
+        state: "done",
+        processed: 0,
+        pending: [
+          { denpyo_no: "NA1", missing: ["書類"], awaiting: true },
+          { denpyo_no: "NA2", missing: ["書類"], awaiting: true },
+          { denpyo_no: "NA3", missing: ["書類"], awaiting: true },
+        ],
+      }),
+    );
+    expect(got).toEqual({
+      tone: "notice",
+      message: "3件を取得しました (アップロード待ち)",
+    });
+    // 「1件も無かった」とは言わない
+    expect(got?.message).not.toContain("ありませんでした");
+  });
+
+  it("保留とアップロード待ちが混ざれば両方出す", () => {
+    const got = describeCompletion(
+      status({
+        state: "done",
+        processed: 5,
+        pending: [
+          { denpyo_no: "TE1", missing: ["見積.pdf"] },
+          { denpyo_no: "NA1", missing: ["書類"], awaiting: true },
+        ],
+      }),
+    );
+    expect(got?.message).toContain("(1件は添付を結合できず保留)");
+    expect(got?.message).toContain("(1件はアップロード待ち)");
+  });
+
+  it("アップロード待ちと見送りが同時でも両方出す", () => {
+    const got = describeCompletion(
+      status({
+        state: "done",
+        processed: 0,
+        pending: [{ denpyo_no: "NA1", missing: ["書類"], awaiting: true }],
+        skipped: ["NA2"],
+      }),
+    );
+    expect(got?.message).toContain("1件を取得しました (アップロード待ち)");
+    expect(got?.message).toContain("本体PDFを取れず見送り");
+  });
+
   it("★本体PDFを取れず見送った件も伝える（次回やり直すことまで）", () => {
     const got = describeCompletion(
       status({ state: "done", processed: 9, skipped: ["TE00001742"] }),
@@ -1065,6 +1113,28 @@ describe("種類ごとのフラグ", () => {
     expect(isListItemLike({ ...listItem(), skipped_attachments: null })).toBe(true);
     expect(isListItemLike({ ...listItem(), skipped_attachments: "現場動画.mp4" })).toBe(false);
     expect(isListItemLike({ ...listItem(), skipped_attachments: [1] })).toBe(false);
+
+    // 捺印決裁書の項目（内容・専決決裁書№）と、アップロード待ちの印
+    expect(isListItemLike({ ...listItem(), content: "捺印依頼", senketsu_no: "00002267" }))
+      .toBe(true);
+    expect(isListItemLike({ ...listItem(), content: null, senketsu_no: null })).toBe(true);
+    expect(isListItemLike({ ...listItem(), content: 1 })).toBe(false);
+    expect(isListItemLike({ ...listItem(), senketsu_no: 2267 })).toBe(false);
+    const wait = {
+      ...listItem(),
+      pending: true,
+      missing_attachments: [
+        { index: 0, name: "あとからアップロードする書類", reason: "…", awaiting: true },
+      ],
+    };
+    expect(isListItemLike(wait)).toBe(true);
+    expect(isListItemLike(JSON.parse(JSON.stringify(wait)))).toBe(true);
+    expect(
+      isListItemLike({
+        ...listItem(),
+        missing_attachments: [{ index: 0, name: "x", reason: "y", awaiting: "yes" }],
+      }),
+    ).toBe(false);
 
     // 保留と、結合できなかった添付
     expect(isListItemLike({ ...listItem(), pending: true })).toBe(true);

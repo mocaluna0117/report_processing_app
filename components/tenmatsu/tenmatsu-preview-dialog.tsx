@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ModalShell } from "@/components/modal-shell";
 import { type ListItem, formatFetchedAt, isPending } from "@/lib/tenmatsu/client";
+import { hasAwaiting } from "@/lib/tenmatsu/pending";
 
 /**
  * 取得済み顛末書のプレビュー。
@@ -83,8 +84,18 @@ export function TenmatsuPreviewDialog({
           {isPending(item) && (
             // ファイル名は「確定したときに付く予定の名前」なので、
             // いま見ているものが不完全であることをはっきり言う
-            <p className="mt-1 text-xs text-orange-800">
-              保留中のPDFです。添付 {item.missing_attachments?.length ?? 0}件が入っていません
+            <p
+              className={`mt-1 text-xs ${
+                hasAwaiting(item.missing_attachments ?? [])
+                  ? "text-sky-800"
+                  : "text-orange-800"
+              }`}
+            >
+              {hasAwaiting(item.missing_attachments ?? [])
+                ? "アップロード待ちのPDFです。あとからアップロードする書類はまだ入っていません"
+                : `保留中のPDFです。添付 ${
+                    (item.missing_attachments ?? []).length
+                  }件が入っていません`}
               (正式なフォルダにはまだ保存されていません)
             </p>
           )}

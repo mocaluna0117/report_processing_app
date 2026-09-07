@@ -5,9 +5,11 @@ import {
   deleteMeta,
   hasStoredData,
   loadMeta,
+  META_NATSUIN_LIST,
   META_SENKETSU_LIST,
   META_TENMATSU_LIST,
   saveMeta,
+  SETTING_KEY_NATSUIN_MAX_PER_RUN,
   SETTING_KEY_SENKETSU_MAX_PER_RUN,
   SETTING_KEY_TENMATSU_MAX_PER_RUN,
   SETTING_KEY_TENMATSU_TOKEN,
@@ -52,6 +54,8 @@ const oldShapeItem = {
 beforeEach(async () => {
   await clearAll();
   await deleteMeta(META_SENKETSU_LIST);
+  await deleteMeta(META_NATSUIN_LIST);
+  await deleteMeta(SETTING_KEY_NATSUIN_MAX_PER_RUN);
   await deleteMeta(SETTING_KEY_SENKETSU_MAX_PER_RUN);
   await clearToken();
   await clearCachedList("tenmatsu");
@@ -248,5 +252,55 @@ describe("種類ごとの保存キー", () => {
     await saveCachedList("senketsu", [item("SE00003001")]);
     await clearAll();
     expect(await loadCachedList("senketsu")).toHaveLength(1);
+  });
+});
+
+describe("捺印決裁書の保存キー", () => {
+  it("★他の種類とは別のキーに書く", async () => {
+    await saveCachedList("natsuin", [item("NA00001001")]);
+    expect(await loadMeta(META_NATSUIN_LIST)).toHaveLength(1);
+    expect(await loadMeta(META_SENKETSU_LIST)).toBeUndefined();
+    expect(await loadMeta(META_TENMATSU_LIST)).toBeUndefined();
+  });
+
+  it("★アップロード待ちの行もそのまま保存して読み直せる", async () => {
+    const waiting = item("NA00001002", {
+      pending: true,
+      content: "捺印依頼",
+      senketsu_no: "00002267",
+      missing_attachments: [
+        {
+          index: 0,
+          name: "あとからアップロードする書類",
+          reason: "あとからアップロードする書類",
+          awaiting: true,
+        },
+      ],
+    });
+    await saveCachedList("natsuin", [waiting]);
+    expect(await loadCachedList("natsuin")).toEqual([waiting]);
+  });
+
+  it("1つ消しても他の種類は残る", async () => {
+    await saveCachedList("tenmatsu", [item("TE00009001")]);
+    await saveCachedList("senketsu", [item("SE00003001")]);
+    await saveCachedList("natsuin", [item("NA00001001")]);
+    await clearCachedList("natsuin");
+    expect(await loadCachedList("tenmatsu")).toHaveLength(1);
+    expect(await loadCachedList("senketsu")).toHaveLength(1);
+    expect(await loadCachedList("natsuin")).toHaveLength(0);
+  });
+
+  it("1回に取る件数も種類ごと", async () => {
+    await saveMaxPerRun("natsuin", 5);
+    expect(await loadMaxPerRun("natsuin")).toBe(5);
+    expect(await loadMeta(SETTING_KEY_NATSUIN_MAX_PER_RUN)).toBe(5);
+    expect(await loadMaxPerRun("senketsu")).toBeNull();
+  });
+
+  it("定期点検の「保存データを消去」では消えない", async () => {
+    await saveCachedList("natsuin", [item("NA00001001")]);
+    await clearAll();
+    expect(await loadCachedList("natsuin")).toHaveLength(1);
   });
 });

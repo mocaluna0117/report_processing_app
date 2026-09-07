@@ -8,8 +8,10 @@
 // 一覧には伝票No.とファイル名が入るので、「一覧を消去」で消せるようにしている。
 // PDFの実体はここには入れない (PCの保存先フォルダにあり、見るときだけ取りに行く)。
 import {
+  META_NATSUIN_LIST,
   META_SENKETSU_LIST,
   META_TENMATSU_LIST,
+  SETTING_KEY_NATSUIN_MAX_PER_RUN,
   SETTING_KEY_SENKETSU_MAX_PER_RUN,
   SETTING_KEY_TENMATSU_MAX_PER_RUN,
   SETTING_KEY_TENMATSU_TOKEN,
@@ -31,6 +33,7 @@ import type { DocKindId } from "@/lib/tenmatsu/kinds";
 const KEYS: Record<DocKindId, { list: string; maxPerRun: string }> = {
   tenmatsu: { list: META_TENMATSU_LIST, maxPerRun: SETTING_KEY_TENMATSU_MAX_PER_RUN },
   senketsu: { list: META_SENKETSU_LIST, maxPerRun: SETTING_KEY_SENKETSU_MAX_PER_RUN },
+  natsuin: { list: META_NATSUIN_LIST, maxPerRun: SETTING_KEY_NATSUIN_MAX_PER_RUN },
 };
 
 export async function loadToken(): Promise<string | null> {

@@ -7,8 +7,12 @@ import {
   ATTACHMENT_ACCEPT,
   ATTACHMENT_PATTERN,
   ATTACHMENT_TYPES_TEXT,
+  hasAwaiting,
+  isAwaiting,
   isDefiniteFailure,
   missingBadgeTitle,
+  missingReasonText,
+  pendingIntroText,
   pendingBadgeTitle,
   pendingErrorText,
   pendingPlan,
@@ -20,6 +24,17 @@ const miss = (index: number, name: string, reason = "PDFとして読めません
   name,
   reason,
 });
+
+/** あとから利用者がアップロードする書類の置き場（捺印決裁書） */
+const waitSlot = (index = 0): MissingAttachment => ({
+  index,
+  name: "あとからアップロードする書類",
+  reason: "あとからアップロードする書類",
+  awaiting: true,
+});
+
+const chosen = (...entries: [number, string, number][]) =>
+  new Map(entries.map(([i, name, size]) => [i, { name, size }]));
 
 describe("添付の対応形式", () => {
   it("★PC側のエラー文と同じ並び・同じ文字列", () => {
@@ -131,5 +146,60 @@ describe("文言", () => {
     expect(isDefiniteFailure(new TenmatsuError("timeout", null, "x"))).toBe(false);
     expect(isDefiniteFailure(new TenmatsuError("network", null, "x"))).toBe(false);
     expect(isDefiniteFailure(new Error("x"))).toBe(false);
+  });
+});
+
+describe("アップロード待ち（捺印決裁書）", () => {
+  it("欠けの中に1つでもあれば「アップロード待ち」と呼ぶ", () => {
+    expect(hasAwaiting([])).toBe(false);
+    expect(hasAwaiting([miss(2, "見積.pdf")])).toBe(false);
+    expect(hasAwaiting([waitSlot()])).toBe(true);
+    // 専決決裁書の本体も欠けている混在の行。捺印決裁書だけ否定的な言い方にしない
+    expect(hasAwaiting([waitSlot(), miss(3, "専決決裁書 本体（No.2267）")])).toBe(true);
+    expect(isAwaiting(miss(2, "見積.pdf"))).toBe(false);
+  });
+
+  it("★理由は「結合できなかった」ではなく前向きな文にする", () => {
+    expect(missingReasonText(waitSlot())).toContain("ここに入れて確定");
+    expect(missingReasonText(miss(2, "見積.pdf", "0バイト"))).toBe("0バイト");
+  });
+
+  it("★書類が選ばれるまで hasAwaiting が真（＝欠けたまま確定を出さない）", () => {
+    const missing = [waitSlot(), miss(3, "専決決裁書 本体（No.2267）")];
+    const none = pendingPlan(missing, chosen());
+    expect(none.ready).toBe(false);
+    expect(none.hasAwaiting).toBe(true);
+    // 書類を入れれば、残るのは「結合できなかった分」だけ
+    const filled = pendingPlan(missing, chosen([0, "申請書.pdf", 1000]));
+    expect(filled.ready).toBe(false);
+    expect(filled.hasAwaiting).toBe(false);
+    const all = pendingPlan(missing, chosen([0, "申請書.pdf", 1000], [3, "専決.pdf", 2000]));
+    expect(all.ready).toBe(true);
+    expect(all.hasAwaiting).toBe(false);
+  });
+
+  it("★アップロードの枠では「形式が違う」と言わない（元の名前に拡張子が無い）", () => {
+    const plan = pendingPlan([waitSlot()], chosen([0, "申請書.pdf", 500]));
+    expect(plan.extensionChanged).toEqual([]);
+  });
+
+  it("バッジの説明を出し分ける", () => {
+    expect(pendingBadgeTitle([waitSlot()])).toContain("入れると確定できます");
+    expect(pendingBadgeTitle([waitSlot(), miss(3, "専決本体")]))
+      .toContain("結合できなかった添付 (専決本体)");
+    expect(pendingBadgeTitle([miss(2, "見積.pdf")])).toContain("添付を結合できなかったので");
+  });
+
+  it("★ダイアログの冒頭文は、アップロード待ちが無ければ今までどおり", () => {
+    const plain = pendingIntroText(TENMATSU, [miss(2, "見積.pdf")]);
+    expect(plain).toContain("結合できなかったのは次の 1件です");
+    expect(plain).not.toContain("あとからアップロードする書類が必要");
+
+    const wait = pendingIntroText(SENKETSU, [waitSlot()]);
+    expect(wait).toContain("専決決裁書には、あとからアップロードする書類が必要です");
+    expect(wait).not.toContain("結合できなかった添付も");
+
+    const both = pendingIntroText(SENKETSU, [waitSlot(), miss(3, "専決本体")]);
+    expect(both).toContain("結合できなかった添付も 1件あります");
   });
 });

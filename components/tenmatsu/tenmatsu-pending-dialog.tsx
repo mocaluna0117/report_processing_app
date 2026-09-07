@@ -11,8 +11,11 @@ import {
   ATTACHMENT_TYPES_TEXT,
   PENDING_BUSY_TEXT,
   acceptMissingConfirmText,
+  isAwaiting,
   isDefiniteFailure,
+  missingReasonText,
   pendingErrorText,
+  pendingIntroText,
   pendingPlan,
   retryConfirmText,
 } from "@/lib/tenmatsu/pending";
@@ -108,7 +111,7 @@ export function TenmatsuPendingDialog({
 
   return (
     <ModalShell
-      label={`${item.file} の添付を足す`}
+      label={`${item.file} の${kind.text.resolveButton}`}
       // ★送信中は閉じさせない (Esc・外側クリックの両方)。
       //   結合の途中で閉じると、成功したのか分からないまま行が残る
       onClose={busy ? () => {} : onClose}
@@ -119,6 +122,7 @@ export function TenmatsuPendingDialog({
           <h2 className="text-base font-semibold text-slate-800">{item.file}</h2>
           <p className="mt-1 text-xs text-slate-500">
             伝票No. {item.denpyo_no}
+            {item.senketsu_no ? ` / 専決決裁書 No.${item.senketsu_no}` : ""}
             {item.property_name ? ` / ${item.property_name}` : ""}
           </p>
         </div>
@@ -133,11 +137,7 @@ export function TenmatsuPendingDialog({
         </button>
       </div>
 
-      <p className="mt-3 text-sm text-slate-600">
-        本体と、結合できた添付は保留中のPDFに入っています。
-        結合できなかったのは次の {missing.length}件です。手作業でPDFなどにしたものを入れて
-        「確定する」を押すと、元の順番で結合し直して正式なフォルダへ保存します。
-      </p>
+      <p className="mt-3 text-sm text-slate-600">{pendingIntroText(kind, missing)}</p>
 
       <ul className="mt-3 space-y-3" aria-busy={busy !== null}>
         {missing.map((m) => {
@@ -146,7 +146,13 @@ export function TenmatsuPendingDialog({
           return (
             <li key={m.index} className="rounded-lg border border-slate-200 p-3">
               <p className="text-sm font-medium text-slate-700">{m.name}</p>
-              <p className="mt-0.5 text-xs text-amber-700">{m.reason}</p>
+              <p
+                className={`mt-0.5 text-xs ${
+                  isAwaiting(m) ? "text-sky-700" : "text-amber-700"
+                }`}
+              >
+                {missingReasonText(m)}
+              </p>
               <div className="mt-2">
                 <Dropzone
                   compact
@@ -158,7 +164,9 @@ export function TenmatsuPendingDialog({
                   title={
                     file
                       ? `${file.name} (${formatFileSize(file.size)})`
-                      : "差し替えるファイルをここにドロップ (クリックで選択)"
+                      : isAwaiting(m)
+                        ? "アップロードする書類をここにドロップ (クリックで選択)"
+                        : "差し替えるファイルをここにドロップ (クリックで選択)"
                   }
                   description={`対応形式: ${ATTACHMENT_TYPES_TEXT}`}
                 />
@@ -204,13 +212,15 @@ export function TenmatsuPendingDialog({
           title={
             plan.ready
               ? undefined
-              : `まだ ${plan.unfilled.length}件のファイルが選ばれていません`
+              : plan.hasAwaiting
+                ? "アップロードする書類を入れると確定できます"
+                : `まだ ${plan.unfilled.length}件のファイルが選ばれていません`
           }
           className={PRIMARY_CLASS}
         >
           確定する
         </button>
-        {!plan.ready && (
+        {!plan.ready && !plan.hasAwaiting && (
           <button
             type="button"
             onClick={() => {

@@ -3,6 +3,7 @@ import type { HealthPayload } from "@/lib/tenmatsu/client";
 import {
   DOC_KINDS,
   DOC_KIND_BY_ID,
+  NATSUIN,
   SENKETSU,
   TENMATSU,
   clearListConfirmText,
@@ -131,14 +132,87 @@ describe("専決決裁書の設定", () => {
   });
 });
 
+describe("捺印決裁書の設定", () => {
+  it("完了の印はクラウドだけ", () => {
+    expect(NATSUIN.flagColumns.map((c) => c.key)).toEqual(["cloud_stored"]);
+    expect(NATSUIN.flagKeys).toEqual(["cloud_stored"]);
+  });
+
+  it("絞り込みは2つ", () => {
+    expect(NATSUIN.listFilters.map((f) => f.value)).toEqual(["all", "cloud"]);
+  });
+
+  it("★一覧の列（内容・専決決裁書№を先頭に）", () => {
+    expect(NATSUIN.dataColumns.map((c) => c.head)).toEqual([
+      "内容",
+      "専決決裁書№",
+      "物件名",
+      "申請日",
+      "申請者",
+      "決裁申請額(税込)",
+      "支払先",
+      "最終承認日",
+    ]);
+    expect(NATSUIN.dataColumns[0].field).toBe("content");
+    expect(NATSUIN.dataColumns[1].field).toBe("senketsu_no");
+    // 右寄せは金額だけ
+    expect(NATSUIN.dataColumns.filter((c) => c.align === "right").map((c) => c.field))
+      .toEqual(["amount"]);
+  });
+
+  it("リクエストに kind を付ける", () => {
+    expect(NATSUIN.apiKind).toBe("natsuin");
+  });
+
+  it("監督・営業の反映欄は出さない", () => {
+    expect(NATSUIN.showStaffSync).toBe(false);
+  });
+
+  it("ルートと保存名の接頭辞", () => {
+    expect(NATSUIN.route).toBe("/natsuin");
+    expect(NATSUIN.filePrefix).toBe("捺印決裁書No.");
+  });
+
+  it("★保留の行のボタンは「書類を足す」", () => {
+    expect(NATSUIN.text.resolveButton).toBe("書類を足す");
+  });
+
+  it("★取得のところに、この種類だけの進み方を出す", () => {
+    expect(NATSUIN.text.flowNote).toContain("アップロード待ち");
+    expect(NATSUIN.text.flowNote).toContain("書類を足す");
+  });
+
+  it("消去の確認文に、この画面が持っている項目が出る", () => {
+    expect(clearListConfirmText(NATSUIN)).toContain("内容・専決決裁書№");
+    expect(clearListConfirmText(NATSUIN)).toContain("クラウド格納済み");
+  });
+
+  it("印を変えられなかったときは、その印の名前を出す", () => {
+    expect(flagErrorText(NATSUIN, "NA00001001", true, "400")).toContain("格納済みの印");
+  });
+
+  it("PC側が未対応のときは種類の名前で案内する", () => {
+    expect(unsupportedServerText(NATSUIN)).toContain("捺印決裁書に未対応");
+  });
+});
+
+describe("既存の2つは変えない", () => {
+  it("★ボタンの文字と流れの説明", () => {
+    expect(TENMATSU.text.resolveButton).toBe("添付を足す");
+    expect(SENKETSU.text.resolveButton).toBe("添付を足す");
+    expect(TENMATSU.text.flowNote).toBeNull();
+    expect(SENKETSU.text.flowNote).toBeNull();
+  });
+});
+
 describe("種類ぜんぶ", () => {
   it("id とルートが重ならない", () => {
     expect(new Set(DOC_KINDS.map((k) => k.id)).size).toBe(DOC_KINDS.length);
     expect(new Set(DOC_KINDS.map((k) => k.route)).size).toBe(DOC_KINDS.length);
   });
 
-  it("並び順は 顛末書 → 専決決裁書", () => {
-    expect(DOC_KINDS.map((k) => k.id)).toEqual(["tenmatsu", "senketsu"]);
+  it("並び順は 顛末書 → 専決決裁書 → 捺印決裁書", () => {
+    expect(DOC_KINDS.map((k) => k.id)).toEqual(["tenmatsu", "senketsu", "natsuin"]);
     expect(DOC_KIND_BY_ID.senketsu).toBe(SENKETSU);
   });
 

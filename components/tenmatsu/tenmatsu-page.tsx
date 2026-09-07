@@ -888,6 +888,11 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
             </div>
           </div>
 
+          {/* この種類だけの進み方（捺印決裁書は取得しただけでは終わらない） */}
+          {kind.text.flowNote && (
+            <p className="mt-2 text-sm text-slate-600">{kind.text.flowNote}</p>
+          )}
+
           {connection === "ok" && !perRun.fromServer && (
             <p className="mt-2 text-xs text-amber-700">
               このPCのサーバーは件数の指定に未対応です (サーバーの既定値で動きます)。
@@ -904,8 +909,10 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
             その行に「動画は未結合」と出します。
             結合できない添付があるときは、その{kind.label}を保留にして、
             本体と結合できた添付だけのPDFをPCの _保留 フォルダに置き、残りの取得は続けます。
-            一覧の「添付を足す」から、手作業でPDFにしたものをアップロードして確定してください
-            (どうしても手に入らないときは、欠けたまま確定することもできます)。
+            一覧の「{kind.text.resolveButton}」から、手作業でPDFにしたものをアップロードして確定してください
+            {kind.text.flowNote
+              ? "(あとからアップロードする書類は必ず入れる必要があります)"
+              : "(どうしても手に入らないときは、欠けたまま確定することもできます)"}。
           </p>
 
           {runNotice && <p className={WARN_CLASS}>{runNotice}</p>}

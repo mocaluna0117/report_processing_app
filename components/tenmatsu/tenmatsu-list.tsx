@@ -37,6 +37,8 @@ const RESOLVE_BUTTON_CLASS =
 /** 状態の印の色。何を出すかは list-view.ts の statusBadges が決める */
 const BADGE_CLASS: Record<StatusBadgeKey, string> = {
   pending: "bg-orange-100 text-orange-900",
+  // アップロード待ちは「これから入れる」ので、警告色の保留とは分ける
+  awaiting: "bg-sky-100 text-sky-900",
   fetched: "bg-emerald-100 text-emerald-800",
   missingFile: "bg-slate-100 text-slate-500",
   // 取得済み (emerald) と混ざらない色にする
@@ -229,10 +231,16 @@ export function TenmatsuList({
               ファイルが消えている記録が {counts.missingFile}件あります
             </span>
           )}
-          {counts.pending > 0 && (
+          {counts.pending - counts.awaiting > 0 && (
             // 添付を足すという作業が残っている行。同上
             <span className="ml-1 text-orange-800">
-              添付を結合できず保留中の{kind.label}が {counts.pending}件あります
+              添付を結合できず保留中の{kind.label}が {counts.pending - counts.awaiting}件あります
+            </span>
+          )}
+          {counts.awaiting > 0 && (
+            // 書類を入れれば確定できる行。これから入れるので色を分ける
+            <span className="ml-1 text-sky-800">
+              アップロード待ちの{kind.label}が {counts.awaiting}件あります
             </span>
           )}
         </p>
@@ -389,7 +397,7 @@ export function TenmatsuList({
                             >
                               <button
                                 type="button"
-                                aria-label={`${item.denpyo_no} の欠けた添付を足す`}
+                                aria-label={`${item.denpyo_no} の${kind.text.resolveButton}`}
                                 disabled={resolveDisabledReason !== null}
                                 title={
                                   resolveDisabledReason ??
@@ -400,7 +408,7 @@ export function TenmatsuList({
                                   resolveDisabledReason === null ? "cursor-pointer" : ""
                                 }`}
                               >
-                                添付を足す
+                                {kind.text.resolveButton}
                               </button>
                             </span>
                           ) : (

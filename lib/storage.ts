@@ -81,6 +81,10 @@ export const SETTING_KEY_TENMATSU_MAX_PER_RUN = "tenmatsu:maxPerRun";
 export const META_SENKETSU_LIST = "senketsu:list";
 export const SETTING_KEY_SENKETSU_MAX_PER_RUN = "senketsu:maxPerRun";
 
+/** 捺印決裁書。専決決裁書と同じ扱い（トークンは共有・「保存データを消去」では消さない） */
+export const META_NATSUIN_LIST = "natsuin:list";
+export const SETTING_KEY_NATSUIN_MAX_PER_RUN = "natsuin:maxPerRun";
+
 export function isStorageAvailable(): boolean {
   return typeof indexedDB !== "undefined";
 }
