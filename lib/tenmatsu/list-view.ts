@@ -12,7 +12,12 @@ import {
   isPending,
   resolveRunLimits,
 } from "@/lib/tenmatsu/client";
-import { hasAwaiting, missingBadgeTitle, pendingBadgeTitle } from "@/lib/tenmatsu/pending";
+import {
+  hasAwaiting,
+  missingBadgeTitle,
+  pendingBadgeTitle,
+  recomposedBadgeTitle,
+} from "@/lib/tenmatsu/pending";
 
 /**
  * 一覧の絞り込み。completed は「全部 true」なので、フラグの絞り込みとは排他になる。
@@ -171,6 +176,7 @@ export function listCounts(items: ListItem[], options: ListViewOptions): ListCou
 export type StatusBadgeKey =
   | "pending"
   | "awaiting"
+  | "recomposed"
   | "fetched"
   | "missingFile"
   | "completed"
@@ -183,7 +189,11 @@ export interface StatusBadge {
   title?: string;
 }
 
-export function statusBadges(item: ListItem): StatusBadge[] {
+/**
+ * 1行に出す状態のバッジ。
+ * marks は「格納済みの印」のような言い方（差し替えで外れる印の名前）。
+ */
+export function statusBadges(item: ListItem, marks = "完了の印"): StatusBadge[] {
   const badges: StatusBadge[] = [];
   const missing = item.missing_attachments ?? [];
   if (isPending(item)) {
@@ -206,6 +216,14 @@ export function statusBadges(item: ListItem): StatusBadge[] {
     );
   }
   if (item.completed === true) badges.push({ key: "completed", text: "完了" });
+  // 確定したあとに書類を差し替えた行。中身が変わって印が外れているので、その理由も出す
+  if (item.recomposed_at) {
+    badges.push({
+      key: "recomposed",
+      text: "差し替え済み",
+      title: recomposedBadgeTitle(item.recomposed_at, marks),
+    });
+  }
   if (item.skipped_attachments && item.skipped_attachments.length > 0) {
     badges.push({
       key: "skipped",

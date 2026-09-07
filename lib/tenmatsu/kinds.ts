@@ -57,6 +57,11 @@ export interface DocKind {
   filePrefix: string;
   /** 監督・営業をお客様の情報へ反映する欄を出すか */
   showStaffSync: boolean;
+  /**
+   * 確定したあとでも、入れた書類を差し替えて組み直せるか（捺印決裁書）。
+   * ★真でも、押せるのは部品が残っている行だけ（行の upload_slots で決まる）。
+   */
+  canRecompose: boolean;
   flagColumns: readonly FlagColumn[];
   /** flagColumns から作る。配列の同一性を固定するため定義時に1回だけ作る */
   flagKeys: readonly FlagKey[];
@@ -73,6 +78,8 @@ export interface DocKind {
     completedHint: string;
     /** 保留中の行の右端に出すボタンの文字（説明文でも同じ名前を使う） */
     resolveButton: string;
+    /** 確定した行の右端に出す、差し替えのボタンの文字（canRecompose のときだけ使う） */
+    recomposeButton: string;
     /**
      * 取得のところに常時出す、この種類だけの流れの説明。無ければ null。
      * 「取得しただけでは終わらない」ような、他と違う進み方を伝えるために使う。
@@ -96,6 +103,7 @@ export const TENMATSU: DocKind = defineKind({
   pageDescription: "顛末書PDFの取得 (このPCのローカルサーバー経由) と取得済み一覧の確認",
   filePrefix: "顛末書No.",
   showStaffSync: true,
+  canRecompose: false,
   flagColumns: [
     { key: "budget_entered", head: "実行予算", label: "実行予算入力済み", todo: "未入力", done: "入力済み" },
     { key: "cloud_stored", head: "クラウド", label: "クラウド格納済み", todo: "未格納", done: "格納済み" },
@@ -114,6 +122,7 @@ export const TENMATSU: DocKind = defineKind({
     flagMarks: "入力済み・格納済みの印",
     completedHint: "実行予算入力済みとクラウド格納済みの両方にチェックが付いた行のことです",
     resolveButton: "添付を足す",
+    recomposeButton: "差し替え",
     flowNote: null,
     storageDescription:
       "顛末書の取得済み一覧には、伝票No.・物件名 (施主名を含むことがあります)・申請者・支払先・支払金額・入力済み/格納済みの印・結合できなかった添付の名前が入ります。これらはローカルサーバーのトークン・1回に取る件数とあわせて、このブラウザ内にだけ保存され、folio のサーバーには送信されません。印の正本はPCの記録で、この一覧はその写しです (消しても再接続すれば戻ります)。PDFの実体はこのPCの保存先フォルダにあり、ブラウザには保存しません。定期点検の「保存データを消去」では消えません。共有の端末では、使い終わったら「一覧を消去」を押してください。",
@@ -132,6 +141,7 @@ export const SENKETSU: DocKind = defineKind({
   filePrefix: "専決決裁書No.",
   // 専決決裁書には監督・営業が無いので、お客様の情報への反映欄は出さない
   showStaffSync: false,
+  canRecompose: false,
   flagColumns: [
     { key: "cloud_stored", head: "クラウド", label: "クラウド格納済み", todo: "未格納", done: "格納済み" },
   ],
@@ -153,6 +163,7 @@ export const SENKETSU: DocKind = defineKind({
     flagMarks: "格納済みの印",
     completedHint: "クラウド格納済みにチェックが付いた行のことです",
     resolveButton: "添付を足す",
+    recomposeButton: "差し替え",
     flowNote: null,
     storageDescription:
       "専決決裁書の取得済み一覧には、伝票No.・表題・物件名 (施主名を含むことがあります)・申請者・支払先・決裁申請額・格納済みの印・結合できなかった添付の名前が入ります。これらはローカルサーバーのトークン・1回に取る件数とあわせて、このブラウザ内にだけ保存され、folio のサーバーには送信されません。印の正本はPCの記録で、この一覧はその写しです (消しても再接続すれば戻ります)。PDFの実体はこのPCの保存先フォルダにあり、ブラウザには保存しません。定期点検の「保存データを消去」では消えません。共有の端末では、使い終わったら「一覧を消去」を押してください。",
@@ -176,6 +187,7 @@ export const NATSUIN: DocKind = defineKind({
   pageDescription: "捺印決裁書PDFの取得 (このPCのローカルサーバー経由) と取得済み一覧の確認",
   filePrefix: "捺印決裁書No.",
   showStaffSync: false,
+  canRecompose: true,
   flagColumns: [
     { key: "cloud_stored", head: "クラウド", label: "クラウド格納済み", todo: "未格納", done: "格納済み" },
   ],
@@ -198,8 +210,9 @@ export const NATSUIN: DocKind = defineKind({
     flagMarks: "格納済みの印",
     completedHint: "クラウド格納済みにチェックが付いた行のことです",
     resolveButton: "書類を足す",
+    recomposeButton: "差し替え",
     flowNote:
-      "捺印決裁書には、あとからアップロードする書類が必要です。そのため取得した直後はすべて「アップロード待ち」で一覧に入ります。右端の「書類を足す」から書類を入れて確定すると、捺印決裁書の本体・紐づく専決決裁書とその添付・入れた書類を1つのPDFにして、保存先フォルダへ入れます。",
+      "捺印決裁書には、あとからアップロードする書類が必要です。そのため取得した直後はすべて「アップロード待ち」で一覧に入ります。右端の「書類を足す」から書類を入れて確定すると、捺印決裁書の本体・紐づく専決決裁書とその添付・入れた書類を1つのPDFにして、保存先フォルダへ入れます。書類は複数入れられ、ダイアログの↑↓で順番を決められます。確定したあとも右端の「差し替え」から入れ直せます (組み直すと格納済みの印は外れます)。",
     storageDescription:
       "捺印決裁書の取得済み一覧には、伝票No.・内容・専決決裁書№・物件名 (施主名を含むことがあります)・申請者・支払先・決裁申請額・格納済みの印・結合できなかった添付の名前が入ります。これらはローカルサーバーのトークン・1回に取る件数とあわせて、このブラウザ内にだけ保存され、folio のサーバーには送信されません。印の正本はPCの記録で、この一覧はその写しです (消しても再接続すれば戻ります)。PDFの実体はこのPCの保存先フォルダにあり、ブラウザには保存しません。定期点検の「保存データを消去」では消えません。共有の端末では、使い終わったら「一覧を消去」を押してください。",
   },

@@ -19,7 +19,7 @@ import {
   statusBadges,
 } from "@/lib/tenmatsu/list-view";
 import type { DocKind } from "@/lib/tenmatsu/kinds";
-import { pendingBadgeTitle } from "@/lib/tenmatsu/pending";
+import { pendingBadgeTitle, recomposeDisabledReason } from "@/lib/tenmatsu/pending";
 
 
 /**
@@ -39,6 +39,7 @@ const BADGE_CLASS: Record<StatusBadgeKey, string> = {
   pending: "bg-orange-100 text-orange-900",
   // アップロード待ちは「これから入れる」ので、警告色の保留とは分ける
   awaiting: "bg-sky-100 text-sky-900",
+  recomposed: "bg-violet-100 text-violet-900",
   fetched: "bg-emerald-100 text-emerald-800",
   missingFile: "bg-slate-100 text-slate-500",
   // 取得済み (emerald) と混ざらない色にする
@@ -68,6 +69,8 @@ const FRAME_TD_CLASS =
 /** 固定枠の中の並び。見出しと本体で同じ幅を使って縦を揃える (「✓ 入力済み」が収まる幅) */
 const FRAME_SLOT_CLASS = "flex w-24 items-center";
 const FRAME_BUTTON_SLOT_CLASS = "w-24";
+const SLOT_BUTTON_CLASS =
+  "w-full rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
 /**
  * 左端の固定列 (伝票No. と ファイル名)。横にスクロールしても「どの伝票の行か」が分かるようにする。
  * 2列目の left は1列目の実幅 (内容依存) を測って inline style で入れる。
@@ -122,6 +125,7 @@ export function TenmatsuList({
   onPreview,
   resolveDisabledReason,
   onResolvePending,
+  onRecompose,
 }: {
   /** 書類の種類 (列・完了の印・絞り込み・文言をここから引く) */
   kind: DocKind;
@@ -142,6 +146,8 @@ export function TenmatsuList({
   onPreview: (no: string) => void;
   /** 「添付を足す」を押せない理由。null なら押せる */
   resolveDisabledReason: string | null;
+  /** 確定した行の書類を差し替える (捺印決裁書だけ。押せる行は upload_slots で決まる) */
+  onRecompose?: (no: string) => void;
   onResolvePending: (no: string) => void;
 }) {
   const view = useMemo(
@@ -367,7 +373,7 @@ export function TenmatsuList({
                       <td className="px-3 py-2 text-slate-600">{formatFileSize(item.size)}</td>
                       <td className="px-3 py-2">
                         {/* 何を出すかは list-view.ts の statusBadges が決める（単体テストのため） */}
-                        {statusBadges(item).map((badge, i) => (
+                        {statusBadges(item, kind.text.flagMarks).map((badge, i) => (
                           <span
                             key={badge.key}
                             title={badge.title}
@@ -455,21 +461,49 @@ export function TenmatsuList({
                             );
                             })
                           )}
-                          <button
-                            type="button"
-                            onClick={() => onPreview(item.denpyo_no)}
-                            disabled={!item.exists || !canPreview}
-                            title={
-                              !item.exists
-                                ? "PCの保存先からファイルが消えています。もう一度取得してください"
-                                : isPending(item)
-                                  ? "保留中のPDF (本体と結合できた添付) を表示します"
-                                  : undefined
-                            }
-                            className={`${FRAME_BUTTON_SLOT_CLASS} cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50`}
-                          >
-                            プレビュー
-                          </button>
+                          {/* プレビューと「差し替え」は同じ幅の中に縦に積む
+                              (固定枠は1セルなので、横に増やすと見出しとずれる) */}
+                          <span className={`flex flex-col gap-1 ${FRAME_BUTTON_SLOT_CLASS}`}>
+                            <button
+                              type="button"
+                              onClick={() => onPreview(item.denpyo_no)}
+                              disabled={!item.exists || !canPreview}
+                              title={
+                                !item.exists
+                                  ? "PCの保存先からファイルが消えています。もう一度取得してください"
+                                  : isPending(item)
+                                    ? "保留中のPDF (本体と結合できた添付) を表示します"
+                                    : undefined
+                              }
+                              className={`${SLOT_BUTTON_CLASS} ${item.exists && canPreview ? "cursor-pointer" : ""}`}
+                            >
+                              プレビュー
+                            </button>
+                            {kind.canRecompose && !isPending(item) && onRecompose && (
+                              <button
+                                type="button"
+                                aria-label={`${item.denpyo_no} の${kind.text.recomposeButton}`}
+                                onClick={() => onRecompose(item.denpyo_no)}
+                                disabled={
+                                  !canPreview ||
+                                  recomposeDisabledReason(item, resolveDisabledReason) !== null
+                                }
+                                title={
+                                  recomposeDisabledReason(item, resolveDisabledReason) ??
+                                  "アップロードした書類を入れ替えて組み直します" +
+                                    `(${kind.text.flagMarks}は外れます)`
+                                }
+                                className={`${SLOT_BUTTON_CLASS} ${
+                                  canPreview &&
+                                  recomposeDisabledReason(item, resolveDisabledReason) === null
+                                    ? "cursor-pointer"
+                                    : ""
+                                }`}
+                              >
+                                {kind.text.recomposeButton}
+                              </button>
+                            )}
+                          </span>
                         </div>
                       </td>
                     </tr>

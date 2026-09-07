@@ -479,6 +479,116 @@ describe("保留の確定", () => {
     ).rejects.toThrow("取得中は添付を結合できません");
   });
 
+  it("★新しい項目もキャッシュの検証を通る（形が違えば落とす）", () => {
+    const base = listItem();
+    expect(
+      isListItemLike({
+        ...base,
+        upload_slots: [
+          { index: 0, name: "書類", files: [{ file: "000_01_a.pdf", name: "a.pdf", size: 1 }] },
+        ],
+        recomposed_at: "2026-09-08T09:00:00",
+      }),
+    ).toBe(true);
+    // null は「部品が残っていない」、undefined は「未対応のサーバー」。どちらも正常
+    expect(isListItemLike({ ...base, upload_slots: null })).toBe(true);
+    expect(isListItemLike({ ...base, upload_slots: [{ index: 0, name: "書類" }] })).toBe(false);
+    expect(
+      isListItemLike({ ...base, upload_slots: [{ index: 0, name: "書類", files: [{}] }] }),
+    ).toBe(false);
+    expect(isListItemLike({ ...base, recomposed_at: 5 })).toBe(false);
+    expect(
+      isListItemLike({
+        ...base,
+        missing_attachments: [
+          { index: 0, name: "書類", reason: "", awaiting: true, files: [{ file: "a", name: "b" }] },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      isListItemLike({
+        ...base,
+        missing_attachments: [{ index: 0, name: "書類", reason: "", files: "x" }],
+      }),
+    ).toBe(false);
+  });
+
+  it("★枠の最終状態を、残すもの・新しいものの並びで送る", async () => {
+    const { impl, calls } = fakeFetch(() => json({ ok: true, item: listItem() }));
+    await createTenmatsuClient({ token: "t", kind: "natsuin", fetchImpl: impl }).completePending(
+      "NK00001489",
+      {
+        files: [
+          { index: 0, keep: "000_02_委任状.pdf" },
+          { index: 0, name: "申請書.pdf", bytes: new Uint8Array([1, 2, 3]) },
+        ],
+        slots: [0],
+        acceptMissing: false,
+      },
+    );
+    expect(bodyOf(calls[0].init)).toEqual({
+      kind: "natsuin",
+      denpyo_no: "NK00001489",
+      action: "complete",
+      accept_missing: false,
+      slots: [0],
+      files: [
+        { index: 0, keep: "000_02_委任状.pdf" },
+        { index: 0, name: "申請書.pdf", data: "AQID" },
+      ],
+    });
+  });
+
+  it("★残すだけの指定は1回の上限に数えない (中身を送らないので)", async () => {
+    const { impl, calls } = fakeFetch(() => json({ ok: true, item: listItem() }));
+    const c = createTenmatsuClient({ token: "t", fetchImpl: impl });
+    const keeps = Array.from({ length: 100 }, (_, i) => ({ index: 0, keep: `k${i}.pdf` }));
+    await c.completePending("NK00001489", { files: keeps, slots: [0], acceptMissing: false });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("★枠だけ指定して送れる (全部外して確定を試すとサーバーが断る)", async () => {
+    const { impl, calls } = fakeFetch(() => json({ error: "書類 をアップロードしてください" }, 400));
+    await expect(
+      createTenmatsuClient({ token: "t", fetchImpl: impl }).completePending("NK00001489", {
+        files: [],
+        slots: [0],
+        acceptMissing: false,
+      }),
+    ).rejects.toThrow("アップロードしてください");
+    expect(bodyOf(calls[0].init)).toMatchObject({ slots: [0], files: [] });
+  });
+
+  it("★確定したあとの差し替えは recompose で送る", async () => {
+    const { impl, calls } = fakeFetch(() => json({ ok: true, item: listItem() }));
+    const got = await createTenmatsuClient({
+      token: "t",
+      kind: "natsuin",
+      fetchImpl: impl,
+    }).recomposePending(
+      "NK00001489",
+      [{ index: 0, name: "差替.pdf", bytes: new Uint8Array([9]) }],
+      [0],
+    );
+    expect(got).not.toBeNull();
+    expect(bodyOf(calls[0].init)).toEqual({
+      kind: "natsuin",
+      denpyo_no: "NK00001489",
+      action: "recompose",
+      slots: [0],
+      files: [{ index: 0, name: "差替.pdf", data: "CQ==" }],
+    });
+  });
+
+  it("★部品が残っていない記録は 404 の理由をそのまま出す", async () => {
+    const { impl } = fakeFetch(() =>
+      json({ error: "この記録には部品が残っていないので差し替えられません" }, 404),
+    );
+    await expect(
+      createTenmatsuClient({ token: "t", fetchImpl: impl }).recomposePending("NK1", [], [0]),
+    ).rejects.toThrow("部品が残っていない");
+  });
+
   it("413 は「大きすぎる」として扱う", async () => {
     const { impl } = fakeFetch(() => json({}, 413));
     await expect(

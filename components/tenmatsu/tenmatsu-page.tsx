@@ -154,6 +154,8 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
   const [previewNo, setPreviewNo] = useState<string | null>(null);
   // 保留の確定ダイアログ。プレビューと同じく控えには置かない (開いたままにはしない)
   const [pendingNo, setPendingNo] = useState<string | null>(null);
+  /** 「差し替え」を開いている確定済みの伝票 (捺印決裁書) */
+  const [recomposeNo, setRecomposeNo] = useState<string | null>(null);
   /** 案内に出す自分のURL (サーバーの許可オリジンに足してもらうため) */
   const [origin, setOrigin] = useState("");
 
@@ -567,9 +569,31 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
    * (キャッシュへの保存はしない。保存は /list を取り直したときだけ、という決まり)。
    * 文言はダイアログが出すので、ここでは投げ直す。
    */
-  const completePending = async (no: string, files: PendingFile[], acceptMissing: boolean) => {
+  const completePending = async (
+    no: string,
+    files: PendingFile[],
+    slots: number[],
+    acceptMissing: boolean,
+  ) => {
     try {
-      const updated = await client.completePending(no, { files, acceptMissing });
+      const updated = await client.completePending(no, { files, slots, acceptMissing });
+      if (updated) setItems((prev) => prev.map((i) => (i.denpyo_no === no ? updated : i)));
+      else await refreshListRef.current();
+      setRecentNos((prev) => new Set(prev).add(no));
+    } catch (e) {
+      if (e instanceof TenmatsuError && e.kind === "auth") setEditingToken(true);
+      throw e;
+    }
+  };
+
+  /**
+   * 確定した伝票を、入れた書類を入れ替えて組み直す (捺印決裁書)。
+   * 確定と同じで、返ってきた行だけを差し替える。中身が変わるので印は外れる
+   * (外すのはサーバー側。ここでは返ってきた値をそのまま出す)。
+   */
+  const recomposePending = async (no: string, files: PendingFile[], slots: number[]) => {
+    try {
+      const updated = await client.recomposePending(no, files, slots);
       if (updated) setItems((prev) => prev.map((i) => (i.denpyo_no === no ? updated : i)));
       else await refreshListRef.current();
       setRecentNos((prev) => new Set(prev).add(no));
@@ -663,6 +687,10 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
    */
   const completion = status && !running ? describeCompletion(status, kind.label) : null;
   const preview = previewNo ? (items.find((i) => i.denpyo_no === previewNo) ?? null) : null;
+  // 差し替えは保存済みの行だけ。保留に変わったり消えた行なら自動で閉じる
+  const recompose = recomposeNo
+    ? (items.find((i) => i.denpyo_no === recomposeNo && !isPending(i)) ?? null)
+    : null;
   // 解消済み・消えた行なら自動で閉じる
   const pending = pendingNo
     ? (items.find((i) => i.denpyo_no === pendingNo && isPending(i)) ?? null)
@@ -979,6 +1007,7 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
             onPreview={setPreviewNo}
             resolveDisabledReason={resolveDisabledReason}
             onResolvePending={setPendingNo}
+            onRecompose={setRecomposeNo}
           />
         </section>
 
@@ -1003,11 +1032,21 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
         <TenmatsuPendingDialog
           kind={kind}
           item={pending}
-          complete={(files, acceptMissing) =>
-            completePending(pending.denpyo_no, files, acceptMissing)
+          complete={(files, slots, acceptMissing) =>
+            completePending(pending.denpyo_no, files, slots, acceptMissing)
           }
           retry={() => retryPending(pending.denpyo_no)}
           onClose={() => setPendingNo(null)}
+        />
+      )}
+
+      {recompose && (
+        <TenmatsuPendingDialog
+          kind={kind}
+          item={recompose}
+          mode="recompose"
+          recompose={(files, slots) => recomposePending(recompose.denpyo_no, files, slots)}
+          onClose={() => setRecomposeNo(null)}
         />
       )}
 

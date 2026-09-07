@@ -593,3 +593,18 @@ describe("アップロード待ちの見せ方（捺印決裁書）", () => {
     expect(counts.awaiting).toBe(1);
   });
 });
+
+describe("差し替え済みのバッジ", () => {
+  it("★確定したあとに書類を差し替えた行が分かる", () => {
+    const badges = statusBadges(
+      { ...item("A"), recomposed_at: "2026-09-08T09:00:00" },
+      "格納済みの印",
+    );
+    expect(badges.map((b) => b.text)).toContain("差し替え済み");
+    expect(badges.find((b) => b.key === "recomposed")?.title).toContain("格納済みの印");
+  });
+
+  it("差し替えていない行には出さない", () => {
+    expect(statusBadges(item("A")).map((b) => b.key)).not.toContain("recomposed");
+  });
+});

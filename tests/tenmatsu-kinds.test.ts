@@ -180,6 +180,8 @@ describe("捺印決裁書の設定", () => {
   it("★取得のところに、この種類だけの進み方を出す", () => {
     expect(NATSUIN.text.flowNote).toContain("アップロード待ち");
     expect(NATSUIN.text.flowNote).toContain("書類を足す");
+    // 確定したあとの差し替えも、この説明で伝える
+    expect(NATSUIN.text.flowNote).toContain("差し替え");
   });
 
   it("消去の確認文に、この画面が持っている項目が出る", () => {
@@ -202,6 +204,14 @@ describe("既存の2つは変えない", () => {
     expect(SENKETSU.text.resolveButton).toBe("添付を足す");
     expect(TENMATSU.text.flowNote).toBeNull();
     expect(SENKETSU.text.flowNote).toBeNull();
+  });
+
+  it("★書類を差し替えられるのは捺印決裁書だけ", () => {
+    // 顛末書・専決決裁書は確定したときに部品を消すので、差し替えの導線を出さない
+    expect(NATSUIN.canRecompose).toBe(true);
+    expect(TENMATSU.canRecompose).toBe(false);
+    expect(SENKETSU.canRecompose).toBe(false);
+    expect(NATSUIN.text.recomposeButton).toBe("差し替え");
   });
 });
 

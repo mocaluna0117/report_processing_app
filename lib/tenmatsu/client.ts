@@ -30,6 +30,36 @@ export interface MissingAttachment {
    * これが残ったままでは確定できない (サーバーが断る)。無い＝古いサーバー。
    */
   awaiting?: boolean;
+  /**
+   * その枠にいま入っているファイル (並び順)。あとからアップロードする枠だけが返す。
+   * ★無い＝**1つしか入れられない古いサーバー**。複数を送っても最後の1つしか残らないので、
+   *   この項目が無いときは画面でも1つに制限する (allowsMultiple)。
+   */
+  files?: UploadedFile[];
+  /**
+   * 1つだけ入る枠 (結合できなかった添付) に、すでに入れてあるファイル。
+   * 入れ直したのに結合できなかったときに返る。選び直さなくても確定できる。
+   */
+  filled?: { name: string; size: number | null } | null;
+  /**
+   * 入れなくても確定できる枠か（差し替えのときの「欠けたまま確定した添付」）。
+   * ★folio の中だけで付ける印。サーバーは返さない。
+   */
+  optional?: boolean;
+}
+
+/** 枠に入っているファイル1つ。file はPC側の実ファイル名 (残すときに keep で送り返す) */
+export interface UploadedFile {
+  file: string;
+  name: string;
+  size: number | null;
+}
+
+/** 確定した伝票の「あとからアップロードする枠」と、いま入っている書類 */
+export interface UploadSlot {
+  index: number;
+  name: string;
+  files: UploadedFile[];
 }
 
 /** 取得中にPCのコンソールへ出た1行 */
@@ -171,6 +201,14 @@ export interface ListItem {
   missing_attachments?: MissingAttachment[] | null;
   /** アップロードして補った添付の名前 */
   replaced_attachments?: string[] | null;
+  /**
+   * 確定したあとでも入れた書類を差し替えられる種類 (捺印決裁書) の、いまの中身。
+   * undefined＝差し替えに未対応のサーバー・古いキャッシュ。
+   * null＝部品が残っていない記録 (この機能より前に確定したもの) で差し替えられない。
+   */
+  upload_slots?: UploadSlot[] | null;
+  /** 書類を差し替えて組み直した日時。無ければ一度も差し替えていない */
+  recomposed_at?: string | null;
   /** 監督。「どこで」の「監督：〇〇/営業：〇〇」から読んだ値 */
   supervisor?: string | null;
   /** 営業。同上 */
@@ -185,6 +223,8 @@ export interface HealthKind {
   flag_keys: string[];
   file_prefix: string;
   save_dir: string;
+  /** 確定したあとでも書類を差し替えられるか。無い＝差し替えに未対応のサーバー */
+  keep_parts?: boolean;
 }
 
 export interface HealthPayload {
@@ -451,7 +491,32 @@ const isMissingAttachmentLike = (v: unknown): v is MissingAttachment => {
     Number.isInteger(o.index) &&
     typeof o.name === "string" &&
     typeof o.reason === "string" &&
-    optionalBool(o.awaiting)
+    optionalBool(o.awaiting) &&
+    (o.files === undefined ||
+      (Array.isArray(o.files) && o.files.every(isUploadedFileLike))) &&
+    (o.filled === undefined ||
+      o.filled === null ||
+      (typeof o.filled === "object" &&
+        typeof (o.filled as Record<string, unknown>).name === "string"))
+  );
+};
+const isUploadedFileLike = (v: unknown): v is UploadedFile => {
+  if (typeof v !== "object" || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return (
+    typeof o.file === "string" &&
+    typeof o.name === "string" &&
+    (typeof o.size === "number" || o.size === null || o.size === undefined)
+  );
+};
+const isUploadSlotLike = (v: unknown): v is UploadSlot => {
+  if (typeof v !== "object" || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return (
+    Number.isInteger(o.index) &&
+    typeof o.name === "string" &&
+    Array.isArray(o.files) &&
+    o.files.every(isUploadedFileLike)
   );
 };
 const optionalText = (v: unknown): boolean =>
@@ -510,7 +575,12 @@ export function isListItemLike(v: unknown): v is ListItem {
     (o.replaced_attachments === undefined ||
       o.replaced_attachments === null ||
       (Array.isArray(o.replaced_attachments) &&
-        o.replaced_attachments.every((x) => typeof x === "string")))
+        o.replaced_attachments.every((x) => typeof x === "string"))) &&
+    // 確定したあとの差し替え (捺印決裁書)。無い＝未対応のサーバー・古いキャッシュ
+    (o.upload_slots === undefined ||
+      o.upload_slots === null ||
+      (Array.isArray(o.upload_slots) && o.upload_slots.every(isUploadSlotLike))) &&
+    optionalText(o.recomposed_at)
   );
 }
 
@@ -615,15 +685,34 @@ export const RUN_COUNT_FORMAT_MESSAGE = "取得件数は整数で指定してく
 /** 取得後の手作業の進捗。変えるものだけ入れる (両方省略は不可) */
 export type FlagUpdate = Partial<Record<FlagKey, boolean>>;
 
-/** 保留の確定で送る添付1つ。index は /list の missing_attachments[].index */
-export interface PendingFile {
+/** 新しく入れるファイル1つ。index は /list の missing_attachments[].index */
+export interface PendingNewFile {
   index: number;
   name: string;
   bytes: Uint8Array;
 }
 
+/**
+ * その枠にいま入っているものを、この位置に残す指定。
+ * keep は upload_slots[].files[].file (PC側の実ファイル名)。
+ */
+export interface PendingKeepFile {
+  index: number;
+  keep: string;
+}
+
+export type PendingFile = PendingNewFile | PendingKeepFile;
+
+export const isPendingKeep = (f: PendingFile): f is PendingKeepFile => "keep" in f;
+
 export interface PendingUpload {
+  /**
+   * 枠に入れる最終状態。★同じ index の並びがそのまま結合の順になる。
+   * slots に入れた index は「この1回で最終状態を全部指定した」という意味で、
+   * files にその index が1つも無ければ空にする (＝全部外す)。
+   */
   files: PendingFile[];
+  slots?: number[];
   /** 欠けたままでも確定するか (一覧に「添付が欠けています」と残る) */
   acceptMissing: boolean;
 }
@@ -666,6 +755,15 @@ export interface TenmatsuClient {
   completePending(denpyoNo: string, upload: PendingUpload): Promise<ListItem | null>;
   /** 保留をやめる。次回の取得で取り直す (行は一覧から消える) */
   retryPending(denpyoNo: string): Promise<void>;
+  /**
+   * 確定した伝票を、入れた書類を入れ替えて組み直す (捺印決裁書)。
+   * 同じ名前で上書きし、完了の印は外れる。失敗しても元のPDFはそのまま。
+   */
+  recomposePending(
+    denpyoNo: string,
+    files: PendingFile[],
+    slots: number[],
+  ): Promise<ListItem | null>;
   filePdf(no: string): Promise<Blob>;
 }
 
@@ -749,6 +847,57 @@ export function createTenmatsuClient(options: {
     return (await res.json()) as T;
   };
 
+  /** 送る前に大きさで断る。送ってから 413 を受けるより、理由が具体的に出せる */
+  const checkUploadSize = (files: readonly PendingFile[]): void => {
+    // 残すだけの指定 (keep) は中身を送らないので数えない
+    const total = files.reduce((sum, f) => sum + (isPendingKeep(f) ? 0 : f.bytes.length), 0);
+    if (total > MAX_PENDING_UPLOAD_BYTES) {
+      throw new TenmatsuError(
+        "tooLarge",
+        null,
+        `送るファイルの合計が大きすぎます (${formatFileSize(total)})。` +
+          `1回に送れるのは ${formatFileSize(MAX_PENDING_UPLOAD_BYTES)} までです`,
+      );
+    }
+  };
+
+  /**
+   * 確定 (complete) と差し替え (recompose) の送信。
+   * 枠の最終状態は files の並びで決まる (同じ index を並べた順が結合の順)。
+   */
+  const sendPending = async (
+    no: string,
+    action: "complete" | "recompose",
+    files: readonly PendingFile[],
+    slots: readonly number[] | undefined,
+    extra: Record<string, unknown>,
+  ): Promise<ListItem | null> => {
+    const res = await call("/pending", {
+      auth: true,
+      method: "POST",
+      timeoutMs: PENDING_TIMEOUT_MS,
+      json: {
+        denpyo_no: no,
+        action,
+        ...extra,
+        ...(slots && slots.length > 0 ? { slots: [...slots] } : {}),
+        files: files.map((f) =>
+          isPendingKeep(f)
+            ? { index: f.index, keep: f.keep }
+            : { index: f.index, name: f.name, data: bytesToBase64(f.bytes) },
+        ),
+      },
+    });
+    if (!res.ok) throw await fail(res);
+    let parsed: { item?: unknown } = {};
+    try {
+      parsed = (await res.json()) as { item?: unknown };
+    } catch {
+      // 本文が読めなくても確定は済んでいる。呼ぶ側は null なら一覧を取り直す
+    }
+    return isListItemLike(parsed.item) ? parsed.item : null;
+  };
+
   return {
     health: () => getJson<HealthPayload>("/health", false),
       // since を渡すと、その番号より後のコンソール出力も一緒に返る。
@@ -829,42 +978,20 @@ export function createTenmatsuClient(options: {
       return isListItemLike(parsed.item) ? parsed.item : null;
     },
     completePending: async (no, upload) => {
-      const total = upload.files.reduce((sum, f) => sum + f.bytes.length, 0);
-      // 送る前に断る。送ってから 413 を受けるより、理由が具体的に出せる
-      if (total > MAX_PENDING_UPLOAD_BYTES) {
-        throw new TenmatsuError(
-          "tooLarge",
-          null,
-          `送るファイルの合計が大きすぎます (${formatFileSize(total)})。` +
-            `1回に送れるのは ${formatFileSize(MAX_PENDING_UPLOAD_BYTES)} までです`,
-        );
-      }
-      if (upload.files.length === 0 && !upload.acceptMissing) {
+      checkUploadSize(upload.files);
+      // 何も入れず、欠けたままの確定でもないなら送らない (サーバーは400)
+      if (upload.files.length === 0 && !upload.acceptMissing && !upload.slots?.length) {
         throw new TenmatsuError("badRequest", null, EMPTY_PENDING_FILES_MESSAGE);
       }
-      const res = await call("/pending", {
-        auth: true,
-        method: "POST",
-        timeoutMs: PENDING_TIMEOUT_MS,
-        json: {
-          denpyo_no: no,
-          action: "complete",
-          accept_missing: upload.acceptMissing,
-          files: upload.files.map((f) => ({
-            index: f.index,
-            name: f.name,
-            data: bytesToBase64(f.bytes),
-          })),
-        },
+      return await sendPending(no, "complete", upload.files, upload.slots, {
+        accept_missing: upload.acceptMissing,
       });
-      if (!res.ok) throw await fail(res);
-      let parsed: { item?: unknown } = {};
-      try {
-        parsed = (await res.json()) as { item?: unknown };
-      } catch {
-        // 本文が読めなくても確定は済んでいる。呼ぶ側は null なら一覧を取り直す
-      }
-      return isListItemLike(parsed.item) ? parsed.item : null;
+    },
+    recomposePending: async (no, files, slots) => {
+      checkUploadSize(files);
+      // ★枠は必ず slots で宣言する。全部外したときに files が空になり、
+      //   宣言が無いと「触れていない枠」と区別できない（古い中身で組み直してしまう）
+      return await sendPending(no, "recompose", files, slots, {});
     },
     retryPending: async (no) => {
       const res = await call("/pending", {
