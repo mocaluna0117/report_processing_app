@@ -295,7 +295,7 @@ describe("枠に複数の書類を入れる（捺印決裁書）", () => {
 describe("確定したあとの差し替え（捺印決裁書）", () => {
   const saved = {
     denpyo_no: "NK00001489",
-    file: "お見積書（架空邸）.pdf",
+    file: "御見積書（架空邸）.pdf",
     at: "2026-09-07T10:00:00",
     exists: true,
     pages: 7,
@@ -353,8 +353,8 @@ describe("確定したあとの差し替え（捺印決裁書）", () => {
   it("★差し替えの文言に、印が外れることを書く", () => {
     expect(recomposeIntroText(NATSUIN)).toContain("同じファイル名");
     expect(recomposeIntroText(NATSUIN)).toContain("押すまで");
-    const confirm = recomposeConfirmText(NATSUIN, "お見積書（架空邸）.pdf", "格納済みの印");
-    expect(confirm).toContain("お見積書（架空邸）.pdf");
+    const confirm = recomposeConfirmText(NATSUIN, "御見積書（架空邸）.pdf", "格納済みの印");
+    expect(confirm).toContain("御見積書（架空邸）.pdf");
     expect(confirm).toContain("格納済みの印は外れます");
     expect(recomposedBadgeTitle("2026-09-08T09:00:00", "格納済みの印")).toContain(
       "格納済みの印は外してあります",
@@ -362,7 +362,7 @@ describe("確定したあとの差し替え（捺印決裁書）", () => {
   });
 
   it("★差し替えできる種類では「あとから足せない」と言わない", () => {
-    const natsuin = acceptMissingConfirmText(NATSUIN, "お見積書.pdf", [miss(3, "専決本体")]);
+    const natsuin = acceptMissingConfirmText(NATSUIN, "御見積書.pdf", [miss(3, "専決本体")]);
     expect(natsuin).toContain("「差し替え」で足すこともできます");
     const tenmatsu = acceptMissingConfirmText(TENMATSU, "顛末書No.1.pdf", [miss(2, "見積.pdf")]);
     expect(tenmatsu).toContain("あとから足すことはできません");
