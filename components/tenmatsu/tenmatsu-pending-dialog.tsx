@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Dropzone } from "@/components/dropzone";
 import { ModalShell } from "@/components/modal-shell";
+import { TenmatsuPreviewStrip } from "@/components/tenmatsu/tenmatsu-preview-strip";
 import { type ListItem, type PendingFile, formatFileSize } from "@/lib/tenmatsu/client";
 import type { DocKind } from "@/lib/tenmatsu/kinds";
 import {
@@ -28,6 +29,11 @@ import {
   retryConfirmText,
   slotHintText,
 } from "@/lib/tenmatsu/pending";
+import {
+  buildPreviewPlan,
+  previewPageCount,
+  previewUnavailableReason,
+} from "@/lib/tenmatsu/preview";
 
 const PRIMARY_CLASS =
   "rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50";
@@ -62,6 +68,7 @@ export function TenmatsuPendingDialog({
   complete,
   recompose,
   retry,
+  load,
   onClose,
 }: {
   kind: DocKind;
@@ -74,6 +81,8 @@ export function TenmatsuPendingDialog({
   recompose?: (files: PendingFile[], slots: number[]) => Promise<void>;
   /** 保留を取り消す。同上 */
   retry?: () => Promise<void>;
+  /** いまPCにあるPDFを取る（プレビューの土台）。渡さなければプレビュー欄を出さない */
+  load?: (no: string) => Promise<Blob>;
   onClose: () => void;
 }) {
   const recomposing = mode === "recompose";
@@ -90,6 +99,47 @@ export function TenmatsuPendingDialog({
   }, []);
 
   const plan = pendingPlan(missing, chosen);
+
+  // --- 確定後のPDFのプレビュー（土台＝いまPCにあるPDF ＋ 入れた書類）
+  const previewReason = previewUnavailableReason(item);
+  const canPreview = load !== undefined && previewReason === null;
+  const [base, setBase] = useState<Blob | null>(null);
+  const [baseError, setBaseError] = useState<string | null>(null);
+  const [large, setLarge] = useState(false);
+  /** プレビューが実際に並べた枚数（入れたPDFのページ数はここでしか分からない） */
+  const [previewPages, setPreviewPages] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!canPreview || load === undefined) return;
+    let done = false;
+    setBaseError(null);
+    void load(item.denpyo_no)
+      .then((blob) => {
+        if (!done) setBase(blob);
+      })
+      .catch((e: unknown) => {
+        // ★プレビューが出せなくても確定は妨げない（あくまで見え方の話）
+        if (!done) setBaseError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      done = true;
+    };
+  }, [canPreview, load, item.denpyo_no]);
+
+  const segments = useMemo(
+    () => (canPreview ? buildPreviewPlan(missing, chosen, item.pdf_layout, item.pages) : null),
+    [canPreview, missing, chosen, item.pdf_layout, item.pages],
+  );
+  /** プレビューで描くための実体。並べ替えても同じものを指すように name と大きさで引く */
+  const fileOf = (entry: ChosenFile): File | undefined => {
+    for (const entries of chosen.values()) {
+      const found = entries.find(
+        (e) => e.file !== undefined && e.name === entry.name && e.size === entry.size,
+      );
+      if (found?.file) return found.file;
+    }
+    return undefined;
+  };
 
   /** その枠の中身を差し替える（外す・足す・並べ替えの共通の入口） */
   const setSlot = (index: number, next: Entry[]) => {
@@ -169,7 +219,13 @@ export function TenmatsuPendingDialog({
       // ★送信中は閉じさせない (Esc・外側クリックの両方)。
       //   結合の途中で閉じると、成功したのか分からないまま行が残る
       onClose={busy ? () => {} : onClose}
-      panelClassName="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+      // ★プレビューを出すときだけ広くして2列にする。パネル自体はスクロールさせず、
+      //   左右それぞれの列でスクロールする（入れ子のスクロールで迷子にならないように）
+      panelClassName={
+        canPreview
+          ? "flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white p-6 shadow-xl"
+          : "max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+      }
     >
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -191,6 +247,14 @@ export function TenmatsuPendingDialog({
         </button>
       </div>
 
+      <div
+        className={
+          canPreview
+            ? "mt-3 grid min-h-0 flex-1 gap-4 lg:grid-cols-2"
+            : "contents"
+        }
+      >
+        <div className={canPreview ? "min-h-0 overflow-y-auto pr-1" : "contents"}>
       <p className="mt-3 text-sm text-slate-600">
         {recomposing
           ? recomposeIntroText(kind, missing.filter((m) => m.optional).length)
@@ -307,6 +371,49 @@ export function TenmatsuPendingDialog({
           );
         })}
       </ul>
+        </div>
+
+        {canPreview && (
+          <section className="flex min-h-0 flex-col rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <h3 className="text-sm font-semibold text-slate-700">
+                確定後のPDF (プレビュー)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setLarge((v) => !v)}
+                className="cursor-pointer text-xs text-slate-600 underline hover:text-slate-900"
+              >
+                {large ? "小さく表示" : "大きく表示"}
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              {baseError !== null
+                ? `PCのPDFを取れませんでした (${baseError})`
+                : segments === null
+                  ? "この行では位置を反映できないので、いまのPDFだけを出しています"
+                  : `全 ${previewPages ?? previewPageCount(segments)}ページ`}
+            </p>
+            <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
+              <TenmatsuPreviewStrip
+                base={base}
+                segments={segments ?? []}
+                fileOf={fileOf}
+                large={large}
+                onCount={setPreviewPages}
+              />
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              Excel・Word・PowerPoint・メールは確定時にPCでPDFに変換します。
+              ここでは案内の1枚で位置だけ示します
+            </p>
+          </section>
+        )}
+      </div>
+
+      {previewReason !== null && load !== undefined && (
+        <p className="mt-3 text-xs text-slate-500">プレビュー: {previewReason}</p>
+      )}
 
       {error && (
         <p role="alert" className="mt-3 text-sm text-red-700">

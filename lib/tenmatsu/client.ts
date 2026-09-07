@@ -53,6 +53,24 @@ export interface UploadedFile {
   file: string;
   name: string;
   size: number | null;
+  /**
+   * いま /file で返るPDFに、このファイルが入れているページ数。
+   * null＝まだ入っていない (入れただけで結合前) / 分からない。無い＝古いサーバー。
+   */
+  pages?: number | null;
+}
+
+/**
+ * いま /file で返るPDFの内訳1つ (返る順に並ぶ)。
+ * 「PDFのどのページが誰のものか」が分かるので、ダイアログの中で入れた書類を
+ * その位置に差し込んで「確定後の姿」を見せられる (lib/tenmatsu/preview.ts)。
+ * file が付くのは枠に入っている書類だけ (keep で送り返す名前と同じ)。
+ */
+export interface PdfLayoutEntry {
+  index: number;
+  name: string | null;
+  file?: string;
+  pages: number;
 }
 
 /** 確定した伝票の「あとからアップロードする枠」と、いま入っている書類 */
@@ -209,6 +227,12 @@ export interface ListItem {
   upload_slots?: UploadSlot[] | null;
   /** 書類を差し替えて組み直した日時。無ければ一度も差し替えていない */
   recomposed_at?: string | null;
+  /**
+   * いま /file で返るPDFの内訳 (ダイアログ内のプレビュー用)。
+   * undefined＝未対応のサーバー・この項目より前のキャッシュ (一覧を再読み込みすると出ることがある)。
+   * null＝その行では出せない (この機能より前の記録・内訳と実物が食い違う)。
+   */
+  pdf_layout?: PdfLayoutEntry[] | null;
   /** 監督。「どこで」の「監督：〇〇/営業：〇〇」から読んだ値 */
   supervisor?: string | null;
   /** 営業。同上 */
@@ -506,7 +530,18 @@ const isUploadedFileLike = (v: unknown): v is UploadedFile => {
   return (
     typeof o.file === "string" &&
     typeof o.name === "string" &&
-    (typeof o.size === "number" || o.size === null || o.size === undefined)
+    (typeof o.size === "number" || o.size === null || o.size === undefined) &&
+    (Number.isInteger(o.pages) || o.pages === null || o.pages === undefined)
+  );
+};
+const isPdfLayoutEntryLike = (v: unknown): v is PdfLayoutEntry => {
+  if (typeof v !== "object" || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return (
+    Number.isInteger(o.index) &&
+    (typeof o.name === "string" || o.name === null) &&
+    (typeof o.file === "string" || o.file === undefined) &&
+    Number.isInteger(o.pages)
   );
 };
 const isUploadSlotLike = (v: unknown): v is UploadSlot => {
@@ -580,7 +615,11 @@ export function isListItemLike(v: unknown): v is ListItem {
     (o.upload_slots === undefined ||
       o.upload_slots === null ||
       (Array.isArray(o.upload_slots) && o.upload_slots.every(isUploadSlotLike))) &&
-    optionalText(o.recomposed_at)
+    optionalText(o.recomposed_at) &&
+    // ダイアログ内プレビューの内訳。無い＝未対応のサーバー・古いキャッシュ
+    (o.pdf_layout === undefined ||
+      o.pdf_layout === null ||
+      (Array.isArray(o.pdf_layout) && o.pdf_layout.every(isPdfLayoutEntryLike)))
   );
 }
 

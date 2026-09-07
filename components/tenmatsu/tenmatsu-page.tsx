@@ -1036,6 +1036,7 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
             completePending(pending.denpyo_no, files, slots, acceptMissing)
           }
           retry={() => retryPending(pending.denpyo_no)}
+          load={loadPdf}
           onClose={() => setPendingNo(null)}
         />
       )}
@@ -1046,6 +1047,7 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
           item={recompose}
           mode="recompose"
           recompose={(files, slots) => recomposePending(recompose.denpyo_no, files, slots)}
+          load={loadPdf}
           onClose={() => setRecomposeNo(null)}
         />
       )}
