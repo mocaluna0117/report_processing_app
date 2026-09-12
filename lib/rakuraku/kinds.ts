@@ -1,5 +1,8 @@
 import "server-only";
 import { DEFAULT_COMPOSE, type ComposeRules } from "./parse/natsuin";
+import { type KindId, isKindId } from "./protocol";
+
+export { type KindId, isKindId } from "./protocol";
 
 /**
  * 書類の種類ごとの、楽楽精算の画面の設定。
@@ -12,7 +15,6 @@ import { DEFAULT_COMPOSE, type ComposeRules } from "./parse/natsuin";
  *   不具合があった（tenmatsu.py:219-223）。ここでは種類ごとの値がそのまま見える形にする。
  * ★テナントの URL は書かない。一覧のパスは**相対**で持ち、`resolveTenantPath` で組む。
  */
-export type KindId = "tenmatsu" | "senketsu" | "natsuin";
 
 export interface MenuStep {
   text: string;
@@ -213,10 +215,6 @@ export const KINDS: Readonly<Record<KindId, RakurakuKind>> = {
     },
   },
 };
-
-export function isKindId(value: unknown): value is KindId {
-  return value === "tenmatsu" || value === "senketsu" || value === "natsuin";
-}
 
 /** 種類の設定。★知らない種類は受け付けない（黙って顛末書に落とさない） */
 export function getKind(id: string): RakurakuKind {

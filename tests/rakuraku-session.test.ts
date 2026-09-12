@@ -63,4 +63,43 @@ describe("ログイン状態の封印", () => {
     delete process.env.RAKURAKU_SESSION_SECRET;
     expect(() => seal(INPUT)).toThrow("未設定");
   });
+
+  it("★鍵が無いことは「ログインし直し」と区別できる（利用者のせいではない）", () => {
+    const reasonOf = (fn: () => unknown) => {
+      try {
+        fn();
+      } catch (e) {
+        return e instanceof SessionError ? e.reason : "SessionError ではない";
+      }
+      return "投げなかった";
+    };
+    delete process.env.RAKURAKU_SESSION_SECRET;
+    expect(reasonOf(() => seal(INPUT))).toBe("secret");
+    process.env.RAKURAKU_SESSION_SECRET = SECRET;
+    const expired = seal(INPUT, -1);
+    expect(reasonOf(() => unseal(expired))).toBe("expired");
+    expect(reasonOf(() => unseal("a.b.c"))).toBe("invalid");
+  });
+});
+
+describe("メニューで見つけた一覧の URL も封じて持ち回る", () => {
+  it("種類ごとの URL が戻る", () => {
+    const lists = { natsuin: "https://example.test/abcd/list?wf=8" };
+    expect(unseal(seal({ ...INPUT, lists })).lists).toEqual(lists);
+  });
+
+  it("無ければ入れない", () => {
+    expect(unseal(seal({ ...INPUT, lists: {} })).lists).toBeUndefined();
+  });
+
+  it("★知らない種類の URL が入っていたら開かない", () => {
+    const token = seal({ ...INPUT, lists: { keihi: "https://example.test/x" } as never });
+    expect(() => unseal(token)).toThrow("中身が不正");
+  });
+
+  it("★封じ直しても期限は延ばさない（使い続けるだけで永久に使える札にしない）", () => {
+    const first = unseal(seal(INPUT, 60_000));
+    const again = unseal(seal({ state: first.state, home: first.home, exp: first.exp }));
+    expect(again.exp).toBe(first.exp);
+  });
 });

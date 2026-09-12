@@ -1,4 +1,5 @@
 import "server-only";
+import { RakurakuError } from "./errors";
 
 /**
  * 楽楽精算のテナント設定。
@@ -43,9 +44,14 @@ export function resolveTenantPath(path: string, tenant: TenantConfig): string {
  */
 export function assertTenantUrl(candidate: string, tenant: TenantConfig): URL {
   const base = new URL(tenant.loginUrl);
-  const url = new URL(candidate, base);
+  let url: URL;
+  try {
+    url = new URL(candidate, base);
+  } catch {
+    throw new RakurakuError("BAD_REQUEST", "URLの形が不正です");
+  }
   if (url.origin !== base.origin) {
-    throw new Error("テナント外のURLは開けません");
+    throw new RakurakuError("BAD_REQUEST", "テナント外のURLは開けません");
   }
   return url;
 }
