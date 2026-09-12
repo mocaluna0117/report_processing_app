@@ -25,7 +25,7 @@ export function parsePropertyName(where: string | null | undefined): string | nu
   const m = /受注物件[:：]\s*(.*)/.exec(where);
   if (!m) return null;
   let rest = m[1];
-  const cut = /[\s　]+[^\s　:：]{1,12}[:：]/.exec(rest);
+  const cut = /[\s\u3000]+[^\s\u3000:：]{1,12}[:：]/.exec(rest);
   if (cut) rest = rest.slice(0, cut.index);
   return rest.trim() || null;
 }
@@ -37,7 +37,7 @@ const STAFF_RE = {
 } as const;
 
 /** 値の後ろに別のラベルが続く書き方に備えて、そこで切る */
-const STAFF_TAIL_RE = /[\s　]*[^\s　:：]{1,12}[:：].*$/;
+const STAFF_TAIL_RE = /[\s\u3000]*[^\s\u3000:：]{1,12}[:：].*$/;
 
 /**
  * 「姓　名」を「姓 名」（半角スペース1つ）に揃える。読めなければ null。
@@ -46,7 +46,7 @@ const STAFF_TAIL_RE = /[\s　]*[^\s　:：]{1,12}[:：].*$/;
  */
 export function normalizePersonName(text: string | null | undefined): string | null {
   if (!text) return null;
-  const value = String(text).replace(/　/g, " ").trim().replace(/\s+/g, " ");
+  const value = String(text).replace(/\u3000/g, " ").trim().replace(/\s+/g, " ");
   return value || null;
 }
 
@@ -76,7 +76,7 @@ export function parseStaffNames(where: string | null | undefined): StaffNames {
  * 値の後ろに別のラベルが続く書き方に備えて切る位置。
  * ★監督・営業の方と違い**空白を必須**にする。空白の無い値を途中で切らないため。
  */
-const LABELED_TAIL_RE = /[\s　]+[^\s　:：/／]{1,12}[:：].*$/;
+const LABELED_TAIL_RE = /[\s\u3000]+[^\s\u3000:：/／]{1,12}[:：].*$/;
 
 /**
  * 「〇〇：値」の形から値を取り出す。無ければ null。
@@ -101,7 +101,7 @@ export function parseLabeledField(text: string | null | undefined, label: string
  */
 export function parsePj(text: string | null | undefined): string | null {
   if (!text) return null;
-  const digits = toAscii(String(text)).replace(/[\s　\-‐‑−ー]/g, "");
+  const digits = toAscii(String(text)).replace(/[\s\u3000\-\u2010\u2011\u2212\u30fc]/g, "");
   return /^\d{10}$/.test(digits) ? digits : null;
 }
 

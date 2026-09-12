@@ -14,7 +14,7 @@ export type Pager = readonly [total: number, first: number, last: number];
  * 波ダッシュは全角チルダ(U+FF5E)・波ダッシュ(U+301C)・ハイフン類のどれも来るので全部許す。
  */
 const PAGER_RE =
-  /([\d,]+)\s*件中\s*([\d,]+)\s*件?\s*[〜～~\-‐‑−ー]\s*([\d,]+)\s*件目/;
+  /([\d,]+)\s*件中\s*([\d,]+)\s*件?\s*[\u301c\uff5e~\-\u2010\u2011\u2212\u30fc]\s*([\d,]+)\s*件目/;
 
 /**
  * 件数表示を読む。読めなければ null。

@@ -32,7 +32,7 @@ function isRealDate(year: number, month: number, day: number): boolean {
  */
 export function normalizeDatetimeText(text: string | null | undefined): string | null {
   if (!text) return null;
-  const s = toAscii(String(text)).replace(/　/g, " ").trim();
+  const s = toAscii(String(text)).replace(/\u3000/g, " ").trim();
   const m = DATE_RE.exec(s);
   if (!m) return null;
   const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
