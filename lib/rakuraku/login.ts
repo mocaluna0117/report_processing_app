@@ -20,6 +20,14 @@ export type LoginCode =
 export interface LoginResult {
   code: LoginCode;
   message: string;
+  /**
+   * ログイン後に着いた画面の URL。
+   *
+   * ★ これを覚えておくこと。ログイン画面の URL へ戻ると、ログイン済みでも
+   *   フォームが出る作りなので、「パスワード欄があるか」で状態を見ると
+   *   **必ず「切れている」と誤判定する**。次回はこの URL を開いて確かめる。
+   */
+  homeUrl?: string;
 }
 
 const PASSWORD_SELECTOR = 'input[type="password"]';
@@ -74,7 +82,7 @@ export async function autoLoginOnce(
   if (await isLoginScreen(page)) {
     return { code: "LOGIN_FAILED", message: FAILED_MESSAGE };
   }
-  return { code: "OK", message: "ログインしました" };
+  return { code: "OK", message: "ログインしました", homeUrl: page.url() };
 }
 
 /** いまログイン画面にいるか（＝ログインしていないか） */

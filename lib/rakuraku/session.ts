@@ -14,6 +14,8 @@ const DEFAULT_TTL_MS = 8 * 60 * 60 * 1000;
 export interface SessionPayload {
   /** playwright の storageState をそのまま入れた文字列 */
   state: string;
+  /** ログイン後に着いた画面。次回はここを開いて状態を確かめる */
+  home: string;
   /** 期限 (epoch ミリ秒) */
   exp: number;
 }
@@ -33,10 +35,13 @@ function key(): Buffer {
   return createHash("sha256").update(secret).digest();
 }
 
-export function seal(state: string, ttlMs = DEFAULT_TTL_MS): string {
+export function seal(
+  input: { state: string; home: string },
+  ttlMs = DEFAULT_TTL_MS,
+): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv(ALGORITHM, key(), iv);
-  const payload: SessionPayload = { state, exp: Date.now() + ttlMs };
+  const payload: SessionPayload = { ...input, exp: Date.now() + ttlMs };
   const body = Buffer.concat([
     cipher.update(JSON.stringify(payload), "utf8"),
     cipher.final(),
@@ -60,7 +65,11 @@ export function unseal(token: string): SessionPayload {
     throw new SessionError("セッションを読めませんでした。ログインし直してください");
   }
   const payload = JSON.parse(json) as SessionPayload;
-  if (typeof payload.state !== "string" || typeof payload.exp !== "number") {
+  if (
+    typeof payload.state !== "string" ||
+    typeof payload.home !== "string" ||
+    typeof payload.exp !== "number"
+  ) {
     throw new SessionError("セッションの中身が不正です");
   }
   if (payload.exp < Date.now()) {

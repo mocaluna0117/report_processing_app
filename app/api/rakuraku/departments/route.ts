@@ -3,6 +3,7 @@ import type { BrowserContextOptions } from "playwright-core";
 import { launchBrowser } from "@/lib/rakuraku/browser";
 import { currentDepartment, listDepartments } from "@/lib/rakuraku/department";
 import { DEPT_SELECT_MISSING_TEXT } from "@/lib/rakuraku/errors";
+import { assertTenantUrl } from "@/lib/rakuraku/config";
 import { GuardError, assertEnabled, assertSameOrigin } from "@/lib/rakuraku/guard";
 import { isLoginScreen } from "@/lib/rakuraku/login";
 import { log } from "@/lib/rakuraku/log";
@@ -44,13 +45,16 @@ export async function POST(request: Request) {
 
   let launched;
   try {
-    const { state } = unseal(sessionToken);
+    const { state, home } = unseal(sessionToken);
+    // ★ ログイン画面の URL を開いてはいけない。ログイン済みでもフォームが出るので、
+    //   「パスワード欄があるか」で見ると必ず「切れている」と誤判定する。
+    const target = assertTenantUrl(home, tenant).toString();
     launched = await launchBrowser();
     const context = await launched.browser.newContext({
       storageState: JSON.parse(state) as BrowserContextOptions["storageState"],
     });
     const page = await context.newPage();
-    await page.goto(tenant.loginUrl, { waitUntil: "load", timeout: 30_000 });
+    await page.goto(target, { waitUntil: "load", timeout: 30_000 });
 
     if (await isLoginScreen(page)) {
       log("list", { ok: false, code: "SESSION_EXPIRED" });
@@ -73,7 +77,7 @@ export async function POST(request: Request) {
       ok: true,
       departments,
       current,
-      sessionToken: seal(JSON.stringify(await context.storageState())),
+      sessionToken: seal({ state: JSON.stringify(await context.storageState()), home }),
       totalMs: Date.now() - started,
     });
   } catch (e) {

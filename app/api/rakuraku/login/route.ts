@@ -84,7 +84,11 @@ export async function POST(request: Request) {
       return fail(result.code, result.message);
     }
 
-    const sessionToken = seal(JSON.stringify(await context.storageState()));
+    const sessionToken = seal({
+      state: JSON.stringify(await context.storageState()),
+      // ★ ログイン画面ではなく「着いた画面」を覚える（次回の状態確認に使う）
+      home: result.homeUrl ?? tenant.loginUrl,
+    });
     log("login", { ok: true, ms_total: Date.now() - started });
     return NextResponse.json(
       { ok: true, sessionToken, totalMs: Date.now() - started },

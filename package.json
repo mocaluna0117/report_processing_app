@@ -8,6 +8,7 @@
     "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "rm -f tsconfig.tsbuildinfo && tsc --noEmit",
     "postinstall": "node scripts/copy-assets.mjs",
     "dump": "tsx scripts/dump-textcontent.mts",
     "report:assets": "python3 scripts/build_report_template.py && python3 scripts/build_report_fonts.py",

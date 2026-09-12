@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { BrowserContextOptions } from "playwright-core";
 import { launchBrowser } from "@/lib/rakuraku/browser";
+import { assertTenantUrl } from "@/lib/rakuraku/config";
 import { GuardError, assertEnabled, assertSameOrigin } from "@/lib/rakuraku/guard";
 import { isLoginScreen } from "@/lib/rakuraku/login";
 import { log } from "@/lib/rakuraku/log";
@@ -44,7 +45,10 @@ export async function POST(request: Request) {
 
   let launched;
   try {
-    const { state } = unseal(sessionToken);
+    const { state, home } = unseal(sessionToken);
+    // ★ ログイン画面の URL を開いてはいけない。ログイン済みでもフォームが出るので、
+    //   「パスワード欄があるか」で見ると必ず「切れている」と誤判定する。
+    const target = assertTenantUrl(home, tenant).toString();
     launched = await launchBrowser();
     const context = await launched.browser.newContext({
       acceptDownloads: true,
@@ -53,15 +57,19 @@ export async function POST(request: Request) {
     const page = await context.newPage();
 
     const t0 = Date.now();
-    await page.goto(tenant.loginUrl, { waitUntil: "load", timeout: 30_000 });
+    await page.goto(target, { waitUntil: "load", timeout: 30_000 });
     const navMs = Date.now() - t0;
+
+    // 何が持ち回れたのかの手がかり（中身は出さず、数だけ）
+    const restored = JSON.parse(state) as { cookies?: unknown[] };
+    const cookieCount = Array.isArray(restored.cookies) ? restored.cookies.length : 0;
 
     const onLoginScreen = await isLoginScreen(page);
     const title = await page.title().catch(() => "");
     const frameCount = page.frames().length;
 
     // クッキーは入れ替わることがあるので、最新のものを返す
-    const refreshed = seal(JSON.stringify(await context.storageState()));
+    const refreshed = seal({ state: JSON.stringify(await context.storageState()), home });
 
     log("login", { ok: !onLoginScreen, ms_nav: navMs, n_frames: frameCount });
     return NextResponse.json(
@@ -78,10 +86,14 @@ export async function POST(request: Request) {
           }
         })(),
         navMs,
+        cookieCount,
         totalMs: Date.now() - started,
         sessionToken: refreshed,
         ...(onLoginScreen
-          ? { message: "ログイン画面に戻されました（セッションが切れている＝接続元に紐づいている可能性）" }
+          ? {
+              message:
+                "ログイン画面に戻されました（セッションが接続元に紐づいている可能性）",
+            }
           : {}),
       },
       { headers: { "Cache-Control": "no-store" } },
