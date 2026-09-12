@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>楽楽精算 メニュー（テスト用の再現）</title>
+<!--
+  ワークフローのメニュー画面の再現。★実画面の構造は未確認なので、
+  「起こりうる形」を並べて goto_list_by_menu の探し方を確かめるためのもの。
+    - frameset の左（メニュー）と右（本体）に分かれている
+    - 左メニューに「顛末書」「専決決裁書」「専決決裁書一覧」がある
+      ← 部分一致だと「専決決裁書」で2つ当たる（押さずに止まることの確認）
+    - 上部バーにも同じリンクがある ← href が同じなので1つに数える（重複排除の確認）
+  ★氏名・物件名は含めない。
+-->
+<frameset cols="220,*">
+  <frame name="menu" src="menu_side.html">
+  <frame name="main" src="menu_main.html">
+</frameset>

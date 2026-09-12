@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>専決決裁書 詳細（捺印決裁書から開く）</title>
+<!--
+  捺印決裁書から取り直す専決決裁書の見本。添付の選別と並べ替えを確かめるためのもの。
+  既存の senketsu_detail.html は「添付2件」を前提にした検査があるので、別ファイルにしている。
+  データはすべて架空。
+-->
+<body>
+<table class="d_table_contents">
+  <tr><th>伝票No.</th><td>SE00002267</td></tr>
+  <tr><th>申請日</th><td>2026/08/25 17:22:03</td></tr>
+  <tr><th>表題</th><td>追加工事見積書承認依頼</td></tr>
+  <tr><th>内容</th><td>物件名：架空邸　工事内容：外壁の補修</td></tr>
+
+  <tr class="d_border_top"><th>添付ファイル</th><td>
+    <span class="fileName1 dummyLink" onclick="WorkflowDenpyo.downloadFileData(this)">見積総覧（架空邸）.pdf</span></td></tr>
+  <tr><th>添付ファイル</th><td>
+    <span class="fileName2 dummyLink" onclick="WorkflowDenpyo.downloadFileData(this)">見積：架空商店　20260916.pdf</span></td></tr>
+  <tr><th>添付ファイル</th><td>
+    <span class="fileName3 dummyLink" onclick="WorkflowDenpyo.downloadFileData(this)">写真1.jpg</span></td></tr>
+  <tr><th>添付ファイル</th><td>
+    <span class="fileName4 dummyLink" onclick="WorkflowDenpyo.downloadFileData(this)">無関係.xlsx</span></td></tr>
+  <tr><th>添付ファイル</th><td>
+    <span class="fileName5 dummyLink" onclick="WorkflowDenpyo.downloadFileData(this)">【決定通知書】保険金支払額の計算（架空県_架空邸_123）.pdf</span></td></tr>
+  <!-- 空きスロット（拾わないことの確認） -->
+  <tr><th>添付ファイル</th><td>
+    <span class="fileName6 dummyLink" style="display:none;" onclick="WorkflowDenpyo.downloadFileData(this)">&nbsp;</span></td></tr>
+</table>
+
+<button class="common-btn white output accesskeyPrint" onclick="window.__printClicked = true; return false;">
+  <i class="fa fa-print darkblue">print</i>印刷</button>
+
+<script>
+window.__clicked = [];
+var WorkflowDenpyo = {
+  downloadFileData: function (el) { window.__clicked.push((el.textContent || '').trim()); }
+};
+</script>
+</body>

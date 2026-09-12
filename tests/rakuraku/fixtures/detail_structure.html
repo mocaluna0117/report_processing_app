@@ -1,0 +1,195 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>顛末書 詳細</title>
+<!--
+  楽楽精算の伝票（顛末書）詳細画面の「構造」を再現したテスト用ページ。
+  2026-09-02 の実画面（inspect）で確認した構造を写し取っている。
+  データはすべて架空。実際の施主名・取引先名・申請者名は一切含まない。
+
+  実画面で確認した事実:
+    - 印刷ボタン: <button class="common-btn white output accesskeyPrint ...">
+                    <i class="fa fa-print darkblue">print</i>印刷</button>
+    - 添付ファイル: <span class="fileNameN dummyLink szb-text-link-regular"
+                       onclick="WorkflowDenpyo.downloadFileData(this,'fileDataTmpFlgN','eFileNoN')">
+                       ファイル名</span>
+                  ＋ hidden の fileNoN（添付ありなら非ゼロ）/ eFileNoN
+    - 空きスロットは style="display:none" かつ中身が &nbsp;、fileNoN は 0
+    - 添付の枠は5つ（fileName1〜5）
+    - 「閉じる」は onclick="window.parent.close()" ← 押すとウィンドウが閉じるので使わない
+    - 同じ場所に「取下げ」「コピー」がある ← データを変更する操作なので絶対に押さない
+    - 申請日: 一覧は日付だけ（2026/09/01）だが、伝票画面は秒まで出る（2026/09/04 17:51:38）
+    - 「承認履歴」ボタンには onclick が無い ← config の approval_log_selector は当たらず、
+      role/文字でのフォールバックが実際に効く経路
+    ★このファイルの「承認履歴モーダル」だけは**実画面未確認の推測**。
+      いちばんありそうな形（同じ画面内の <div> ＋オーバーレイ＋表、列名「日付」）で書いている。
+      実物が違っていたら config.json の detail.approval_log_* を直せば追従できる作り。
+-->
+<body>
+<form name="sapWorkflowDenpyoActionForm" method="post" action="/dummy/sapWorkflowDenpyo/initializeView">
+
+<table class="d_table_contents">
+  <tr><th>伝票No.</th><td>TE00009002</td></tr>
+  <tr><th>申請者</th><td>テスト 花子</td></tr>
+  <!-- 申請日。★一覧は日付だけだが伝票画面は秒まで出る（実画面の見え方に合わせた架空の値） -->
+  <tr><th>申請日</th><td>2026/09/04 17:51:38</td></tr>
+  <!-- 1行に「ラベル・値・ラベル・値」と2組並ぶ書き方。「次の空でないセル」を値に採れるか。
+       支払予定日はわざと承認日より後の日付にしてある
+       （最終承認日としてこれを拾ってしまわないことの確認用） -->
+  <tr><th>予算外？</th><td>予算外</td><th>支払予定日</th><td>2026/10/31</td></tr>
+  <!-- 「申請日」を探して「申請日時」に当たらないこと（完全一致優先）の確認用 -->
+  <tr><th>申請日時（表示用）</th><td>2026/09/04 17時51分</td></tr>
+  <!-- 「どこで」。監督・営業はここから読む。★実画面と同じく一覧では途中で切れる長さ -->
+  <tr><th>どこで</th>
+      <td>注文受注物件：架空台1丁目A号棟　施主名：架空　太郎　監督：架空　一郎/営業：架空　二郎</td></tr>
+  <!-- ★「どこで」のすぐ下の行にPJコードがある。実画面の見出しは「PJコード」
+       （2026-09-06 の inspect で確認）。見出しが変わっても拾えるよう、
+       config の detail.label_pj を空にすれば位置（すぐ下の行）でも探せる -->
+  <tr><th>PJコード</th><td>9901230101</td></tr>
+
+  <tr class="d_border_top">
+    <th class="tooltip"><span class="tooltipItem">添付ファイル</span></th>
+    <td>
+      <span class="fileName1 dummyLink szb-text-link-regular"
+            onclick="WorkflowDenpyo.downloadFileData(this, 'fileDataTmpFlg1', 'eFileNo1')"
+            tabindex="0">見積：テスト工業　20260916.pdf</span>
+      <input type="hidden" name="fileNo1" value="33172">
+      <input type="hidden" name="eFileNo1" value="DUMMY1">
+    </td>
+  </tr>
+
+  <tr>
+    <th class="tooltip"><span class="tooltipItem">添付ファイル</span></th>
+    <td>
+      <span class="fileName2 dummyLink szb-text-link-regular"
+            onclick="WorkflowDenpyo.downloadFileData(this, 'fileDataTmpFlg2', 'eFileNo2')"
+            tabindex="0">現場写真.jpg</span>
+      <input type="hidden" name="fileNo2" value="33173">
+      <input type="hidden" name="eFileNo2" value="DUMMY2">
+    </td>
+  </tr>
+
+  <!-- ここから空きスロット（display:none ＋ &nbsp; ＋ fileNo=0）。除外されなければテスト失敗 -->
+  <tr>
+    <th class="tooltip"><span class="tooltipItem">添付ファイル</span></th>
+    <td>
+      <span class="fileName3 dummyLink szb-text-link-regular" style="display:none;"
+            onclick="WorkflowDenpyo.downloadFileData(this, 'fileDataTmpFlg3', 'eFileNo3')"
+            tabindex="0">&nbsp;</span>
+      <input type="hidden" name="fileNo3" value="0">
+      <input type="hidden" name="eFileNo3" value="DUMMY3">
+    </td>
+  </tr>
+  <tr>
+    <th class="tooltip"><span class="tooltipItem">添付ファイル</span></th>
+    <td>
+      <span class="fileName4 dummyLink szb-text-link-regular" style="display:none;"
+            onclick="WorkflowDenpyo.downloadFileData(this, 'fileDataTmpFlg4', 'eFileNo4')"
+            tabindex="0">&nbsp;</span>
+      <input type="hidden" name="fileNo4" value="0">
+      <input type="hidden" name="eFileNo4" value="DUMMY4">
+    </td>
+  </tr>
+  <tr>
+    <th class="tooltip"><span class="tooltipItem">添付ファイル</span></th>
+    <td>
+      <span class="fileName5 dummyLink szb-text-link-regular" style="display:none;"
+            onclick="WorkflowDenpyo.downloadFileData(this, 'fileDataTmpFlg5', 'eFileNo5')"
+            tabindex="0">&nbsp;</span>
+      <input type="hidden" name="fileNo5" value="0">
+      <input type="hidden" name="eFileNo5" value="DUMMY5">
+    </td>
+  </tr>
+</table>
+
+<!-- 伝票画面に元からある「承認ルート」の表。承認履歴（モーダル）ではない。
+     ★「日付」列を持つが**時刻が無い**。モーダルが開く前にここから採ってしまうと、
+       多くの記録が日付だけの値になる（実際に起きた不具合）。
+       クリック後に現れた表だけを見ること（require_new）の確認に使う。★氏名・番号は架空 -->
+<table class="d_table_contents d_shonin_route">
+  <tr><th>承認部門</th><th>承認者</th><th>コード</th><th>日付</th></tr>
+  <tr><td>管理本部 10005</td><td>テスト 一郎</td><td>990001</td><td>2026/09/02</td></tr>
+  <tr><td>管理本部 10005</td><td>テスト 二郎</td><td>990016</td><td>2026/09/03</td></tr>
+  <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+</table>
+
+<!-- 参照リンク（添付ではない）。添付として誤検出しないことを確認する -->
+<p><a class="szb-text-link-regular" href="https://example.com/g/cabinet/view.csp?hid=1&amp;fid=2">https://example.com/g/cabinet/view.csp?hid=1&amp;fid=2</a></p>
+
+<div>
+  <button type="button" class="common-btn mini d_marginTop5 d_floatRight">
+    <i class="fa">manage_search</i>承認履歴</button>
+  <button type="button" class="common-btn accesskeyClose d_floatLeft szb-button-secondary"
+          onclick="window.parent.close(); return false;">閉じる</button>
+  <button type="button" class="common-btn white copy accesskeyFix d_floatLeft szb-button-secondary">コピー</button>
+  <button type="button" class="common-btn white torisage accesskeyTorisage d_floatLeft">取下げ</button>
+  <button type="button" class="common-btn white output accesskeyPrint d_floatRight szb-button-secondary">
+    <i class="fa fa-print darkblue">print</i>印刷</button>
+</div>
+
+<!-- ここから下は「承認履歴」モーダルの再現。★実画面の構造は未確認（03_shonin_log がまだ無い）。
+     わざと入れてあるもの:
+       - 日付が空の行（まだ承認していない承認者）
+       - 「差戻し」の行 ← この日付がいちばん新しいが、最終承認日にしてはいけない
+       - 日付が昇順でない並び ← 並び順に依存せず「いちばん新しい」を選べるかの確認
+       - 秒の無い行（2026/09/06 13:45）← 元の精度をそのまま返すかの確認
+       - 画面全体を覆うオーバーレイ ← 開いたままだと「印刷」が押せなくなることの確認
+         （process_one が読み取り後に伝票画面を開き直す理由） -->
+<div id="shoninLogOverlay" style="display:none; position:fixed; top:0; left:0; right:0;
+     bottom:0; background:rgba(0,0,0,0.4); z-index:1000;"></div>
+<div id="shoninLogDialog" style="display:none; position:fixed; top:30px; left:30px;
+     width:80%; background:#ffffff; z-index:1001;">
+  <h3>承認履歴</h3>
+  <table class="d_table_contents szb-table-mu">
+    <tr><th>順番</th><th>承認部門</th><th>承認者</th><th>日付</th><th>処理</th><th>コメント</th></tr>
+    <tr><td>1</td><td>アフターメンテナンス課</td><td>テスト 太郎</td>
+        <td>2026/09/04 17:51:38</td><td>申請</td><td>&nbsp;</td></tr>
+    <tr><td>2</td><td>品質管理部</td><td>テスト 花子</td>
+        <td>2026/09/08 09:20:11</td><td>差戻し</td><td>金額を確認してください</td></tr>
+    <tr><td>3</td><td>品質管理部</td><td>テスト 花子</td>
+        <td>2026/09/05 10:00:00</td><td>承認</td><td>&nbsp;</td></tr>
+    <tr><td>4</td><td>管理本部</td><td>テスト 一郎</td>
+        <td>2026/09/06 13:45</td><td>承認</td><td>&nbsp;</td></tr>
+    <tr><td>5</td><td>管理本部</td><td>テスト 二郎</td>
+        <td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+  </table>
+  <button type="button" id="shoninLogClose">閉じる</button>
+</div>
+
+</form>
+<script>
+// テスト用: クリックされたことだけ記録する（実際のダウンロードは行わない）
+window.__clicked = [];
+// 「承認履歴」。★実画面のボタンには onclick が無いので、ここでも付けない
+// （config の approval_log_selector は当たらず、role/文字のフォールバックが効く経路を通す）
+window.__shoninLogOpened = false;
+[...document.querySelectorAll('button')]
+  .filter(function (b) { return b.textContent.indexOf('承認履歴') >= 0; })
+  .forEach(function (b) {
+    b.addEventListener('click', function () {
+      // ★実画面と同じく、押した直後には表が出ない（サーバーへ問い合わせる）。
+      //   ここで待たずに読むと、上の「承認ルート」の日付を最終承認日にしてしまう
+      window.__shoninLogOpened = true;
+      setTimeout(function () {
+        document.getElementById('shoninLogOverlay').style.display = 'block';
+        document.getElementById('shoninLogDialog').style.display = 'block';
+      }, 800);
+    });
+  });
+// モーダル側の「閉じる」。★コードからは押さない（構造が未確認で、伝票画面の
+// 「閉じる」= window.parent.close() と紛れるため）。押されていないことの確認用に記録する
+window.__shoninLogCloseClicked = false;
+document.getElementById('shoninLogClose')
+  .addEventListener('click', function () {
+    window.__shoninLogCloseClicked = true;
+    document.getElementById('shoninLogOverlay').style.display = 'none';
+    document.getElementById('shoninLogDialog').style.display = 'none';
+  });
+var WorkflowDenpyo = {
+  downloadFileData: function (el, tmpFlg, eFileNo) {
+    window.__clicked.push(el.textContent.trim());
+  }
+};
+document.querySelector('button.accesskeyPrint')
+        .addEventListener('click', function () { window.__printClicked = true; });
+</script>
+</body>

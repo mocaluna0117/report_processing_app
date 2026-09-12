@@ -1,0 +1,46 @@
+<!doctype html><meta charset=utf-8><title>menu steps main</title>
+<body>
+<!-- 1段目: タイル。押すとパネルが出る（同じ画面の中で表示が切り替わる） -->
+<div class="tile" onclick="openPanel()">ワークフロー</div>
+<div class="tile" onclick="void 0">交通費精算</div>
+
+<!-- 2段目以降: 押すまで隠れている。文字では当たるが押せない（可視性で外す） -->
+<div id="panel" style="display:none">
+  <div class="tab" onclick="showTab('shinsei')">行為の申請(稟議)</div>
+  <div class="tab" onclick="showTab('oin')">押印の申請</div>
+
+  <div id="tab-shinsei" style="display:none">
+    <table><tr><td>［行為の申請］ 稟議書</td>
+      <td><button onclick="go('ringi')">一覧</button></td></tr></table>
+  </div>
+
+  <!-- 3段目: 「一覧」が3つ並ぶ。near（同じ行の「捺印決裁書」）で選ぶ -->
+  <div id="tab-oin" style="display:none">
+    <table>
+      <tr><td>［押印の申請］ 契約書</td>
+        <td><button onclick="go('keiyaku')">一覧</button></td></tr>
+      <tr><td>［押印の申請］ 捺印決裁書</td>
+        <td><button onclick="go('natsuin')">一覧</button></td></tr>
+      <tr><td>［押印の申請］ 覚書</td>
+        <td><button onclick="go('oboe')">一覧</button></td></tr>
+    </table>
+  </div>
+</div>
+
+<script>
+window.__menuClicked = 0;
+document.addEventListener('click', function () { window.__menuClicked += 1; }, true);
+function openPanel() { document.getElementById('panel').style.display = 'block'; }
+function showTab(name) {
+  document.getElementById('tab-shinsei').style.display = 'none';
+  document.getElementById('tab-oin').style.display = 'none';
+  document.getElementById('tab-' + name).style.display = 'block';
+}
+function go(wf) {
+  var url = 'menu_list_stub.html?wf=' + wf + '&clicks=' + window.__menuClicked;
+  // 実画面の捺印決裁書は別ウィンドウで開く。__popup を立てるとその形を真似る
+  if (window.__popup) { window.open(url, '_blank'); return; }
+  location.href = url;
+}
+</script>
+</body>

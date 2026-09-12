@@ -1,0 +1,208 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>管理者用データ（自部門）　顛末書</title>
+<!--
+  楽楽精算の顛末書一覧の「構造」を再現したテスト用ページ。
+  2026-09-01 の実画面（inspect）で確認した table id / class / 列構成 / リンク形式 /
+  ページ送りの呼び出し方を写し取っている。
+  データはすべて架空。実際の施主名・取引先名・申請者名は一切含まない。
+
+  実画面で確認した事実:
+    - 一覧は table#listTable、13列
+    - ヘッダー: '', 伝票No., 申請日 ▼, 申請者, 所属部門, 【その他】の場合の表題,
+                支払金額(税込), 支払先, 支払予定日, どこで, 予算外？, 承認, 状態
+    - 伝票No.は a.w_denpyo.szb-text-link で workflowDetailView?eDenpyoNo=... へのGETリンク
+    - 状態の値: 承認済み / 承認依頼中 0/3 / 取下げ / 差戻し
+    - 「どこで」は `〇〇受注物件：物件名 施主名：…` の形。列幅で表示が切れることがあり、
+      その場合は title 属性に全文が入る（下の TE00009003 がその形）
+    - ページ送りは DenpyoKensaku.pageFeed(1)
+-->
+<body>
+<table class="d_kensaku_table szb-kensaku-shinsei-seisan-wrapper">
+  <tr><th>検索キーワード</th><td><input type="text" name="searchKeyword" value=""></td></tr>
+  <tr><td>
+    <a href="javascript:void(0)">詳細検索</a>
+    <button type="button" class="common-btn search accesskeySerch szb-detail-search-button">検索</button>
+  </td></tr>
+</table>
+
+<div id="pagerText">表示件数 100件　（5件中 1件～5件目）</div>
+
+<table id="listTable" class="tabGroup d_table_contents d_table_contents_list szb-table-mu">
+  <tr>
+    <th><input type="checkbox"></th>
+    <th><a href="#">伝票No.</a></th>
+    <th><a href="#">申請日 <span class="material-icons">arrow_downward</span></a></th>
+    <th><a href="#">申請者</a></th>
+    <th><a href="#">所属部門</a></th>
+    <th><a href="#">【その他】の場合の表題</a></th>
+    <th><a href="#">支払金額(税込)</a></th>
+    <th><a href="#">支払先</a></th>
+    <th><a href="#">支払予定日</a></th>
+    <th><a href="#">どこで</a></th>
+    <th><a href="#">予算外？</a></th>
+    <th><a href="#">承認</a></th>
+    <th><a href="#">状態</a></th>
+  </tr>
+
+  <tr>
+    <td><input type="checkbox" name="eMultiDenpyoNo" value="DUMMY001"></td>
+    <td><a class="w_denpyo szb-text-link" href="/TENANTPATH/sapWorkflowDenpyoView/workflowDetailView?tmpFlg=false&amp;eDenpyoNo=DUMMY001&amp;prevDispNo=4&amp;workflowId=4&amp;refId=4">TE00009001</a></td>
+    <td>2026/09/01</td>
+    <td>テスト 太郎</td>
+    <td>アフターメンテナンス課(1800)</td>
+    <td>テスト用の表題A</td>
+    <td>71,500 円</td>
+    <td>テスト商事</td>
+    <td>2026/10/30</td>
+    <td>注文受注物件：テスト物件A　施主名：テスト 太郎</td>
+    <td>予算外</td>
+    <td><span class="material-icons">radio_button_unchecked</span></td>
+    <td>承認依頼中 0/3</td>
+  </tr>
+
+  <tr>
+    <td><input type="checkbox" name="eMultiDenpyoNo" value="DUMMY002"></td>
+    <td><a class="w_denpyo szb-text-link" href="/TENANTPATH/sapWorkflowDenpyoView/workflowDetailView?tmpFlg=false&amp;eDenpyoNo=DUMMY002&amp;prevDispNo=4&amp;workflowId=4&amp;refId=4">TE00009002</a></td>
+    <td>2026/08/28</td>
+    <td>テスト 花子</td>
+    <td>アフターメンテナンス課(1800)</td>
+    <td>テスト用の表題B</td>
+    <td>16,500 円</td>
+    <td>テスト工業</td>
+    <td>2026/10/31</td>
+    <td>法人受注物件：テスト法人物件B</td>
+    <td>予算外</td>
+    <td><span class="material-icons">check_circle</span></td>
+    <td>承認済み</td>
+  </tr>
+
+  <tr>
+    <td><input type="checkbox" name="eMultiDenpyoNo" value="DUMMY003"></td>
+    <td><a class="w_denpyo szb-text-link" href="/TENANTPATH/sapWorkflowDenpyoView/workflowDetailView?tmpFlg=false&amp;eDenpyoNo=DUMMY003&amp;prevDispNo=4&amp;workflowId=4&amp;refId=4">TE00009003</a></td>
+    <td>2026/08/27</td>
+    <td>テスト 次郎</td>
+    <td>品質管理部(1900)</td>
+    <td>テスト用の表題C</td>
+    <td>33,000 円</td>
+    <td>テスト建設</td>
+    <td>2026/09/30</td>
+    <td title="注文受注物件：テスト物件C 施主名：テスト 次郎">注文受注物件：テスト物件C…</td>
+    <td>予算外</td>
+    <td><span class="material-icons">check_circle</span></td>
+    <td>承認済み</td>
+  </tr>
+
+  <tr>
+    <td><input type="checkbox" name="eMultiDenpyoNo" value="DUMMY004"></td>
+    <td><a class="w_denpyo szb-text-link" href="/TENANTPATH/sapWorkflowDenpyoView/workflowDetailView?tmpFlg=false&amp;eDenpyoNo=DUMMY004&amp;prevDispNo=4&amp;workflowId=4&amp;refId=4">TE00009004</a></td>
+    <td>2026/08/26</td>
+    <td>テスト 三郎</td>
+    <td>品質管理部(1900)</td>
+    <td>テスト用の表題D</td>
+    <td>194,700 円</td>
+    <td>テスト設備</td>
+    <td>2026/09/30</td>
+    <td>テスト物件D</td>
+    <td>予算外</td>
+    <td><span class="material-icons">cancel</span></td>
+    <td>取下げ</td>
+  </tr>
+
+  <tr>
+    <td><input type="checkbox" name="eMultiDenpyoNo" value="DUMMY005"></td>
+    <td><a class="w_denpyo szb-text-link" href="/TENANTPATH/sapWorkflowDenpyoView/workflowDetailView?tmpFlg=false&amp;eDenpyoNo=DUMMY005&amp;prevDispNo=4&amp;workflowId=4&amp;refId=4">TE00009005</a></td>
+    <td>2026/08/21</td>
+    <td>テスト 四郎</td>
+    <td>品質管理部(1900)</td>
+    <td>テスト用の表題E</td>
+    <td>220,000 円</td>
+    <td>テスト塗装</td>
+    <td>2026/09/30</td>
+    <td></td>
+    <td>予算外</td>
+    <td><span class="material-icons">undo</span></td>
+    <td>差戻し</td>
+  </tr>
+</table>
+
+<!-- ページ送り。★実画面と同じく |< < > >| の4つで、onclick には
+     「行き先のページ番号」が埋め込まれ、ページが変わるたびに描き直される。
+     そのため設定に pageFeed(1) を固定すると2ページ目から先へ進めない -->
+<div id="pagerButtons"></div>
+<button type="button" class="common-btn accesskeyClose szb-button-second">閉じる</button>
+<button type="button" class="common-btn szb-button-secondary">選択した伝票を一括印刷</button>
+
+<script>
+// ページ送りの再現。★実画面と同じく「画面の読み込み」ではなく「表の差し替え」だけを行う
+// （load イベントは起きない）。差し替えは少し遅れて起きるので、待ち方の検証に使える。
+//
+//   window.__pagerMode      … 'absolute'（既定）… onclick の数字は行き先のページ番号（0始まり）
+//                             'relative'        … -1 / +1 の相対（昔そう思っていた形）
+//                             'jump'            … 何を押しても最終ページへ飛ぶ（異常系）
+//   window.__pages          … 全ページ数（既定1＝単ページ）。__setupPager(n) で増やす
+//   window.__pageFeedDelayMs… 差し替えまでの遅れ（既定 800ms）
+//   window.__pageFeedBroken … true にすると押しても何も変わらない
+var PAGE_SIZE = 5;
+window.__pagerMode = 'absolute';
+window.__pages = 1;
+window.__pageNo = 1;
+window.__pageFeedCalled = null;
+
+window.__renderPager = function () {
+  var total = window.__pages * PAGE_SIZE;
+  var first = (window.__pageNo - 1) * PAGE_SIZE + 1;
+  var pager = document.getElementById('pagerText');
+  if (pager) {
+    pager.textContent = '表示件数 100件　（' + total + '件中 ' + first
+      + '件～' + (first + PAGE_SIZE - 1) + '件目）';
+  }
+  var defs = [
+    ['first_page', 1],
+    ['chevron_left', Math.max(1, window.__pageNo - 1)],
+    ['chevron_right', Math.min(window.__pages, window.__pageNo + 1)],
+    ['last_page', window.__pages]
+  ];
+  document.getElementById('pagerButtons').innerHTML = defs.map(function (d) {
+    var arg;
+    if (window.__pagerMode === 'relative') {
+      arg = d[0] === 'chevron_left' ? -1 : d[0] === 'chevron_right' ? 1
+          : d[0] === 'first_page' ? -99 : 99;
+    } else {
+      arg = d[1] - 1;  // ★0始まりのページ番号（1ページ目にいるとき「次へ」は pageFeed(1)）
+    }
+    return '<a class="pointer szb-pagination-icon-button" onclick="DenpyoKensaku.pageFeed('
+      + arg + ');"><span class="material-icons">' + d[0] + '</span></a>';
+  }).join('');
+};
+
+window.__setupPager = function (pages, mode) {
+  window.__pages = pages;
+  window.__pageNo = 1;
+  window.__pagerMode = mode || 'absolute';
+  window.__pageFeedCalled = null;
+  window.__renderPager();
+};
+
+var DenpyoKensaku = {
+  pageFeed: function (n) {
+    window.__pageFeedCalled = n;
+    if (window.__pageFeedBroken) return;
+    var delay = window.__pageFeedDelayMs;
+    if (delay === undefined) delay = 800;
+    setTimeout(function () {
+      var next;
+      if (window.__pagerMode === 'relative') next = window.__pageNo + n;
+      else if (window.__pagerMode === 'jump') next = window.__pages;
+      else next = n + 1;  // 0始まり → 1始まり
+      if (next < 1 || next > window.__pages || next === window.__pageNo) return;
+      window.__pageNo = next;
+      var link = document.querySelector('#listTable a.w_denpyo');
+      if (link) link.textContent = 'TE0000' + (9000 + window.__pageNo * 100);
+      window.__renderPager();
+    }, delay);
+  }
+};
+window.__renderPager();
+</script>
+</body>

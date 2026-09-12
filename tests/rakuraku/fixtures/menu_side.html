@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<body>
+<script>
+  // 押されたことを記録する（押していないことも確かめられるように）
+  window.__menuClicked = 0;
+  window.addEventListener("click", function () { window.__menuClicked += 1; });
+</script>
+<ul>
+  <li><a href="menu_list_stub.html?workflowId=4&amp;refId=4" target="main">顛末書</a></li>
+  <li><a href="menu_list_stub.html?workflowId=7&amp;refId=7" target="main">専決決裁書</a></li>
+  <li><a href="menu_list_stub.html?workflowId=7&amp;refId=7&amp;all=1" target="main">専決決裁書一覧</a></li>
+  <li><a href="menu_list_stub.html?workflowId=9&amp;refId=9" target="main">経費精算</a></li>
+</ul>
+</body>

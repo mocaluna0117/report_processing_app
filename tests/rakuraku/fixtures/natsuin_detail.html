@@ -1,0 +1,50 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>捺印決裁書 詳細</title>
+<!--
+  楽楽精算の捺印決裁書の伝票画面の「構造」を写したテスト用ページ。
+  作りは専決決裁書（senketsu_detail.html）と同じで、読む項目だけが違う。
+  データはすべて架空。実在の施主名・取引先名・申請者名は含まない。
+
+  確認したいこと:
+    - 「内容」「専決決裁書№」「備考」を読む（「表題」「どこで」「PJコード」は無い）
+    - 物件名は**備考**の「物件名：〇〇」から取り出す（専決決裁書は「内容」から）
+    - 支払先の行は**わざと置いていない**（無ければ空欄になることの確認）
+    - 捺印決裁書自身の添付は結合しない（拾わないことの確認用に1件だけ置く）
+-->
+<body>
+<form name="sapWorkflowDenpyoActionForm" method="post" action="/dummy/sapWorkflowDenpyo/initializeView">
+
+<table class="d_table_contents">
+  <tr><th>伝票No.</th><td>NA00001001</td></tr>
+  <tr><th>申請者</th><td>架空 次郎(990022)</td></tr>
+  <tr><th>申請日</th><td>2026/09/05 10:20:30</td></tr>
+  <tr><th>内容</th><td>外壁補修工事の捺印依頼</td></tr>
+  <tr><th>専決決裁書№</th><td>2267</td></tr>
+  <tr><th>印章種別</th><td>社印</td></tr>
+  <!-- ★支払先・決裁申請額(税込) の行は実画面に無い（紐づく専決決裁書から写す） -->
+  <!-- ★物件名はここ（備考）から取り出す -->
+  <tr><th>備考</th>
+      <td>物件情報 物件名：架空邸 施主名：架空 太郎　引渡日：2026-04-28</td></tr>
+
+  <tr class="d_border_top">
+    <th class="tooltip"><span class="tooltipItem">添付ファイル</span></th>
+    <td>
+      <span class="fileName1 dummyLink szb-text-link-regular"
+            onclick="WorkflowDenpyo.downloadFileData(this, 'fileDataTmpFlg1', 'eFileNo1')"
+            tabindex="0">捺印依頼書.pdf</span>
+      <input type="hidden" name="fileNo1" value="44001">
+      <input type="hidden" name="eFileNo1" value="DUMMY1">
+    </td>
+  </tr>
+</table>
+
+<button class="common-btn white output accesskeyPrint" onclick="window.__printClicked = true; return false;">
+  <i class="fa fa-print darkblue">print</i>印刷</button>
+
+<script>
+var WorkflowDenpyo = {
+  downloadFileData: function (el) { window.__downloaded = (el.textContent || '').trim(); }
+};
+</script>
+</body>
