@@ -12,12 +12,18 @@ const nextConfig: NextConfig = {
   /**
    * 楽楽精算を操作する Chromium は、まとめてバンドルできない。
    * - `serverExternalPackages`: Next が中身を解析せず、そのまま require する
-   * - `outputFileTracingIncludes`: バイナリは実行時に fs で読まれるので、
-   *   静的解析では拾えない。明示して関数に同梱する
+   * - `outputFileTracingIncludes`: 実行時に読まれるファイルは静的解析で拾えないので、
+   *   明示して関数に同梱する。
+   *   ★ playwright-core は**丸ごと**入れること。lib/coreBundle.js が
+   *     browsers.json などを実行時に require するが、束ねられた中の require なので
+   *     Next の追跡では辿れない（1つずつ足すと取りこぼしが続く。13MBなので丸ごとで困らない）。
    */
   serverExternalPackages: ["playwright-core", "@sparticuz/chromium"],
   outputFileTracingIncludes: {
-    "/api/rakuraku/**": ["./node_modules/@sparticuz/chromium/bin/**/*"],
+    "/api/rakuraku/**": [
+      "./node_modules/@sparticuz/chromium/bin/**/*",
+      "./node_modules/playwright-core/**/*",
+    ],
   },
 
   async headers() {

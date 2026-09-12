@@ -69,13 +69,11 @@ export async function launchBrowser(): Promise<LaunchedBrowser> {
     const sparticuz = (await import("@sparticuz/chromium")).default;
     sparticuz.setGraphicsMode = false;
     const executablePath = await sparticuz.executablePath();
-    return wrap(
-      await chromium.launch({
-        ...base,
-        executablePath,
-        args: [...sparticuz.args, `--user-data-dir=${profileDir}`],
-      }),
-    );
+    // ★ --user-data-dir は渡さない。playwright が自分で一時プロファイルを作って
+    //   その引数を渡すので、二重に指定すると衝突する。
+    //   sparticuz の args には --headless='shell' と --single-process が入っている
+    //   （この Chromium は headless 専用ビルドなので外せない）。
+    return wrap(await chromium.launch({ ...base, executablePath, args: [...sparticuz.args] }));
   }
 
   const channel =
