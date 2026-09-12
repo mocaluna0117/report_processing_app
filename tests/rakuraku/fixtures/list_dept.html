@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>管理者用データ（自部門）　顛末書（テスト用）</title>
+<!--
+  いま楽楽精算が覚えている部門（クッキー dept）の伝票だけを出す一覧（架空データ）。
+  部門の切り替えが本当に効いたかを、一覧の中身で確かめるためのもの。
+-->
+<body>
+<div id="pagerText"></div>
+<table id="listTable" class="d_table_contents_list">
+  <tr><th>伝票No.</th><th>申請日</th><th>申請者</th><th>状態</th></tr>
+</table>
+<script>
+  var m = document.cookie.match(/(?:^|; )dept=(\d+)/);
+  var dept = m ? m[1] : '1900';
+  var rows = dept === '1800'
+    ? [['TE00018003', '承認済み'], ['TE00018002', '承認依頼中 0/3'], ['TE00018001', '承認済み']]
+    : [['TE00019003', '承認済み'], ['TE00019002', '差戻し'], ['TE00019001', '承認済み']];
+  var table = document.getElementById('listTable');
+  rows.forEach(function (r, i) {
+    var tr = table.insertRow();
+    tr.innerHTML = '<td><a class="w_denpyo" href="/dummy/sapWorkflowDenpyoView/workflowDetailView?eDenpyoNo=D'
+      + i + '">' + r[0] + '</a></td><td>2026/09/0' + (i + 1) + '</td><td>テスト 太郎</td><td>' + r[1] + '</td>';
+  });
+  document.getElementById('pagerText').textContent =
+    '表示件数 100件　（' + rows.length + '件中 1件～' + rows.length + '件目）';
+</script>
+</body>

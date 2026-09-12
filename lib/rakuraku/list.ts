@@ -282,6 +282,8 @@ export interface CollectOptions {
   log?: Log;
   /** これを過ぎたら次のページへ進まずに止める（関数の実行時間の上限に備える） */
   deadlineAt?: number;
+  /** 読むページ数の上限。省略すると種類の設定（20ページ） */
+  maxPages?: number;
 }
 
 /**
@@ -295,7 +297,7 @@ export async function collectTargets(page: Page, kind: RakurakuKind, options: Co
   const doneSet = new Set(options.done);
   const targets: Target[] = [];
   const seen = new Set<string>();
-  const maxPages = kind.list.maxPages;
+  const maxPages = Math.min(options.maxPages ?? kind.list.maxPages, kind.list.maxPages);
   const metaKeys = Object.keys(kind.list.columns);
   let total: number | null = null;
   let last: number | null = null;
@@ -309,6 +311,15 @@ export async function collectTargets(page: Page, kind: RakurakuKind, options: Co
     const frame = await contentFrame(page);
     const rows = await readTableRows(frame, kind);
     if (rows.length === 0) {
+      // ※件数表示が「0件中」なら、読めなかったのではなく**1件も無い**。移植元はここも
+      //   「一覧テーブルを読めませんでした」にしており、空の一覧で「読み切れなかった」と案内していた
+      const empty = pageNo === 1 ? await readPager(frame) : null;
+      if (empty && empty[0] === 0) {
+        [total, , last] = empty;
+        log(`  ${pageNo}ページ目: 0行（0件）`);
+        finished = true;
+        break;
+      }
       log("  ! 一覧の表を読めませんでした（目的の一覧が表示されていないか、列の見出しが変わった可能性があります）");
       stoppedEarly = true;
       reason = "一覧テーブルを読めませんでした";
@@ -357,6 +368,8 @@ export async function collectTargets(page: Page, kind: RakurakuKind, options: Co
       finished = true;
       break;
     }
+    // ※移植元は上限のページでもページを送ってからループを抜けていた（読まないページを1つ開いていた）
+    if (pageNo >= maxPages) break;
     const moved = await advancePage(page, frame, kind, pager, memo, options.timing);
     if (!moved.ok) {
       stoppedEarly = true;

@@ -1,0 +1,26 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>メニュー（テスト用）</title>
+<!--
+  部門の切り替えが「フォームの送り直し」で楽楽精算側に覚えられる作りの再現（架空データ）。
+  テスト用サーバーは ?bumonCd= を受け取ると、delay ミリ秒遅れてクッキー dept に覚える。
+  ★応答が返る前に別の画面へ移ると、切り替えは覚えられない（元の部門のまま）。
+  選ばれている部門は、覚えている値（クッキー）から描く。初めは品質管理部。
+-->
+<body>
+<form id="deptForm" action="top_main.html" method="get">
+  <input type="hidden" name="delay" value="800">
+  <select name="bumonCd" onchange="document.getElementById('deptForm').submit()">
+    <option value="1800">アフターメンテナンス課(1800)</option>
+    <option value="1900">品質管理部(1900)</option>
+  </select>
+</form>
+<div id="cur"></div>
+<a href="javascript:void(0)">ワークフロー</a>
+<script>
+  var m = document.cookie.match(/(?:^|; )dept=(\d+)/);
+  var select = document.querySelector('select[name="bumonCd"]');
+  select.value = m ? m[1] : '1900';
+  document.getElementById('cur').textContent = select.options[select.selectedIndex].text;
+</script>
+</body>

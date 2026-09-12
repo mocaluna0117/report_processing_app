@@ -86,6 +86,63 @@ describe.skipIf(!browser)("部門の選択", () => {
     });
 });
 
+describe.skipIf(!browser)("★切り替えが楽楽精算に覚えられるまで待つ（移植元は待っていなかった）", () => {
+  // トップの部門プルダウンはフォームの送り直しで切り替わり、応答と一緒に覚えられる作り。
+  // 応答は 800ミリ秒遅れて返る。一覧は「覚えている部門」の伝票だけを出す。
+  const top = () => `${server!.url}/top_frameset.html`;
+  const listIds = async (page: import("playwright-core").Page) => {
+    const main = page.frame({ name: "main" })!;
+    await main.evaluate((u) => {
+      window.location.href = u;
+    }, `${server!.url}/list_dept.html`).catch(() => null);
+    await main.waitForURL(/list_dept\.html/);
+    return await main.locator("#listTable a.w_denpyo").allInnerTexts();
+  };
+
+  it("（対照）選んだ直後に一覧へ移ると、切り替えが取り消されて**元の部門の一覧**を読んでしまう", async () => {
+    const page = await browser!.newPage();
+    await page.goto(top(), { waitUntil: "load" });
+    // 移植元と同じ手順: 選ぶ → wait_for_load_state("load")（読み込み済みなので即座に返る）→ 一覧へ
+    await page.frame({ name: "main" })!.locator('select[name="bumonCd"]').selectOption(AFTER);
+    await page.waitForLoadState("load");
+    expect(await listIds(page)).toEqual(["TE00019003", "TE00019002", "TE00019001"]);
+    await page.context().close();
+  });
+
+  it("★ensureDepartment のあとなら、切り替えた部門の一覧になる", async () => {
+    const page = await browser!.newPage();
+    await page.goto(top(), { waitUntil: "load" });
+    const result = await ensureDepartment(page, AFTER, { reopenUrl: top() });
+    expect(result.kind).toBe("selected");
+    expect(await listIds(page)).toEqual(["TE00018003", "TE00018002", "TE00018001"]);
+    await page.context().close();
+  });
+
+  it("★開き直して読み直すので、応答がとても遅くても取り違えない", async () => {
+    const page = await browser!.newPage();
+    await page.goto(top(), { waitUntil: "load" });
+    await page.frame({ name: "main" })!.evaluate(() => {
+      (document.querySelector('input[name="delay"]') as HTMLInputElement).value = "2500";
+    });
+    const result = await ensureDepartment(page, AFTER, { reopenUrl: top() });
+    expect(result.kind).toBe("selected");
+    expect((await currentDepartment(page))?.code).toBe(AFTER);
+    await page.context().close();
+  });
+
+  it("★待つ上限を過ぎても覚えられていなければ not-applied（成功扱いにしない）", async () => {
+    const page = await browser!.newPage();
+    await page.goto(top(), { waitUntil: "load" });
+    await page.frame({ name: "main" })!.evaluate(() => {
+      (document.querySelector('input[name="delay"]') as HTMLInputElement).value = "3000";
+    });
+    const result = await ensureDepartment(page, AFTER, { reopenUrl: top(), settleTimeoutMs: 500 });
+    expect(result.kind).toBe("not-applied");
+    if (result.kind === "not-applied") expect(result.current?.code).toBe(QUALITY);
+    await page.context().close();
+  });
+});
+
 describe("選べないときの文言", () => {
   it("選べるものを添えて伝える", () => {
     expect(

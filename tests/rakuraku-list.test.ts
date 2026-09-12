@@ -268,3 +268,26 @@ describe.skipIf(!browser)("紐づく伝票を一覧から探す（捺印決裁�
     await page.close();
   }, 60_000);
 });
+
+describe.skipIf(!browser)("読むページ数の上限", () => {
+  it("★上限のページを読んだら、次のページを開かずに「上限に達した」と返す", async () => {
+    const page = await openList({ pages: 4 });
+    const scan = await collectTargets(page, kind, { done: [], limit: 100, timing: QUICK, maxPages: 2 });
+    expect(scan.pages).toBe(2);
+    expect(scan.stoppedEarly).toBe(true);
+    expect(scan.reason).toBe("ページ数の上限（2ページ）に達しました");
+    // 2ページ目までしか送っていない（3ページ目を開いていない）
+    expect(await page.evaluate(() => (window as unknown as { __pageNo: number }).__pageNo)).toBe(2);
+    await page.close();
+  });
+
+  it("★件数表示が「0件中」なら、表が読めなくても「読み切れなかった」にしない", async () => {
+    const page = await browser!.newPage();
+    await page.goto(`${server!.url}/list_empty.html`, { waitUntil: "load" });
+    const scan = await collectTargets(page, kind, { done: [], limit: 10, timing: QUICK });
+    expect(scan.targets).toEqual([]);
+    expect(scan.stoppedEarly).toBe(false);
+    expect(scan.total).toBe(0);
+    await page.close();
+  });
+});
