@@ -10,19 +10,10 @@
  * このファイルはブラウザ側からも使うので、Playwright にも server-only にも依存しない。
  */
 
-/** 全角の数字と記号を半角に寄せる（画面によって混ざる） */
-const WIDE_TO_ASCII: Record<string, string> = {
-  "０": "0", "１": "1", "２": "2", "３": "3", "４": "4",
-  "５": "5", "６": "6", "７": "7", "８": "8", "９": "9",
-  "：": ":", "／": "/", "．": ".", "－": "-",
-};
+import { toAscii } from "./text";
 
 const DATE_RE = /(\d{4})\s*[/\-.年]\s*(\d{1,2})\s*[/\-.月]\s*(\d{1,2})\s*日?/;
 const TIME_RE = /(\d{1,2})\s*[:時]\s*(\d{1,2})(?:\s*[:分]\s*(\d{1,2}))?/;
-
-function toAscii(text: string): string {
-  return text.replace(/[０-９：／．－]/g, (c) => WIDE_TO_ASCII[c] ?? c);
-}
 
 /** その年月日が実在するか（2026/02/30 のような値を弾く） */
 function isRealDate(year: number, month: number, day: number): boolean {
