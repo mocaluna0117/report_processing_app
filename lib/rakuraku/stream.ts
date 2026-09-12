@@ -126,7 +126,9 @@ export function ndjsonResponse(
     } catch (error) {
       const event = toErrorEvent(error);
       await write(event);
-      log(options.stage, { ok: false, code: event.code, ms_total: Date.now() - startedAt });
+      // 接続が切れて後片付けした結果の失敗は、不具合（INTERNAL）と見分けられるように記録する
+      const code = aborter.signal.aborted ? "ABORTED" : event.code;
+      log(options.stage, { ok: false, code, ms_total: Date.now() - startedAt });
     } finally {
       clearInterval(ping);
       await chain;
