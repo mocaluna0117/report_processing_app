@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>menu</title>
+<!--
+  部門の切り替え。tenmatsu-dl/smoke_test.py の FRAME_MENU_HTML から写した（架空データ）。
+  実画面と同じく、部門のプルダウンはトップ（メニュー）画面の main フレームにある。
+  表示は「品質管理部(1900)」のようにコード付きなので、名前の部分一致では選ばないこと。
+-->
+<body>
+<select name="bumonCd"
+  onchange="document.getElementById('cur').textContent=this.options[this.selectedIndex].text">
+  <option value="1800">アフターメンテナンス課(1800)</option>
+  <option value="1900" selected>品質管理部(1900)</option>
+</select>
+<div id="cur">品質管理部(1900)</div>
+<a href="javascript:void(0)" class="js_wf_link">ワークフロー</a>
+</body>

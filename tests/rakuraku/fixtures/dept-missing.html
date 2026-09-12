@@ -1,0 +1,11 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>menu (部門の切り替えが無いアカウント)</title>
+<!--
+  部門プルダウンが出ないアカウントの再現。閲覧権限が無いと、この切り替え自体が現れない。
+  現行の Python はこの場合に何も言わず処理を続けてしまう（tenmatsu.py:2001）。
+-->
+<body>
+<div id="cur">（部門の切り替えはありません）</div>
+<a href="javascript:void(0)" class="js_wf_link">ワークフロー</a>
+</body>
