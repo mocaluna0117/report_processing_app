@@ -25,3 +25,6 @@ tests/fixtures/
 # 顧客データの取り込み用ファイル (xlsx は public/report/ のテンプレートがあるので個別指定)
 *.csv
 .vercel
+
+# next dev --experimental-https が作る自己署名証明書
+certificates/
