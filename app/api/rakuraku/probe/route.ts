@@ -34,7 +34,9 @@ export async function GET(request: Request) {
     );
   }
 
-  const wantIp = new URL(request.url).searchParams.get("ip") === "1";
+  const params = new URL(request.url).searchParams;
+  const wantIp = params.get("ip") === "1";
+  const wantPopup = params.get("popup") === "1";
   let launched;
   try {
     const t0 = Date.now();
@@ -77,6 +79,27 @@ export async function GET(request: Request) {
     })();
     const frameCount = page.frames().length;
 
+    /**
+     * ★ 別ウィンドウが開けるかを確かめる。
+     *   伝票の本体PDFは「印刷」ボタンが別ウィンドウで開く経路でしか取れないのに、
+     *   サーバー用の Chromium は --single-process で動いており、
+     *   この指定は window.open を壊すことが知られている。
+     *   楽楽精算に触らずに確かめられるので、ここで見ておく。
+     */
+    let popupOk: boolean | null = null;
+    if (wantPopup) {
+      await page.setContent('<a id="p" href="about:blank" target="_blank">open</a>');
+      const [popup] = await Promise.all([
+        page
+          .context()
+          .waitForEvent("page", { timeout: 8_000 })
+          .catch(() => null),
+        page.click("#p").catch(() => null),
+      ]);
+      popupOk = Boolean(popup);
+      await popup?.close().catch(() => null);
+    }
+
     let egressIp: string | null = null;
     if (wantIp) {
       egressIp = await page.request
@@ -113,6 +136,7 @@ export async function GET(request: Request) {
         rssMb,
         ...(navError ? { navError } : {}),
         ...(wantIp ? { egressIp } : {}),
+        ...(wantPopup ? { popupOk } : {}),
       },
       { status: 200, headers: { "Cache-Control": "no-store" } },
     );
