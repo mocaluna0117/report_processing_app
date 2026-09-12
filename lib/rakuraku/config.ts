@@ -3,7 +3,7 @@ import "server-only";
 /**
  * 楽楽精算のテナント設定。
  *
- * ★ URL も部門名も**コードに書かない**。会社ごとの情報なので環境変数から読む。
+ * ★ URL は**コードに書かない**。会社ごとの情報なので環境変数から読む。
  *   公開リポジトリなので、テナントの URL や利用者IDが混ざらないようにする。
  * ★ 値は Vercel の **Production スコープだけ**に入れる。Preview には入れない
  *   （プレビュー環境が本番の楽楽精算を触らないようにするため）。
@@ -11,9 +11,9 @@ import "server-only";
 export interface TenantConfig {
   /** ログイン画面の URL。一覧などの URL はここを基点に組む */
   loginUrl: string;
-  /** 一覧で選ぶ部門名（現行 config.json の dept_name） */
-  deptName: string;
 }
+// ★部門名は持たない。アカウントによって選べる部門が違うので、その都度楽楽精算から読む
+//   （lib/rakuraku/department.ts）。
 
 export function readTenantConfig(): TenantConfig | null {
   const loginUrl = process.env.RAKURAKU_LOGIN_URL?.trim();
@@ -24,7 +24,15 @@ export function readTenantConfig(): TenantConfig | null {
   } catch {
     return null;
   }
-  return { loginUrl, deptName: process.env.RAKURAKU_DEPT_NAME?.trim() ?? "" };
+  return { loginUrl };
+}
+
+/**
+ * テナントの中の相対パス（例: `sapWorkflowJibumonKensaku/initializeView?workflowId=4`）を
+ * 絶対 URL にする。基点はログイン画面の URL（末尾の `/` までがテナントの場所）。
+ */
+export function resolveTenantPath(path: string, tenant: TenantConfig): string {
+  return new URL(path, tenant.loginUrl).toString();
 }
 
 /**

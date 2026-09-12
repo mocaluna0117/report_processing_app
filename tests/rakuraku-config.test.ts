@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { assertTenantUrl, readTenantConfig } from "@/lib/rakuraku/config";
+import { assertTenantUrl, readTenantConfig, resolveTenantPath } from "@/lib/rakuraku/config";
 
 const KEYS = ["RAKURAKU_LOGIN_URL", "RAKURAKU_DEPT_NAME"] as const;
 const saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
@@ -11,7 +11,7 @@ afterEach(() => {
   }
 });
 
-const TENANT = { loginUrl: "https://example.test/abcd/", deptName: "架空部" };
+const TENANT = { loginUrl: "https://example.test/abcd/" };
 
 describe("テナント設定の読み取り", () => {
   it("URLが無ければ null (機能そのものを止める)", () => {
@@ -29,16 +29,23 @@ describe("テナント設定の読み取り", () => {
     expect(readTenantConfig()).toBeNull();
   });
 
-  it("読めたら部門名も一緒に返す", () => {
+  it("読めたら URL を返す（前後の空白は落とす）", () => {
     process.env.RAKURAKU_LOGIN_URL = " https://example.test/abcd/ ";
-    process.env.RAKURAKU_DEPT_NAME = " 架空部 ";
     expect(readTenantConfig()).toEqual(TENANT);
   });
 
-  it("部門名が無くても動く", () => {
+  it("★部門名の環境変数があっても使わない（部門はその都度楽楽精算から読む）", () => {
     process.env.RAKURAKU_LOGIN_URL = "https://example.test/abcd/";
-    delete process.env.RAKURAKU_DEPT_NAME;
-    expect(readTenantConfig()?.deptName).toBe("");
+    process.env.RAKURAKU_DEPT_NAME = "架空部";
+    expect(readTenantConfig()).toEqual(TENANT);
+  });
+});
+
+describe("テナントの中の相対パス", () => {
+  it("ログイン画面の場所を基点に組む", () => {
+    expect(resolveTenantPath("sapWorkflowJibumonKensaku/initializeView?workflowId=4&refId=4", TENANT)).toBe(
+      "https://example.test/abcd/sapWorkflowJibumonKensaku/initializeView?workflowId=4&refId=4",
+    );
   });
 });
 
