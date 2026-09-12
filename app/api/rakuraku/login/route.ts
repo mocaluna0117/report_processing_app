@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { launchBrowser } from "@/lib/rakuraku/browser";
 import { GuardError, assertEnabled, assertSameOrigin } from "@/lib/rakuraku/guard";
@@ -8,6 +9,7 @@ import { SessionError, seal } from "@/lib/rakuraku/session";
 /**
  * 楽楽精算にログインし、その状態を封じた `sessionToken` を返す。
  *
+ * ★ ログインは**利用者ごと**。各自のIDとパスワードを受け取り、その人のログイン状態を返す。
  * ★ ID とパスワードはこの関数の中だけで使い、**どこにも保存しない・記録しない**。
  * ★ 失敗しても自動でやり直さない（アカウントロックを避けるため）。
  *   短時間の連打も、この関数の手前で断る。
@@ -21,9 +23,15 @@ const BUDGET_MS = 90_000;
 const COOLDOWN_MS = 60_000;
 const cooldown = new Map<string, number>();
 
+/**
+ * 待ち時間を数える相手の見分け。
+ *
+ * ★ 利用者ごとに分けること。楽楽精算は**各自のIDとパスワード**でログインするので、
+ *   誰かが打ち間違えたせいで別の人が待たされてはいけない。
+ * ★ IDそのものは残さず、取り返せない形にしてから鍵にする。
+ */
 function cooldownKey(userId: string): string {
-  // 利用者IDそのものは残さない
-  return userId.length > 0 ? `u${userId.length}:${userId.slice(-2)}` : "anon";
+  return createHash("sha256").update(userId).digest("base64url").slice(0, 16);
 }
 
 function fail(code: string, message: string, status = 200) {
