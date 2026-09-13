@@ -26,6 +26,7 @@ import {
   TenmatsuError,
 } from "@/lib/tenmatsu/client";
 import { FolderError, type FolderStore } from "./fs";
+import { ImportError, type ImportSummary, importRecords, previewImport } from "./import";
 import { type RunAuth, type RunHandle, startRun } from "./job";
 import { LOCAL_KINDS, PENDING_MERGED_NAME, RUN_LIMITS } from "./kind-config";
 import { type StatsCache, buildListItems, memoryStatsCache } from "./list";
@@ -71,6 +72,10 @@ export type LocalFolderClient = TenmatsuClient & {
   subscribe(listener: (status: StatusPayload) => void): () => void;
   /** いまの伝票が終わったら止める */
   abort(): void;
+  /** 今までの方式の記録を取り込むとどうなるかを、書かずに調べる */
+  previewImport(text: string): Promise<ImportSummary>;
+  /** 今までの方式の記録を取り込む。★取得中は断る */
+  importRecords(text: string): Promise<ImportSummary>;
 };
 
 const IDLE: StatusPayload = {
@@ -110,6 +115,7 @@ export function toTenmatsuError(e: unknown): TenmatsuError {
     return new TenmatsuError(kind, null, e.message);
   }
   if (e instanceof RecordNotFoundError) return new TenmatsuError("notFound", null, e.message);
+  if (e instanceof ImportError) return new TenmatsuError("badRequest", null, e.message);
   if (e instanceof RecordsCorruptError) return new TenmatsuError("server", null, e.message);
   return new TenmatsuError("unknown", null, e instanceof Error ? e.message : String(e));
 }
@@ -260,5 +266,15 @@ export function createLocalFolderClient(options: LocalFolderClientOptions): Loca
     abort: () => {
       mine()?.abort();
     },
+
+    previewImport: async (text: string) => await guard(() => previewImport(store, cfg, text)),
+
+    importRecords: async (text: string) =>
+      await guard(async () => {
+        if (running()) {
+          throw new TenmatsuError("conflict", null, "取得中は記録を取り込めません。取得が終わってから操作してください");
+        }
+        return await importRecords(store, cfg, text);
+      }),
   };
 }

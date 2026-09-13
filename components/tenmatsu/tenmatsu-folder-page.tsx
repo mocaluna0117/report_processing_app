@@ -2,6 +2,7 @@
 
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { StorageBanner } from "@/components/storage-banner";
+import { TenmatsuImportRecords } from "@/components/tenmatsu/tenmatsu-import-records";
 import { TenmatsuList } from "@/components/tenmatsu/tenmatsu-list";
 import { TenmatsuPendingDialog } from "@/components/tenmatsu/tenmatsu-pending-dialog";
 import { TenmatsuPreviewDialog } from "@/components/tenmatsu/tenmatsu-preview-dialog";
@@ -689,6 +690,22 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
             </p>
           )}
           {connectionError && <p className={ERROR_CLASS}>{connectionError}</p>}
+          {connected && client && (
+            <TenmatsuImportRecords
+              kind={kind}
+              client={client}
+              disabled={running || otherRunning}
+              onImported={(summary) => {
+                void refreshListRef.current(client).then(() =>
+                  setListNotice(
+                    `今までの方式の記録を取り込みました (新しく加わった${kind.label} ${summary.added}件` +
+                      (summary.pendingTaken > 0 ? `、保留 ${summary.pendingTaken}件` : "") +
+                      ")",
+                  ),
+                );
+              }}
+            />
+          )}
         </section>
 
         {/* ---------- 楽楽精算 ---------- */}
