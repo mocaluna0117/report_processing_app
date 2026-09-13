@@ -225,6 +225,36 @@ describe("storage", () => {
     expect(s.results.find((r) => r.pairId === "other")?.merged?.size).toBe(5);
   });
 
+  it("clearResults は渡した報告書の結果だけ消し、他の結果は残す (1件ずつ処理するため)", async () => {
+    await saveResults([row("p1"), row("p2")]);
+    await saveMergedPdf("p1", new Blob([new Uint8Array(3)]));
+    await saveMergedPdf("p2", new Blob([new Uint8Array(5)]));
+    await clearResults(["p1"]);
+    const s = await loadSession();
+    expect(s.results.map((r) => r.pairId)).toEqual(["p2"]);
+    expect(s.results[0].merged?.size).toBe(5);
+  });
+
+  it("clearResults で最後の1件が消えたら保存データとして残さない", async () => {
+    await saveFiles([pdf("photo.PDF")]);
+    await saveResults([row("p1")]);
+    await clearResults(["p1"]);
+    expect((await loadSession()).results).toEqual([]);
+    // ファイルは残っているので hasStoredData 自体は true のまま (結果のキーだけが消える)
+    await clearAll();
+    await saveResults([row("p1")]);
+    await clearResults(["p1"]);
+    expect(await hasStoredData()).toBe(false);
+  });
+
+  it("saveMergedPdf に null を渡すと前回の結合PDFを消す (古いPDFが新しい行に付かない)", async () => {
+    await saveResults([row("p1")]);
+    await saveMergedPdf("p1", new Blob([new Uint8Array(3)]));
+    expect((await loadSession()).results[0].merged?.size).toBe(3);
+    await saveMergedPdf("p1", null);
+    expect((await loadSession()).results[0].merged).toBeNull();
+  });
+
   it("collectGarbage は結果に紐づかない結合PDFを掃除する", async () => {
     await saveResults([row("p1")]);
     await saveMergedPdf("p1", new Blob([new Uint8Array(3)]));

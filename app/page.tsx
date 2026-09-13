@@ -17,6 +17,18 @@ import { pairFiles, parseFileName } from "@/lib/pairing";
 import { warmUpPdfjs } from "@/lib/pdf/extract";
 import { processPair, type ResultRow, type UploadedFile } from "@/lib/process";
 import { prefetchReportAssets } from "@/lib/report/assets";
+import {
+  type ResultScope,
+  defaultSelection,
+  orderRowsByPairs,
+  orphanRowIds,
+  pairStates,
+  reconcilePairs,
+  reconcileSelection,
+  selectionCounts,
+  upsertRow,
+  visibleRows,
+} from "@/lib/run-plan";
 import { expandResultRow } from "@/lib/rows";
 import { useExamples } from "@/lib/use-examples";
 import { effectiveFields } from "@/lib/after/customer";
@@ -44,6 +56,10 @@ import { usePersistence } from "@/lib/use-persistence";
 import { useRowEditors } from "@/lib/use-row-editors";
 import { zipFiles } from "@/lib/zip";
 
+/** ペアを選ぶボタン (未処理をすべて選ぶ / 処理済みも含めて選ぶ / 選択を解除) */
+const SELECT_BUTTON_CLASS =
+  "rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
+
 /** ペアの同時処理数。待ち時間の大半がAPI応答なので並列化が効く (無料枠の429を避けるため控えめ) */
 const PAIR_CONCURRENCY = 3;
 /** 同時に扱うPDFの合計バイト数の上限 (50MB級が重なってもメモリを圧迫しないように) */
@@ -63,8 +79,18 @@ const genPairId = () => `p-${uid()}`;
 export default function Home() {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [pairs, setPairs] = useState<PairView[]>([]);
-  // ペア順を保つためスロット配列で持つ (並列処理の完了順に並ばないようにする)
-  const [results, setResults] = useState<(ResultRow | null)[]>([]);
+  /**
+   * 処理した分が積み上がる抽出結果 (pairId が主キー)。
+   * ★実行のたびに作り直さない。追加したファイルだけを処理しても前の分が残るようにするため。
+   */
+  const [results, setResults] = useState<ResultRow[]>([]);
+  /** 次の「処理実行」で処理するペア (作業中の意図なので保存しない) */
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  /** 直前の処理実行で対象にしたペア (抽出結果の絞り込みに使う。保存しない) */
+  const [lastRun, setLastRun] = useState<ReadonlySet<string>>(new Set());
+  const [resultScope, setResultScope] = useState<ResultScope>("all");
+  /** 直前のファイル取り込みの内訳 (同じファイルを飛ばしたことを黙って隠さない) */
+  const [lastDrop, setLastDrop] = useState<{ added: number; skipped: number } | null>(null);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number; current: string }>();
   const [zipping, setZipping] = useState(false);
@@ -85,7 +111,7 @@ export default function Home() {
    * 最新の抽出結果。処理中でもセルは編集できるので、
    * 引渡日の反映では「処理が終わった時点の行」ではなく直したあとの値を使う。
    */
-  const resultsRef = useRef<(ResultRow | null)[]>([]);
+  const resultsRef = useRef<ResultRow[]>([]);
 
   const storage = usePersistence({
     restore: async () => {
@@ -94,6 +120,8 @@ export default function Home() {
       setFiles(session.files);
       setPairs(session.pairs);
       setResults(session.results);
+      // ★既定のチェックは復元し終えてから決める (途中では全部「未処理」に見えてしまう)
+      setSelected(defaultSelection(pairStates(session.pairs, session.results)));
       // 結果に紐づかない前回の結合PDFを掃除して容量を戻す
       void collectGarbage(new Set(session.results.map((r) => r.pairId))).catch(() => {});
       const partialErrors = [...session.partialErrors];
@@ -115,11 +143,33 @@ export default function Home() {
   });
   const copyState = useExcelCopy();
 
-  /** 表示・出力用: まだ完了していないスロットを除いたペア順の結果 */
-  const rows = useMemo(() => results.filter((r): r is ResultRow => r !== null), [results]);
+  /** 処理した分すべて (ペアリング結果と同じ並び)。ペアが無くなった行は末尾に残る */
+  const allRows = useMemo(() => orderRowsByPairs(results, pairs), [results, pairs]);
+  /** ペアごとの処理の進み具合 (結果が正本。ペアに印は持たせない) */
+  const states = useMemo(() => pairStates(pairs, results), [pairs, results]);
+  const counts = useMemo(() => selectionCounts(states, selected), [states, selected]);
+  /** 画面に出す行 (今回の分だけ / すべて)。コピー・ZIP はこの範囲が対象 */
+  const rows = useMemo(
+    () => visibleRows(allRows, resultScope, lastRun),
+    [allRows, resultScope, lastRun],
+  );
+  /** どのペアにも紐づかない結果 (以前の版でIDが振り直された分) */
+  const orphanIds = useMemo(() => orphanRowIds(results, pairs), [results, pairs]);
+  /** 同じ施主・点検日の処理済みがあるペアの数 (再ダウンロードの取り違え対策) */
+  const duplicateCount = useMemo(
+    () => [...states.values()].filter((v) => v === "duplicate").length,
+    [states],
+  );
+  /** 「未処理をすべて選ぶ」で入る数 (重複の疑いがある分は入れない) */
+  const defaultCount = useMemo(() => defaultSelection(states).size, [states]);
+  /** 「今回の分」に入る行数 */
+  const lastRunCount = useMemo(
+    () => allRows.filter((r) => lastRun.has(r.pairId)).length,
+    [allRows, lastRun],
+  );
 
   const editors = useRowEditors<ResultRow>((pairId, fn) => {
-    setResults((prev) => prev.map((r) => (r && r.pairId === pairId ? fn(r) : r)));
+    setResults((prev) => prev.map((r) => (r.pairId === pairId ? fn(r) : r)));
   });
 
   // 初回処理時のworker起動待ちを避けるため、表示中にpdfjsを先読みする
@@ -163,7 +213,7 @@ export default function Home() {
   }, [pairs, storage.canPersist]);
 
   useEffect(() => {
-    storage.persist(() => saveResults(results.filter((r): r is ResultRow => r !== null)));
+    storage.persist(() => saveResults(results));
   }, [results, storage.canPersist]);
 
   const photoFiles = useMemo(
@@ -193,6 +243,7 @@ export default function Home() {
     // 追加分のPDFだけを保存する (既存分は取り込み時に保存済み)
     const added = merged.filter((m) => !files.some((f) => f.id === m.id));
     storage.persist(() => saveFiles(added));
+    setLastDrop({ added: added.length, skipped: newFiles.length - added.length });
     // 手動修正済みのペアは保持し、それ以外のファイルだけを自動ペアリングし直す
     const lockedPairs = pairs.filter((p) => p.manual);
     const lockedIds = new Set(
@@ -202,21 +253,37 @@ export default function Home() {
     );
     const pool = merged.filter((f) => !lockedIds.has(f.id));
     const { pairs: autoPairs } = pairFiles(pool);
-    setPairs([
+    // ★同じファイルを指すペアはIDを引き継ぐ (前回の抽出結果・結合PDFが外れないように)
+    const nextPairs = [
       ...lockedPairs,
-      ...autoPairs.map((p) => ({
-        id: genPairId(),
-        photoId: p.photo?.id ?? null,
-        inspectionId: p.inspection?.id ?? null,
-        date: p.date,
-        ownerDisplay: p.ownerDisplay,
-        needsReview: p.needsReview,
-      })),
-    ]);
-    setResults([]);
+      ...reconcilePairs(
+        pairs,
+        autoPairs.map((p) => ({
+          photoId: p.photo?.id ?? null,
+          inspectionId: p.inspection?.id ?? null,
+          date: p.date,
+          ownerDisplay: p.ownerDisplay,
+          needsReview: p.needsReview,
+        })),
+        genPairId,
+      ),
+    ];
+    setPairs(nextPairs);
+    // 今回あらたに現れたペアだけをチェックに足す (自分で外したチェックは戻さない)
+    const before = new Set(pairs.map((p) => p.id));
+    const nextStates = pairStates(nextPairs, results);
+    setSelected((prev) =>
+      reconcileSelection({
+        previous: prev,
+        states: nextStates,
+        add: nextPairs.filter((p) => !before.has(p.id)).map((p) => p.id),
+      }),
+    );
   };
 
   const changePair = (pairId: string, side: "photo" | "inspection", fileId: string | null) => {
+    // 手で直したペアは処理の対象にする (処理済みでも、直したなら取り直したいはず)
+    if (fileId !== null) setSelected((prev) => new Set(prev).add(pairId));
     setPairs((prev) =>
       prev.map((p) => {
         if (p.id !== pairId) return p;
@@ -243,16 +310,34 @@ export default function Home() {
   };
 
   const run = async () => {
-    const targets = pairs.filter((p) => p.photoId);
+    const targets = pairs.filter((p) => p.photoId && selected.has(p.id));
     if (targets.length === 0) return;
+    // ★処理済みをやり直すときだけ確認する (ふだんの操作は素通りさせる)
+    const redo = targets.filter((p) => states.get(p.id) === "processed");
+    if (redo.length > 0) {
+      const names = redo.slice(0, 3).map((p) => p.ownerDisplay || "施主不明");
+      if (
+        !confirm(
+          `処理済みの${redo.length}件をもう一度処理します。` +
+            `いまの抽出結果 (直したセル・メール文のカナ・完了報告書の設定・結合PDF) は新しい結果に置き換わります (取り消せません)。\n` +
+            `対象: ${names.join(" / ")}${redo.length > names.length ? ` ほか${redo.length - names.length}件` : ""}\n` +
+            "よろしいですか？",
+        )
+      ) {
+        return;
+      }
+    }
+
     setProcessing(true);
-    setResults([]);
     setAutoHandover(null);
-    // 今回処理する分の結合PDFだけを消す (他タブ・前回セッションの分を巻き込まない)
-    storage.persist(() => clearStoredResults(targets.map((p) => p.id)));
+    setLastDrop(null);
+    const ids = targets.map((p) => p.id);
+    setLastRun(new Set(ids));
+    setResultScope("last");
     let done = 0;
     setProgress({ done: 0, total: targets.length, current: "" });
-    setResults(new Array<ResultRow | null>(targets.length).fill(null));
+    // ★前の結果は消さない。消してから中断すると、やり直すまで何も残らないため。
+    //   同じペアの行は pairId で置き換わるので、消さなくても重複しない。
 
     // ペアを並列処理する (同時実行数とメモリの両方に上限)。
     // 結果は完了順に追記し、進捗は完了件数で表示する
@@ -272,29 +357,23 @@ export default function Home() {
     await runLimited(
       tasks,
       { concurrency: PAIR_CONCURRENCY, byteBudget: BYTE_BUDGET },
-      (row, index) => {
+      (row) => {
         done++;
         completed.push(row);
         setProgress({ done, total: targets.length, current: row.ownerDisplay });
-        // 結合PDFは大きいので、ここで1回だけ保存する (結果JSONとは別ストア)
-        if (row.merged) {
-          const blob = row.merged;
-          storage.persist(() => saveMergedPdf(row.pairId, blob));
-        }
-        // 完了したペアの位置にそのまま入れる (ペア順が実行ごとに変わらない)
-        setResults((prev) => {
-          const next =
-            prev.length === targets.length
-              ? [...prev]
-              : new Array<ResultRow | null>(targets.length).fill(null);
-          next[index] = row;
-          return next;
-        });
+        // 結合PDFは大きいので、ここで1回だけ保存する (結果JSONとは別ストア)。
+        // 作られなかったときは前回の分を消す (古いPDFが新しい行に付かないように)
+        const blob = row.merged;
+        storage.persist(() => saveMergedPdf(row.pairId, blob));
+        // 同じペアの行は置き換える (追記すると同じ報告書が二重に並ぶ)
+        setResults((prev) => upsertRow(prev, row));
       },
     );
 
     await syncHandoverDates(completed);
 
+    // 処理した分のチェックを外す (続けて押しても二重に処理しない)
+    setSelected((prev) => new Set([...prev].filter((id) => !ids.includes(id))));
     setProgress(undefined);
     setProcessing(false);
   };
@@ -310,7 +389,7 @@ export default function Home() {
     // 処理中に直されたセル (引渡日・氏名・住所・PJ) を反映するため、最新の行に差し替える
     const latest = resultsRef.current;
     const current = completed.map(
-      (row) => latest.find((r) => r?.pairId === row.pairId) ?? row,
+      (row) => latest.find((r) => r.pairId === row.pairId) ?? row,
     );
     const targets = buildHandoverSync(current, customers).filter((i) => i.autoApplicable);
     if (targets.length === 0) return;
@@ -344,12 +423,17 @@ export default function Home() {
    */
   const staffPlans = useMemo(() => {
     const map = new Map<string, RowStaffPlan>();
-    for (const plan of buildRowStaff(rows, staffCustomers)) map.set(plan.pairId, plan);
+    for (const plan of buildRowStaff(allRows, staffCustomers)) map.set(plan.pairId, plan);
     return map;
-  }, [rows, staffCustomers]);
+  }, [allRows, staffCustomers]);
+  /** 「まとめて反映」の対象は、いま表示している行だけ (コピーやZIPと同じ範囲にする) */
   const staffReady = useMemo(
-    () => [...staffPlans.values()].filter((p) => p.updates.length > 0),
-    [staffPlans],
+    () =>
+      rows.flatMap((r) => {
+        const plan = staffPlans.get(r.pairId);
+        return plan && plan.updates.length > 0 ? [plan] : [];
+      }),
+    [rows, staffPlans],
   );
 
   /** 計画どおりにセルを書き換える。保存は既存の仕組み (results の変化) に任せる */
@@ -361,9 +445,12 @@ export default function Home() {
     }
   };
 
-  const mailRow = mailPairId ? (rows.find((r) => r.pairId === mailPairId) ?? null) : null;
-  const reportRow = reportPairId ? (rows.find((r) => r.pairId === reportPairId) ?? null) : null;
-  const previewRow = previewPairId ? (rows.find((r) => r.pairId === previewPairId) ?? null) : null;
+  // ダイアログは表示範囲を切り替えても閉じないよう、全件から引く
+  const mailRow = mailPairId ? (allRows.find((r) => r.pairId === mailPairId) ?? null) : null;
+  const reportRow = reportPairId ? (allRows.find((r) => r.pairId === reportPairId) ?? null) : null;
+  const previewRow = previewPairId
+    ? (allRows.find((r) => r.pairId === previewPairId) ?? null)
+    : null;
 
   const rowsOf = (r: ResultRow) => expandResultRow(r);
 
@@ -433,9 +520,12 @@ export default function Home() {
     for (const id of fileIds) fileMap.current.delete(id);
     setFiles((prev) => prev.filter((f) => !fileIds.includes(f.id)));
     setPairs((prev) => prev.filter((p) => p.id !== row.pairId));
-    setResults((prev) => prev.filter((r) => r?.pairId !== row.pairId));
+    setResults((prev) => prev.filter((r) => r.pairId !== row.pairId));
+    setSelected((prev) => new Set([...prev].filter((id) => id !== row.pairId)));
+    setLastRun((prev) => new Set([...prev].filter((id) => id !== row.pairId)));
     if (mailPairId === row.pairId) setMailPairId(null);
     if (reportPairId === row.pairId) setReportPairId(null);
+    if (previewPairId === row.pairId) setPreviewPairId(null);
 
     if (!isStorageAvailable()) return;
     try {
@@ -447,6 +537,34 @@ export default function Home() {
       storage.setStorageError(
         `保存データから削除できませんでした (${e instanceof Error ? e.message : String(e)})。` +
           "再読み込みすると戻る場合があります",
+      );
+    }
+  };
+
+  /**
+   * ペアリングに残っていない抽出結果を消す。
+   * 以前の版はファイルを足すたびにペアのIDを振り直していたので、その名残の行がありうる。
+   * ★勝手には消さない (利用者の作業結果なので、押したときだけ消す)。
+   */
+  const deleteOrphans = async () => {
+    if (
+      !confirm(
+        `ペアリングに残っていない抽出結果 ${orphanIds.length}件を削除します。` +
+          "アップロードしたPDFとペアリングは残ります (取り消せません)。よろしいですか？",
+      )
+    ) {
+      return;
+    }
+    const ids = new Set(orphanIds);
+    setResults((prev) => prev.filter((r) => !ids.has(r.pairId)));
+    if (!isStorageAvailable()) return;
+    try {
+      await clearStoredResults(orphanIds);
+      storage.refreshHasSaved();
+      storage.refreshUsage();
+    } catch (e) {
+      storage.setStorageError(
+        `保存データから削除できませんでした (${e instanceof Error ? e.message : String(e)})`,
       );
     }
   };
@@ -475,8 +593,13 @@ export default function Home() {
     setFiles([]);
     setPairs([]);
     setResults([]);
+    setSelected(new Set());
+    setLastRun(new Set());
+    setResultScope("all");
+    setLastDrop(null);
     setMailPairId(null);
     setReportPairId(null);
+    setPreviewPairId(null);
     storage.setStorageError(failure);
     storage.refreshHasSaved();
     storage.refreshUsage();
@@ -499,6 +622,13 @@ export default function Home() {
             {storage.storageError}
           </p>
         )}
+        {lastDrop !== null && lastDrop.added + lastDrop.skipped > 0 && (
+          <p className="mt-2 text-sm text-slate-600" aria-live="polite">
+            {lastDrop.added}件を取り込みました
+            {lastDrop.skipped > 0 &&
+              ` (同じファイル${lastDrop.skipped}件は取り込み済みのため飛ばしました)`}
+          </p>
+        )}
         {unclassified.length > 0 && (
           <p className="mt-2 text-sm text-amber-700">
             種別を判定できなかったファイル (ファイル名に【写真報告書】/【点検報告書】が必要):{" "}
@@ -509,42 +639,115 @@ export default function Home() {
 
       {pairs.length > 0 && (
         <section className="mt-6">
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-semibold">
               ペアリング結果
               <span className="ml-2 text-sm font-normal text-slate-500">
-                {pairs.length}組 (プルダウンで手動修正できます)
+                {`未処理 ${counts.unprocessed}組 / 処理済み ${counts.processed}組`}
+                {counts.total > counts.runnable &&
+                  ` (写真報告書が無い${counts.total - counts.runnable}組は処理できません)`}
+                {" (プルダウンで手動修正できます)"}
               </span>
             </h2>
             <button
               type="button"
               onClick={run}
-              disabled={processing || !storage.restored || pairs.every((p) => !p.photoId)}
+              disabled={processing || !storage.restored || counts.selected === 0}
+              title={
+                counts.selected === 0
+                  ? "ペアリング結果でチェックを入れてください"
+                  : "チェックを入れたペアだけを処理します"
+              }
               className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {processing
                 ? `処理中… (${progress?.done ?? 0}/${progress?.total ?? 0} 完了)`
-                : "処理実行"}
+                : counts.selected > 0
+                  ? `選択した${counts.selected}件を処理`
+                  : "選択した分を処理"}
             </button>
           </div>
+
+          {/* 処理するペアの選び方。「すべて」に処理済みが入ることは文字で書く */}
+          <div
+            role="group"
+            aria-label="ペアの選択"
+            className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2"
+          >
+            <button
+              type="button"
+              disabled={processing || defaultCount === 0}
+              onClick={() => setSelected(defaultSelection(states))}
+              className={SELECT_BUTTON_CLASS}
+            >
+              未処理をすべて選ぶ ({defaultCount})
+            </button>
+            <button
+              type="button"
+              disabled={processing || counts.runnable === 0}
+              title="処理済みの抽出結果は、処理し直すと新しい結果に置き換わります"
+              onClick={() =>
+                setSelected(new Set(pairs.filter((p) => p.photoId).map((p) => p.id)))
+              }
+              className={SELECT_BUTTON_CLASS}
+            >
+              処理済みも含めて選ぶ ({counts.runnable})
+            </button>
+            <button
+              type="button"
+              disabled={processing || counts.selected === 0}
+              onClick={() => setSelected(new Set())}
+              className={SELECT_BUTTON_CLASS}
+            >
+              選択を解除
+            </button>
+            <span className="text-xs text-slate-500" aria-live="polite">
+              {counts.selected}組を選択中
+            </span>
+          </div>
+
+          {duplicateCount > 0 && (
+            <p className="mb-2 rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-900">
+              処理済みと同じ施主・点検日のペアが {duplicateCount}組 あります (再ダウンロードした
+              同じ報告書かもしれません)。処理すると抽出結果の行がもう1つ増えるので、
+              既定ではチェックを外しています。
+            </p>
+          )}
+          {counts.selectedProcessed > 0 && (
+            <p className="mb-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              処理済みの{counts.selectedProcessed}組が選ばれています。もう一度処理すると、
+              いまの抽出結果 (直したセルを含む) は新しい結果に置き換わります。
+            </p>
+          )}
           {/* 種別未判定ファイルも両側のプルダウンに含め、手動で割り当てられるようにする */}
           <PairTable
             pairs={pairs}
             photoFiles={[...photoFiles, ...unclassified]}
             inspectionFiles={[...inspectionFiles, ...unclassified]}
+            states={states}
+            selected={selected}
+            onToggle={(pairId, next) =>
+              setSelected((prev) => {
+                const set = new Set(prev);
+                if (next) set.add(pairId);
+                else set.delete(pairId);
+                return set;
+              })
+            }
             onChange={changePair}
             disabled={processing}
           />
         </section>
       )}
 
-      {rows.length > 0 && (
+      {allRows.length > 0 && (
         <section className="mt-8">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-semibold">
               抽出結果
               <span className="ml-2 text-sm font-normal text-slate-500">
-                セルは編集できます (黄=要確認 / 赤=抽出失敗)。工事区分の数だけ行が展開されます
+                {rows.length}件 — セルは編集できます (黄=要確認 /
+                赤=抽出失敗)。工事区分の数だけ行が展開されます
               </span>
             </h2>
             <div className="flex items-center gap-3">
@@ -585,6 +788,67 @@ export default function Home() {
               </button>
             </div>
           </div>
+          {lastRun.size > 0 && (
+            <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+              <div
+                role="group"
+                aria-label="表示する結果"
+                className="inline-flex rounded-lg bg-slate-200 p-1 text-sm shadow-inner"
+              >
+                {(
+                  [
+                    ["last", `今回の${lastRunCount}件`, "いま処理した分だけを出します"],
+                    [
+                      "all",
+                      `すべて ${allRows.length}件`,
+                      "前に処理した分も出します (貼り付け済みの行が混ざります)",
+                    ],
+                  ] as const
+                ).map(([value, text, title]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={resultScope === value}
+                    title={title}
+                    onClick={() => setResultScope(value)}
+                    className={
+                      resultScope === value
+                        ? "rounded-md bg-white px-3 py-1.5 font-semibold text-slate-900 shadow-sm"
+                        : "rounded-md px-3 py-1.5 font-medium text-slate-600 hover:text-slate-900"
+                    }
+                  >
+                    {text}
+                  </button>
+                ))}
+              </div>
+              <span className="text-xs text-slate-500">
+                「Excel用にコピー」「結合PDFを一括DL」「監督・営業をまとめて反映」は、表示中の行が対象です
+              </span>
+            </div>
+          )}
+
+          {orphanIds.length > 0 && (
+            <p className="mb-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              ペアリングに残っていない抽出結果が {orphanIds.length}件 あります
+              (以前の版で作られた分です)。コピーやダウンロードはできますが、取り直すには
+              そのPDFを入れ直してください。
+              <button
+                type="button"
+                disabled={processing}
+                onClick={() => void deleteOrphans()}
+                className="ml-2 cursor-pointer underline hover:text-amber-950 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                この{orphanIds.length}件を削除
+              </button>
+            </p>
+          )}
+
+          {rows.length === 0 && (
+            <p className="mb-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+              今回処理した分はありません。「すべて」に切り替えると前に処理した分が出ます。
+            </p>
+          )}
+
           <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
             <span>要約の書き方を学習: {learning.examples.length}件</span>
             <button

@@ -307,24 +307,43 @@ export async function saveResults(rows: ResultRow[]): Promise<void> {
   });
 }
 
-/** 結合PDFを保存する (処理完了時に1回) */
-export async function saveMergedPdf(pairId: string, blob: Blob): Promise<void> {
+/**
+ * 結合PDFを保存する (処理完了時に1回)。
+ * ★blob が null のときは前回の分を消す。処理し直して結合PDFが作られなかったとき
+ *   (点検報告書を外した・結合に失敗した) に古いPDFが新しい行に付いてしまうのを防ぐ。
+ */
+export async function saveMergedPdf(pairId: string, blob: Blob | null): Promise<void> {
   await withStore(STORE_MERGED, "readwrite", (s) => {
-    s.put(blob, pairId);
+    if (blob) s.put(blob, pairId);
+    else s.delete(pairId);
   });
 }
 
 /**
- * 前回の結果を消す (処理実行の開始時)。
- * pairIds を渡した場合はその結合PDFだけを消す (他タブ・他セッションの分を巻き込まない)。
+ * 結果を消す。
+ * pairIds を渡した場合はその報告書の結果と結合PDFだけを消す
+ * (他の報告書の結果は残す。処理は1件ずつ選んで行うため)。
  */
-export async function clearResults(pairIds?: string[]): Promise<void> {
-  await withStore(STORE_META, "readwrite", (s) => {
-    s.delete(META_RESULTS);
+export async function clearResults(pairIds?: readonly string[]): Promise<void> {
+  const ids = pairIds ? new Set(pairIds) : null;
+  await withStore(STORE_META, "readwrite", async (s) => {
+    if (!ids) {
+      s.delete(META_RESULTS);
+      return;
+    }
+    const stored = await request(s.get(META_RESULTS));
+    if (!Array.isArray(stored)) return;
+    const rest = stored.filter(
+      (v: { pairId?: unknown }) => typeof v?.pairId !== "string" || !ids.has(v.pairId),
+    );
+    if (rest.length === stored.length) return;
+    // 空配列を書き戻すと「保存データあり」と誤判定するのでキーごと消す (deleteReport と同じ)
+    if (rest.length === 0) s.delete(META_RESULTS);
+    else s.put(rest, META_RESULTS);
   });
   await withStore(STORE_MERGED, "readwrite", (s) => {
-    if (pairIds) {
-      for (const id of pairIds) s.delete(id);
+    if (ids) {
+      for (const id of ids) s.delete(id);
     } else {
       s.clear();
     }
