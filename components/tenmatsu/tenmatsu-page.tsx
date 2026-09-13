@@ -11,6 +11,13 @@ import { type TenmatsuSource, defaultSource, loadSource, loadToken, saveSource }
 /** このページ読み込みの中で決まった取得の方法（タブを行き来しても読み直さない） */
 const chosen = new Map<DocKindId, TenmatsuSource>();
 
+/**
+ * ★今までの方式（PCの顛末書取得ツール）を画面に出すかどうか。
+ * 2人とも新しい方式へ移ったので false にし、選択欄ごと隠して新しい方式だけにしている。
+ * 戻すときはここを true にするだけでよい（旧方式の画面もクライアントも消していない。
+ * IndexedDB に保存された選択 `"{kind}:source"` もそのまま残るので、戻せば前の選択に戻る）。
+ */
+const SHOW_LOCAL_SERVER: boolean = false;
 
 /**
  * 顛末書・専決決裁書・捺印決裁書のタブ。取得の方法を切り替えられるようにしてある。
@@ -22,9 +29,12 @@ const chosen = new Map<DocKindId, TenmatsuSource>();
  */
 export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
   const kind = DOC_KIND_BY_ID[kindId];
-  const [source, setSource] = useState<TenmatsuSource | null>(() => chosen.get(kindId) ?? null);
+  const [source, setSource] = useState<TenmatsuSource | null>(() =>
+    SHOW_LOCAL_SERVER ? (chosen.get(kindId) ?? null) : "folder",
+  );
 
   useEffect(() => {
+    if (!SHOW_LOCAL_SERVER) return; // 選択欄を出していないので保存値も読まない（新しい方式で固定）
     if (source !== null) return;
     if (!isStorageAvailable()) {
       setSource("folder");
@@ -58,7 +68,7 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
     return <p className="mt-4 text-sm text-slate-500">読み込んでいます…</p>;
   }
 
-  const header = (
+  const header = !SHOW_LOCAL_SERVER ? undefined : (
     <fieldset className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
       <legend className="px-1 text-xs font-semibold text-slate-600">取得の方法</legend>
       <div className="flex flex-wrap gap-x-6 gap-y-2">
