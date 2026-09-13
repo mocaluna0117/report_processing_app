@@ -3,6 +3,8 @@ import { PDFDocument, degrees } from "pdf-lib";
 import { imageKindOf, imageToPdfBytes, jpegOrientation, orientationMatrix } from "@/lib/tenmatsu/local/image";
 import { OFFICE_NOT_CONVERTED, mergeParts } from "@/lib/tenmatsu/local/merge";
 import { makeEncryptedPdf, makeJpeg, makePdf, makePng, pageSizes } from "./helpers/pdf-parts";
+import { getTokensFromBytes } from "./helpers/pdf-node";
+import { ENCRYPTED_SAMPLES } from "./helpers/encrypted-pdfs";
 
 // 期待値は移植元 tenmatsu.py の merge_to_pdf / image_to_pdf_bytes の検証（smoke_test.py「結合」）の規則から写した
 
@@ -127,15 +129,47 @@ describe("部品を1つの PDF にまとめる", () => {
     expect(outcome.totalPages).toBe(1);
   });
 
-  it("★パスワード付きの PDF は無理に結合しない（白紙や文字化けを作らない）", async () => {
+  it.each([
+    ["RC4", ENCRYPTED_SAMPLES.rc4_owner_only],
+    ["AES-128", ENCRYPTED_SAMPLES.aes128_owner_only],
+    ["AES-256", ENCRYPTED_SAMPLES.aes256_owner_only],
+  ] as const)("★開くのにパスワードが要らない保護（%s）は解いて結合し、文字もそのまま読める", async (_label, file) => {
     const outcome = await mergeParts(
       [
         { name: "000_本体.pdf", bytes: await makePdf(1) },
-        { name: "001_保護.pdf", bytes: makeEncryptedPdf() },
+        { name: "001_保護.pdf", bytes: file },
       ],
       { collectFailures: true },
     );
-    expect(outcome.failed[0].reason).toContain("パスワード付き");
+    expect(outcome.failed).toEqual([]);
+    expect(outcome.pageCounts).toEqual([1, 1]);
+    const { tokens } = await getTokensFromBytes(outcome.bytes);
+    expect(tokens.map((t) => t.str).join("")).toContain("ANGOU-TEST");
+  });
+
+  it("★本当にパスワードが要る PDF は、理由を添えて結合できなかった扱いにする", async () => {
+    const outcome = await mergeParts(
+      [
+        { name: "000_本体.pdf", bytes: await makePdf(1) },
+        { name: "001_保護.pdf", bytes: ENCRYPTED_SAMPLES.user_password },
+      ],
+      { collectFailures: true },
+    );
+    expect(outcome.failed).toEqual([
+      { name: "001_保護.pdf", reason: "パスワードが必要なPDFのため結合できません: 001_保護.pdf。パスワードを外したPDFを入れてください" },
+    ]);
+    expect(outcome.pageCounts).toEqual([1, 0]);
+  });
+
+  it("壊れた暗号化の PDF も、落ちずに結合できなかった扱いにする", async () => {
+    const outcome = await mergeParts(
+      [
+        { name: "000_本体.pdf", bytes: await makePdf(1) },
+        { name: "001_壊れた保護.pdf", bytes: makeEncryptedPdf() },
+      ],
+      { collectFailures: true },
+    );
+    expect(outcome.failed.map((f) => f.name)).toEqual(["001_壊れた保護.pdf"]);
     expect(outcome.pageCounts).toEqual([1, 0]);
   });
 

@@ -10,8 +10,12 @@
  * - ★ページ数の配列は**部品と同じ順・同じ長さ**を必ず保つ（飛ばした動画も失敗した添付も 0）。
  *   ずれると「PDFのどのページが誰のものか」が恒久的に作れなくなる
  * - ★空の PDF は作らない
+ * - ★**開くのにパスワードは要らないが保護のかかった PDF**（スキャナや銀行などが出すもの）は、保護を解いて結合する。
+ *   移植元の pypdf は空のパスワードで自動的に解いていた。pdf-lib（本家）は解けず、無理に読むと**文字の無い白紙**になる
+ *   （2026-09-13 に確かめた）。そのため結合には保護を解ける `@cantoo/pdf-lib`（pdf-lib の改良版）を使う。
+ *   本当にパスワードが要る PDF は解けないので、理由を添えて結合できなかった扱いにする。
  */
-import { PDFDocument, degrees } from "pdf-lib";
+import { PDFDocument, degrees } from "@cantoo/pdf-lib";
 import { EXCEL_EXTS, IMAGE_EXTS, MEDIA_EXTS, MSG_EXTS, PDF_EXTS, PPT_EXTS, TEXT_EXTS, WORD_EXTS, extOf, looksLikeHtml } from "@/lib/rakuraku/parse/sniff";
 import { imageToPdfBytes } from "./image";
 
@@ -54,16 +58,31 @@ export const SUPPORTED_ATTACHMENT_TEXT = "PDF, JPG, JPEG, PNG";
 /** 手で入れられる形式（結合できるものだけ） */
 export const UPLOADABLE_EXTS: ReadonlySet<string> = new Set([...PDF_EXTS, ...IMAGE_EXTS]);
 
+const isEncryptedError = (e: unknown) => e instanceof Error && /encrypt/i.test(`${e.name} ${e.message}`);
+
+async function loadPdf(part: MergePart): Promise<PDFDocument> {
+  try {
+    return await PDFDocument.load(part.bytes, { updateMetadata: false });
+  } catch (e) {
+    if (!isEncryptedError(e)) throw e;
+  }
+  try {
+    // 空のパスワードで開ける保護は解く（移植元の pypdf と同じ）。★ignoreEncryption では読まない（白紙になる）
+    return await PDFDocument.load(part.bytes, { updateMetadata: false, password: "" });
+  } catch (e) {
+    if (e instanceof Error && /password/i.test(e.message)) {
+      throw new Error(`パスワードが必要なPDFのため結合できません: ${part.name}。パスワードを外したPDFを入れてください`);
+    }
+    throw e;
+  }
+}
+
 async function addPdf(out: PDFDocument, part: MergePart): Promise<void> {
   let src: PDFDocument;
   try {
-    src = await PDFDocument.load(part.bytes, { updateMetadata: false });
+    src = await loadPdf(part);
   } catch (e) {
-    const name = e instanceof Error ? e.name + e.message : "";
-    if (/encrypt/i.test(name)) {
-      // ★中身を読めないまま無理に結合すると、ページが白紙や文字化けになる。黙って進めない
-      throw new Error(`パスワード付き（暗号化された）PDFのため結合できません: ${part.name}。印刷し直すなどして保護を外したPDFを入れてください`);
-    }
+    if (e instanceof Error && e.message.startsWith("パスワードが必要なPDF")) throw e;
     const hint = looksLikeHtml(part.bytes)
       ? "中身がPDFではなくHTMLです。ログインが切れてログイン画面が返された、またはエラーページが保存された可能性があります。"
       : "";
