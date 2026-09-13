@@ -215,11 +215,21 @@ export async function appendProcessed(
   meta: Record<string, unknown> | null,
   now: Date = new Date(),
 ): Promise<void> {
-  await updateRecords(store, cfg, (data) => {
-    if (!data.done.includes(denpyoNo)) data.done.push(denpyoNo);
-    // キーの順は移植元と同じ（denpyo_no, file, at のあとに記録する項目の順）
-    data.log.push({ denpyo_no: denpyoNo, file: savedName, at: localStamp(now), ...pickMeta(cfg, meta) });
-  });
+  await updateRecords(store, cfg, (data) => addLogEntry(data, cfg, denpyoNo, savedName, meta, now));
+}
+
+/** 読んである記録に、保存できた1件を足す（書くのは呼ぶ側。ほかの書き換えと1回にまとめるため） */
+export function addLogEntry(
+  data: ProcessedData,
+  cfg: LocalKindConfig,
+  denpyoNo: string,
+  savedName: string,
+  meta: Record<string, unknown> | null,
+  now: Date = new Date(),
+): void {
+  if (!data.done.includes(denpyoNo)) data.done.push(denpyoNo);
+  // キーの順は移植元と同じ（denpyo_no, file, at のあとに記録する項目の順）
+  data.log.push({ denpyo_no: denpyoNo, file: savedName, at: localStamp(now), ...pickMeta(cfg, meta) });
 }
 
 /**
