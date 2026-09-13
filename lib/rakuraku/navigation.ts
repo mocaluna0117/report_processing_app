@@ -62,6 +62,19 @@ export async function assertLoggedIn(page: Page): Promise<void> {
 }
 
 /**
+ * 待っている間に呼ぶための、間引いたログインの確認（1秒に1回まで）。
+ * ★切れていたら時間切れを待たずに SESSION_EXPIRED にする（20秒待ってから「開けません」と言わない）。
+ */
+export function loginWatcher(page: Page, everyMs = LOGIN_CHECK_MS): () => Promise<void> {
+  let next = Date.now() + everyMs;
+  return async () => {
+    if (Date.now() < next) return;
+    next = Date.now() + everyMs;
+    await assertLoggedIn(page);
+  };
+}
+
+/**
  * ログイン後に着いた画面（トップ）を開く。部門の切り替えはこの画面にある。
  * ★ログイン画面の URL を開いてはいけない。ログイン済みでもフォームが出るので、必ず「切れている」と誤判定する。
  */

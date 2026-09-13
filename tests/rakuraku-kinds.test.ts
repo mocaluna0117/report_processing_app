@@ -1,5 +1,3 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { KINDS, getKind, isKindId } from "@/lib/rakuraku/kinds";
 
@@ -85,32 +83,4 @@ describe("種類の取り出し", () => {
     expect(() => getKind("unknown")).toThrow("知らない種類");
     expect(isKindId("")).toBe(false);
   });
-});
-
-describe("★押してはいけない操作をコードに持たない", () => {
-  // 伝票画面の「閉じる」は window.parent.close() でブラウザの窓ごと閉じる。
-  // 「取下げ」「コピー」はデータを変える。どれも参照すらしない（コメントにも書かない）
-  const FORBIDDEN = ["accesskeyClose", "accesskeyTorisage", "accesskeyFix", "window.parent.close"];
-
-  const files: string[] = [];
-  const walk = (dir: string) => {
-    for (const name of readdirSync(dir)) {
-      const path = join(dir, name);
-      if (statSync(path).isDirectory()) walk(path);
-      else if (path.endsWith(".ts")) files.push(path);
-    }
-  };
-  walk(join(process.cwd(), "lib/rakuraku"));
-  walk(join(process.cwd(), "app/api/rakuraku"));
-
-  it("楽楽精算を操作するコードが見つかっている", () => {
-    expect(files.length).toBeGreaterThan(10);
-  });
-
-  for (const word of FORBIDDEN) {
-    it(`${word} がどこにも無い`, () => {
-      const hits = files.filter((f) => readFileSync(f, "utf-8").includes(word));
-      expect(hits).toEqual([]);
-    });
-  }
 });

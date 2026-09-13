@@ -59,7 +59,12 @@ export async function stampDocument(frame: Frame): Promise<boolean> {
  * いずれかのフレームの URL に contains が現れるまで待つ。見つかればそのフレームを返す。
  * 移植元: tenmatsu.py 1950-1962
  */
-export async function waitForFrameUrl(page: Page, contains: string, timeoutMs = 20_000): Promise<Frame | null> {
+export async function waitForFrameUrl(
+  page: Page,
+  contains: string,
+  timeoutMs = 20_000,
+  onPoll?: () => Promise<void>,
+): Promise<Frame | null> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     for (const frame of page.frames()) {
@@ -68,6 +73,7 @@ export async function waitForFrameUrl(page: Page, contains: string, timeoutMs = 
         return frame;
       }
     }
+    await onPoll?.();
     await page.waitForTimeout(POLL_MS);
   }
   return null;
@@ -89,7 +95,12 @@ export async function waitForDetailFrame(
   page: Page,
   contains: string,
   stamped: boolean,
-  options: { timeoutMs?: number; log?: (line: string) => void } = {},
+  options: {
+    timeoutMs?: number;
+    log?: (line: string) => void;
+    /** 待っている間に毎回呼ぶ（ログイン画面に戻されていないかの確認など。投げれば待つのをやめる） */
+    onPoll?: () => Promise<void>;
+  } = {},
 ): Promise<Frame | null> {
   const swapped = async (frame: Frame): Promise<boolean> => {
     if (!stamped) return true;
@@ -113,6 +124,7 @@ export async function waitForDetailFrame(
       if (last) options.log?.("  （開き直しの完了を確かめられませんでした。そのまま進みます）");
       return last;
     }
+    await options.onPoll?.();
     await page.waitForTimeout(POLL_MS);
   }
 }

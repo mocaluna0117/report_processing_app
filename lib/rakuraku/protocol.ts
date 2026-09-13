@@ -59,7 +59,7 @@ export interface DepartmentOption {
 }
 
 /** 進み具合の段階（画面の「いま何をしているか」に出す） */
-export type ProgressStage = "open" | "department" | "navigate" | "collect";
+export type ProgressStage = "open" | "department" | "navigate" | "collect" | "detail" | "approval-log";
 
 /** 一覧から見つけた、取得する伝票 */
 export interface ScanTarget {
@@ -105,6 +105,11 @@ export type RakurakuEvent =
       /** 一覧を開いたときの所属部門。部門の切り替えが無いアカウントは null */
       department: DepartmentOption | null;
     }
+  /**
+   * 伝票画面から読んだ項目（記録のキー → 値）。★読めなかった項目はキーごと入らない。
+   * 使う側は**値があるときだけ**一覧の値を上書きする（取れなかった値で既存の値を消さない）。
+   */
+  | { type: "fields"; fields: Record<string, string> }
   | { type: "done" }
   | ErrorEvent;
 
@@ -125,12 +130,23 @@ export interface ScanRequest {
   maxPages?: number;
 }
 
+export interface FetchRequest {
+  sessionToken: string;
+  kind: KindId;
+  denpyoNo: string;
+  /** 一覧で読んだ伝票画面の URL。無ければ一覧を開いて探す */
+  href: string | null;
+  /** 部門の値（href が無くて一覧を開くときに使う）。部門の切り替えが無いアカウントは null */
+  deptCode: string | null;
+}
+
 type Parsed<T> = { ok: true; value: T } | { ok: false; message: string };
 
 const MAX_TOKEN_CHARS = 200_000;
 const MAX_DONE = 50_000;
 const MAX_DENPYO_CHARS = 64;
 const DEPT_CODE_RE = /^[0-9A-Za-z_-]{1,32}$/;
+const MAX_HREF_CHARS = 2_048;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -172,6 +188,29 @@ export function parseScanRequest(raw: unknown): Parsed<ScanRequest> {
       limit,
       ...(maxPages !== undefined ? { maxPages } : {}),
     },
+  };
+}
+
+/** `/fetch` の本文を確かめる。★URL の行き先（テナントの中か）はサーバー側で別に確かめる */
+export function parseFetchRequest(raw: unknown): Parsed<FetchRequest> {
+  if (!isObject(raw)) return { ok: false, message: "本文を読めませんでした" };
+  const { sessionToken, kind, denpyoNo, href, deptCode } = raw;
+  if (typeof sessionToken !== "string" || sessionToken === "" || sessionToken.length > MAX_TOKEN_CHARS) {
+    return { ok: false, message: "sessionToken が要ります" };
+  }
+  if (!isKindId(kind)) return { ok: false, message: "書類の種類が不正です" };
+  if (typeof denpyoNo !== "string" || denpyoNo.trim() === "" || denpyoNo.length > MAX_DENPYO_CHARS) {
+    return { ok: false, message: "伝票No.が不正です" };
+  }
+  if (href !== null && (typeof href !== "string" || href === "" || href.length > MAX_HREF_CHARS)) {
+    return { ok: false, message: "伝票画面のURLが不正です" };
+  }
+  if (deptCode !== null && (typeof deptCode !== "string" || !DEPT_CODE_RE.test(deptCode))) {
+    return { ok: false, message: "部門の値が不正です" };
+  }
+  return {
+    ok: true,
+    value: { sessionToken, kind, denpyoNo: denpyoNo.trim(), href: href as string | null, deptCode: deptCode as string | null },
   };
 }
 

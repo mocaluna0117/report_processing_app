@@ -3,6 +3,7 @@ import {
   type RakurakuEvent,
   isTerminalEvent,
   parseEventLine,
+  parseFetchRequest,
   parseScanRequest,
   readNdjson,
 } from "@/lib/rakuraku/protocol";
@@ -117,5 +118,31 @@ describe("流れてきた行を読む", () => {
     ).toBe(true);
     expect(isTerminalEvent({ type: "ping" })).toBe(false);
     expect(isTerminalEvent({ type: "log", line: "x" })).toBe(false);
+  });
+});
+
+describe("/fetch の本文を確かめる", () => {
+  const FETCH = { sessionToken: "a.b.c", kind: "senketsu", denpyoNo: "SE00003001", href: "https://example.test/abcd/detail?no=1", deptCode: "1900" };
+
+  it("正しい本文はそのまま通す（伝票No.の前後の空白は落とす）", () => {
+    expect(parseFetchRequest({ ...FETCH, denpyoNo: " SE00003001 " })).toEqual({ ok: true, value: FETCH });
+  });
+
+  it("伝票画面の URL が分からない伝票は href を null で送れる", () => {
+    const parsed = parseFetchRequest({ ...FETCH, href: null, deptCode: null });
+    expect(parsed.ok && parsed.value.href).toBeNull();
+  });
+
+  it.each([
+    ["伝票No.が空", { denpyoNo: " " }],
+    ["伝票No.が長すぎる", { denpyoNo: "x".repeat(65) }],
+    ["href が空文字", { href: "" }],
+    ["href が長すぎる", { href: `https://example.test/${"x".repeat(2100)}` }],
+    ["href が文字でない", { href: 1 }],
+    ["href が無い", { href: undefined }],
+    ["部門の値が不正", { deptCode: "19 00" }],
+    ["種類が不正", { kind: "keihi" }],
+  ])("%sなら断る", (_label, patch) => {
+    expect(parseFetchRequest({ ...FETCH, ...patch }).ok).toBe(false);
   });
 });

@@ -1,19 +1,18 @@
-import type { BrowserContext, BrowserContextOptions } from "playwright-core";
-import { type LaunchedBrowser, launchBrowser } from "@/lib/rakuraku/browser";
 import { RakurakuError } from "@/lib/rakuraku/errors";
 import { assertEnabled, assertSameOrigin } from "@/lib/rakuraku/guard";
 import { KINDS } from "@/lib/rakuraku/kinds";
 import { log } from "@/lib/rakuraku/log";
 import { parseScanRequest } from "@/lib/rakuraku/protocol";
 import { runScan } from "@/lib/rakuraku/scan";
-import { seal, unseal } from "@/lib/rakuraku/session";
+import { unseal } from "@/lib/rakuraku/session";
+import { withSessionPage } from "@/lib/rakuraku/session-browser";
 import { ndjsonResponse } from "@/lib/rakuraku/stream";
 
 /**
  * 一覧から、取得する伝票（承認済みで、まだ取っていないもの）を見つける。
  *
  * 流れ: トップを開く → 部門を確かめる → 一覧へ移動 → ページを送りながら対象を集める。
- * 返すもの（行ごとの JSON）: progress / log … → session（新しいログイン状態）→ targets → done
+ * 返すもの（行ごとの JSON）: progress / log … → targets → session（新しいログイン状態）→ done
  *
  * ★楽楽精算に対しては**検索・閲覧だけ**を行う。何も書き換えない。
  * ★ログインはしない。封じたログイン状態が切れていたら SESSION_EXPIRED を返し、
@@ -44,36 +43,7 @@ export async function POST(request: Request) {
       const session = unseal(body.sessionToken);
       const kind = KINDS[body.kind];
 
-      let launched: LaunchedBrowser;
-      try {
-        launched = await launchBrowser();
-      } catch (e) {
-        throw new RakurakuError(
-          "BROWSER_LAUNCH_FAILED",
-          `ブラウザを起動できませんでした（${e instanceof Error ? e.name : "Error"}）`,
-          { retryable: true },
-        );
-      }
-      // ブラウザが接続を切ったら、待っている人はいないので楽楽精算の操作もすぐやめる
-      sink.onAbort(() => void launched.close());
-
-      let context: BrowserContext | null = null;
-      const sendSession = async (lists = session.lists) => {
-        if (!context) return;
-        await sink.send({
-          type: "session",
-          // ★期限は延ばさない（exp を引き継ぐ）
-          sessionToken: seal({ state: JSON.stringify(await context.storageState()), home: session.home, lists, exp: session.exp }),
-        });
-      };
-
-      try {
-        context = await launched.browser.newContext({
-          storageState: JSON.parse(session.state) as BrowserContextOptions["storageState"],
-        });
-        const page = await context.newPage();
-        page.setDefaultTimeout(30_000);
-
+      await withSessionPage(sink, session, async ({ page }) => {
         const result = await runScan({
           page,
           tenant,
@@ -85,8 +55,6 @@ export async function POST(request: Request) {
           progress: sink.progress,
           deadlineAt: started + BUDGET_MS - PAGE_RESERVE_MS,
         });
-
-        await sendSession(result.foundUrl ? { ...session.lists, [kind.id]: result.foundUrl } : session.lists);
         const { collect } = result;
         await sink.send({
           type: "targets",
@@ -100,13 +68,8 @@ export async function POST(request: Request) {
           department: result.department,
         });
         log("list", { ok: true, n_targets: collect.targets.length, n_pages: collect.pages, n_scanned: collect.scanned });
-      } catch (e) {
-        // ログインが生きているなら、失敗しても新しいクッキーは渡しておく（入れ替わっていることがある）
-        if (!(e instanceof RakurakuError && e.sessionLost)) await sendSession().catch(() => null);
-        throw e;
-      } finally {
-        await launched.close();
-      }
+        return result.foundUrl ? { lists: { [kind.id]: result.foundUrl } } : undefined;
+      });
     },
     { stage: "list", startedAt: started },
   );

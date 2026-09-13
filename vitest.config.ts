@@ -6,6 +6,8 @@ export default defineConfig({
     environment: "node",
     include: ["tests/**/*.test.ts"],
     testTimeout: 30000,
+    // 実物のブラウザを使う検証が並んで走ると、起動や終了に10秒（既定）を超えることがある
+    hookTimeout: 60000,
   },
   resolve: {
     alias: {

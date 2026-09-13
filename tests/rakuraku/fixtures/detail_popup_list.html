@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>伝票が別ウィンドウで開く一覧（テスト用）</title>
+<!--
+  伝票No.を押すと別ウィンドウで伝票画面が開く一覧（捺印決裁書の申請一覧と同じ形・架空データ）。
+  移植元 smoke_test.py の DETAIL_POPUP_LIST_HTML を写した。
+-->
+<body>
+<table id="listTable">
+  <tr><th>伝票No.</th><th>状態</th></tr>
+  <tr><td><a href="detail_structure.html?no=1" onclick="window.open(this.href, '_blank'); return false;">TE00009002</a></td>
+      <td>承認済み</td></tr>
+</table>
+</body>
