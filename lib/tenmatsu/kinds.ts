@@ -100,7 +100,7 @@ export const TENMATSU: DocKind = defineKind({
   route: "/tenmatsu",
   menuLabel: "顛末書",
   pageTitle: "Folio — 顛末書",
-  pageDescription: "顛末書PDFの取得 (このPCのローカルサーバー経由) と取得済み一覧の確認",
+  pageDescription: "顛末書PDFの取得 (楽楽精算から取得してPCのフォルダーへ保存) と取得済み一覧の確認",
   filePrefix: "顛末書No.",
   showStaffSync: true,
   canRecompose: false,
@@ -137,7 +137,7 @@ export const SENKETSU: DocKind = defineKind({
   menuLabel: "専決決裁書",
   pageTitle: "Folio — 専決決裁書",
   pageDescription:
-    "専決決裁書PDFの取得 (このPCのローカルサーバー経由) と取得済み一覧の確認",
+    "専決決裁書PDFの取得 (楽楽精算から取得してPCのフォルダーへ保存) と取得済み一覧の確認",
   filePrefix: "専決決裁書No.",
   // 専決決裁書には監督・営業が無いので、お客様の情報への反映欄は出さない
   showStaffSync: false,

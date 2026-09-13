@@ -1,17 +1,20 @@
 "use client";
 
-// 顛末書タブの保存 (IndexedDB の meta ストア)。置くのは3つだけ:
-//   1. ローカルサーバーのトークン (1回登録すれば次回から入力不要)
-//   2. 取得済み一覧のキャッシュ (サーバーへ繋ぐ前でも前回の内容を出せるように)
+// 顛末書タブの保存 (IndexedDB の meta ストア)。置くもの:
+//   1. ローカルサーバーのトークン (旧方式。1回登録すれば次回から入力不要)
+//   2. 取得済み一覧のキャッシュ (つなぐ前でも前回の内容を出せるように。旧方式と新方式で別々)
 //   3. 1回に取る件数 (次回も同じ件数から始められるように)
-// どちらもこの端末のこのブラウザの中だけに置く。folio のサーバー (Vercel) へは送らない。
+//   4. 取得の方法・保存先フォルダー・部門・楽楽精算のログインID (新方式)
+// どれもこの端末のこのブラウザの中だけに置く。folio のサーバー (Vercel) へは送らない。
 // 一覧には伝票No.とファイル名が入るので、「一覧を消去」で消せるようにしている。
 // PDFの実体はここには入れない (PCの保存先フォルダにあり、見るときだけ取りに行く)。
+// ★楽楽精算のパスワードはここに置かない (メモリにだけ持つ。lib/tenmatsu/local/session.ts)。
 import {
   META_NATSUIN_LIST,
   META_SENKETSU_LIST,
   META_TENMATSU_LIST,
   SETTING_KEY_NATSUIN_MAX_PER_RUN,
+  SETTING_KEY_RAKURAKU_USER_ID,
   SETTING_KEY_SENKETSU_MAX_PER_RUN,
   SETTING_KEY_TENMATSU_MAX_PER_RUN,
   SETTING_KEY_TENMATSU_TOKEN,
@@ -25,15 +28,45 @@ import {
 import { isListItemLike, type ListItem } from "@/lib/tenmatsu/client";
 import type { DocKindId } from "@/lib/tenmatsu/kinds";
 
+/** 取得の方法。local-server＝PCで動く Python のツール（旧）、folder＝このブラウザで取得して選んだフォルダーへ保存（新） */
+export type TenmatsuSource = "local-server" | "folder";
+
 /**
  * 種類ごとの保存キー。**トークンは共有**（同じサーバー・同じトークン）。
  * ★キーと種類の対応はここ1か所だけで結ぶ。画面が種類を取り違えると
  *   別の種類の一覧を上書きしてしまうので、引数に既定値は置かない。
  */
-const KEYS: Record<DocKindId, { list: string; maxPerRun: string }> = {
-  tenmatsu: { list: META_TENMATSU_LIST, maxPerRun: SETTING_KEY_TENMATSU_MAX_PER_RUN },
-  senketsu: { list: META_SENKETSU_LIST, maxPerRun: SETTING_KEY_SENKETSU_MAX_PER_RUN },
-  natsuin: { list: META_NATSUIN_LIST, maxPerRun: SETTING_KEY_NATSUIN_MAX_PER_RUN },
+const KEYS: Record<
+  DocKindId,
+  { list: string; maxPerRun: string; source: string; folder: string; folderList: string; dept: string; pdfStats: string }
+> = {
+  tenmatsu: {
+    list: META_TENMATSU_LIST,
+    maxPerRun: SETTING_KEY_TENMATSU_MAX_PER_RUN,
+    source: "tenmatsu:source",
+    folder: "tenmatsu:folder",
+    folderList: "tenmatsu:folderList",
+    dept: "tenmatsu:dept",
+    pdfStats: "tenmatsu:pdfStats",
+  },
+  senketsu: {
+    list: META_SENKETSU_LIST,
+    maxPerRun: SETTING_KEY_SENKETSU_MAX_PER_RUN,
+    source: "senketsu:source",
+    folder: "senketsu:folder",
+    folderList: "senketsu:folderList",
+    dept: "senketsu:dept",
+    pdfStats: "senketsu:pdfStats",
+  },
+  natsuin: {
+    list: META_NATSUIN_LIST,
+    maxPerRun: SETTING_KEY_NATSUIN_MAX_PER_RUN,
+    source: "natsuin:source",
+    folder: "natsuin:folder",
+    folderList: "natsuin:folderList",
+    dept: "natsuin:dept",
+    pdfStats: "natsuin:pdfStats",
+  },
 };
 
 export async function loadToken(): Promise<string | null> {
@@ -51,10 +84,14 @@ export async function clearToken(): Promise<void> {
   await deleteMeta(SETTING_KEY_TENMATSU_TOKEN);
 }
 
+const readList = async (key: string): Promise<ListItem[]> => {
+  const raw = await withStore(STORE_META, "readonly", (s) => request(s.get(key)));
+  return Array.isArray(raw) ? raw.filter(isListItemLike) : [];
+};
+
 /** 前回サーバーから取った一覧 (形の合わない記録は捨てる) */
 export async function loadCachedList(kind: DocKindId): Promise<ListItem[]> {
-  const raw = await withStore(STORE_META, "readonly", (s) => request(s.get(KEYS[kind].list)));
-  return Array.isArray(raw) ? raw.filter(isListItemLike) : [];
+  return await readList(KEYS[kind].list);
 }
 
 /**
@@ -92,4 +129,107 @@ export async function saveMaxPerRun(kind: DocKindId, value: number): Promise<voi
 export async function hasTenmatsuData(kind: DocKindId): Promise<boolean> {
   const [token, items] = await Promise.all([loadToken(), loadCachedList(kind)]);
   return token !== null || items.length > 0;
+}
+
+// ---------------------------------------------------------------------------
+// 新しい方式（このブラウザで取得して、選んだフォルダーへ保存）
+// ---------------------------------------------------------------------------
+
+/**
+ * 取得の方法。保存していなければ null。
+ * ★既定の決め方は画面側（loadSource の結果が null のとき、旧方式のトークンがあれば旧方式）。
+ */
+export async function loadSource(kind: DocKindId): Promise<TenmatsuSource | null> {
+  const raw = await loadMeta<unknown>(KEYS[kind].source);
+  return raw === "local-server" || raw === "folder" ? raw : null;
+}
+
+export async function saveSource(kind: DocKindId, source: TenmatsuSource): Promise<void> {
+  await saveMeta(KEYS[kind].source, source);
+}
+
+/** 保存しなかったときの取得の方法。旧方式のトークンを登録済みの人は旧方式のまま、そうでなければ新方式 */
+export function defaultSource(hasToken: boolean): TenmatsuSource {
+  return hasToken ? "local-server" : "folder";
+}
+
+/**
+ * 選んだ保存先フォルダー（場所への参照）。無ければ null。
+ * ★IndexedDB にはフォルダーの中身ではなく「場所への参照」だけが入る。使うたびにブラウザの許可が要る。
+ */
+export async function loadFolderHandle<T = unknown>(kind: DocKindId): Promise<T | null> {
+  const raw = await loadMeta<unknown>(KEYS[kind].folder);
+  return raw && typeof raw === "object" && (raw as { kind?: unknown }).kind === "directory" ? (raw as T) : null;
+}
+
+export async function saveFolderHandle(kind: DocKindId, handle: unknown): Promise<void> {
+  await saveMeta(KEYS[kind].folder, handle);
+}
+
+/** 保存先フォルダーの登録を消す（フォルダーの中身は消さない） */
+export async function clearFolderHandle(kind: DocKindId): Promise<void> {
+  await deleteMeta(KEYS[kind].folder);
+}
+
+/** 新しい方式で前回読んだ一覧の写し（旧方式の一覧とは別に持つ） */
+export async function loadFolderList(kind: DocKindId): Promise<ListItem[]> {
+  return await readList(KEYS[kind].folderList);
+}
+
+export async function saveFolderList(kind: DocKindId, items: ListItem[]): Promise<void> {
+  await saveMeta(KEYS[kind].folderList, items);
+}
+
+export async function clearFolderList(kind: DocKindId): Promise<void> {
+  await deleteMeta(KEYS[kind].folderList);
+}
+
+export interface SavedDepartment {
+  code: string;
+  label: string;
+}
+
+/** 前回選んだ部門。形が合わなければ null */
+export async function loadDept(kind: DocKindId): Promise<SavedDepartment | null> {
+  const raw = await loadMeta<unknown>(KEYS[kind].dept);
+  if (!raw || typeof raw !== "object") return null;
+  const { code, label } = raw as Record<string, unknown>;
+  return typeof code === "string" && code !== "" && typeof label === "string" ? { code, label } : null;
+}
+
+export async function saveDept(kind: DocKindId, dept: SavedDepartment): Promise<void> {
+  await saveMeta(KEYS[kind].dept, { code: dept.code, label: dept.label });
+}
+
+/** 楽楽精算のログインID（種類で分けない。★パスワードは保存しない） */
+export async function loadUserId(): Promise<string | null> {
+  const raw = await loadMeta<unknown>(SETTING_KEY_RAKURAKU_USER_ID);
+  return typeof raw === "string" && raw.trim() !== "" ? raw : null;
+}
+
+export async function saveUserId(userId: string): Promise<void> {
+  await saveMeta(SETTING_KEY_RAKURAKU_USER_ID, userId);
+}
+
+export async function clearUserId(): Promise<void> {
+  await deleteMeta(SETTING_KEY_RAKURAKU_USER_ID);
+}
+
+/** PDF のページ数の控え（キー → ページ数。読めなかったものは null） */
+export async function loadPdfStats(kind: DocKindId): Promise<Record<string, number | null>> {
+  const raw = await loadMeta<unknown>(KEYS[kind].pdfStats);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw as Record<string, unknown>).filter(([, v]) => v === null || (typeof v === "number" && Number.isInteger(v))),
+  ) as Record<string, number | null>;
+}
+
+export async function savePdfStats(kind: DocKindId, stats: Record<string, number | null>): Promise<void> {
+  await saveMeta(KEYS[kind].pdfStats, stats);
+}
+
+/** 新しい方式の保存データが残っているか（消去の導線を出すため） */
+export async function hasFolderData(kind: DocKindId): Promise<boolean> {
+  const [folder, items, userId] = await Promise.all([loadFolderHandle(kind), loadFolderList(kind), loadUserId()]);
+  return folder !== null || items.length > 0 || userId !== null;
 }

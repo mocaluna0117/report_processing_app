@@ -7,11 +7,9 @@ import { TenmatsuPreviewStrip } from "@/components/tenmatsu/tenmatsu-preview-str
 import { type ListItem, type PendingFile, formatFileSize } from "@/lib/tenmatsu/client";
 import type { DocKind } from "@/lib/tenmatsu/kinds";
 import {
-  ATTACHMENT_ACCEPT,
-  ATTACHMENT_PATTERN,
-  ATTACHMENT_TYPES_TEXT,
+  type AttachmentRules,
   type ChosenFile,
-  PENDING_BUSY_TEXT,
+  LOCAL_SERVER_ATTACHMENTS,
   acceptMissingConfirmText,
   allowsMultiple,
   initialChosen,
@@ -69,6 +67,8 @@ export function TenmatsuPendingDialog({
   recompose,
   retry,
   load,
+  attachments = LOCAL_SERVER_ATTACHMENTS,
+  hint,
   onClose,
 }: {
   kind: DocKind;
@@ -83,6 +83,10 @@ export function TenmatsuPendingDialog({
   retry?: () => Promise<void>;
   /** いまPCにあるPDFを取る（プレビューの土台）。渡さなければプレビュー欄を出さない */
   load?: (no: string) => Promise<Blob>;
+  /** 入れられる形式（取得の方法ごとに違う。既定は今までの方式） */
+  attachments?: AttachmentRules;
+  /** 冒頭の説明に足す1文（新しい方式の「Office は手でPDFに」など） */
+  hint?: string;
   onClose: () => void;
 }) {
   const recomposing = mode === "recompose";
@@ -259,6 +263,7 @@ export function TenmatsuPendingDialog({
         {recomposing
           ? recomposeIntroText(kind, missing.filter((m) => m.optional).length)
           : pendingIntroText(kind, missing)}
+        {hint ? ` ${hint}` : ""}
       </p>
 
       <ul className="mt-3 space-y-3" aria-busy={busy !== null}>
@@ -335,8 +340,8 @@ export function TenmatsuPendingDialog({
                   compact
                   multiple={multiple}
                   disabled={busy !== null}
-                  accept={ATTACHMENT_ACCEPT}
-                  pattern={ATTACHMENT_PATTERN}
+                  accept={attachments.accept}
+                  pattern={attachments.pattern}
                   onFiles={(files) => add(m.index, files, multiple)}
                   title={
                     isAwaiting(m)
@@ -349,7 +354,7 @@ export function TenmatsuPendingDialog({
                           ? `入れてある: ${m.filled.name} (選び直せます)`
                           : "差し替えるファイルをここにドロップ (クリックで選択)"
                   }
-                  description={`対応形式: ${ATTACHMENT_TYPES_TEXT}`}
+                  description={`対応形式: ${attachments.typesText}`}
                 />
               </div>
               {changed && (
@@ -403,10 +408,9 @@ export function TenmatsuPendingDialog({
                 onCount={setPreviewPages}
               />
             </div>
-            <p className="mt-2 text-xs text-slate-500">
-              Excel・Word・PowerPoint・メールは確定時にPCでPDFに変換します。
-              ここでは案内の1枚で位置だけ示します
-            </p>
+            {attachments.convertNote && (
+              <p className="mt-2 text-xs text-slate-500">{attachments.convertNote}</p>
+            )}
           </section>
         )}
       </div>
@@ -420,7 +424,7 @@ export function TenmatsuPendingDialog({
           {error}
         </p>
       )}
-      {busy === "complete" && <p className="mt-3 text-sm text-slate-600">{PENDING_BUSY_TEXT}</p>}
+      {busy === "complete" && <p className="mt-3 text-sm text-slate-600">{attachments.busyText}</p>}
       {plan.tooLarge && (
         <p className="mt-3 text-sm text-red-700">
           選んだファイルの合計 ({formatFileSize(plan.totalBytes)}) が1回の上限を超えています。

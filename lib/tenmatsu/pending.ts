@@ -42,6 +42,53 @@ export const ATTACHMENT_ACCEPT = ATTACHMENT_EXTENSIONS.map((e) => `.${e}`).join(
 /** Dropzone が受け取るファイル名の形 (動画・zip はここで落とす) */
 export const ATTACHMENT_PATTERN = new RegExp(`\\.(${ATTACHMENT_EXTENSIONS.join("|")})$`, "i");
 
+/**
+ * 保留の書類として入れられる形式と、それにまつわる文言（取得の方法ごとに違う）。
+ * - 今までの方式（PCのツール）… Office もPCで変換できる
+ * - 新しい方式（このブラウザ）… PDF と画像だけ。★Office は変換しない（2026-09-13 の決定）。
+ *   lib/tenmatsu/local/merge.ts の UPLOADABLE_EXTS と対で決めてある
+ */
+export interface AttachmentRules {
+  extensions: readonly string[];
+  /** 画面に出す対応形式 */
+  typesText: string;
+  /** <input type="file"> の accept */
+  accept: string;
+  /** Dropzone が受け取るファイル名の形 */
+  pattern: RegExp;
+  /** プレビュー欄の下に出す、変換についての注記。無ければ null */
+  convertNote: string | null;
+  /** 確定中に出す文 */
+  busyText: string;
+}
+
+function attachmentRules(extensions: readonly string[], convertNote: string | null, busyText: string): AttachmentRules {
+  return {
+    extensions,
+    typesText: extensions.map((e) => e.toUpperCase()).join(", "),
+    accept: extensions.map((e) => `.${e}`).join(","),
+    pattern: new RegExp(`\\.(${extensions.join("|")})$`, "i"),
+    convertNote,
+    busyText,
+  };
+}
+
+export const LOCAL_SERVER_ATTACHMENTS: AttachmentRules = attachmentRules(
+  ATTACHMENT_EXTENSIONS,
+  "Excel・Word・PowerPoint・メールは確定時にPCでPDFに変換します。ここでは案内の1枚で位置だけ示します",
+  "結合しています… (Office の変換が入ると数分かかることがあります)",
+);
+
+export const FOLDER_ATTACHMENTS: AttachmentRules = attachmentRules(
+  ["pdf", "jpg", "jpeg", "png"],
+  null,
+  "結合しています…",
+);
+
+/** 新しい方式で、Office の添付を入れようとしたときの案内（ダイアログの説明に出す） */
+export const FOLDER_OFFICE_HINT =
+  "Excel・Word・PowerPoint・メールの添付は、そのアプリで開いて「PDFとして保存」してから入れてください。";
+
 /** 選んだファイルのうち、判定に要るものだけ (File に依存させずテストできるように) */
 export interface ChosenFile {
   name: string;

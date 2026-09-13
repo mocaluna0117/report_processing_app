@@ -37,6 +37,17 @@ import type { RakurakuApi } from "./server-api";
 /** このページの中で走っている取得（種類をまたいで1本） */
 let activeRun: { kind: KindId; handle: RunHandle } | null = null;
 
+/** このページの中で取得が走っているか（種類を渡すとその種類だけ） */
+export function hasActiveRun(kind?: KindId): boolean {
+  if (!activeRun || activeRun.handle.snapshot().state !== "running") return false;
+  return kind === undefined || activeRun.kind === kind;
+}
+
+/** 走っている取得の種類（無ければ null） */
+export function activeRunKind(): KindId | null {
+  return hasActiveRun() ? activeRun!.kind : null;
+}
+
 /** テスト用。走っている取得の控えを消す */
 export function resetActiveRun(): void {
   activeRun = null;

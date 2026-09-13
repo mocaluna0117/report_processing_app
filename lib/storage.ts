@@ -85,6 +85,19 @@ export const SETTING_KEY_SENKETSU_MAX_PER_RUN = "senketsu:maxPerRun";
 export const META_NATSUIN_LIST = "natsuin:list";
 export const SETTING_KEY_NATSUIN_MAX_PER_RUN = "natsuin:maxPerRun";
 
+/**
+ * 顛末書系タブの「取得の方法」（PCのツール＝旧 / このブラウザ＝新）と、新しい方式の設定。
+ * キーの名前は種類ごとに `{種類}:…` で作る（lib/tenmatsu/store.ts の KEYS が唯一の対応表）。
+ * - `{種類}:source`      … "local-server" | "folder"
+ * - `{種類}:folder`      … 選んだ保存先フォルダー（FileSystemDirectoryHandle。中身ではなく場所への参照）
+ * - `{種類}:folderList`  … 新しい方式で読んだ取得済み一覧の写し（旧方式の一覧とは混ぜない）
+ * - `{種類}:dept`        … 前回選んだ部門 {code, label}
+ * - `{種類}:pdfStats`    … PDF のページ数の控え（大きさと更新日時が同じ間は数え直さない）
+ * ★楽楽精算のパスワードは**どこにも保存しない**（メモリだけ）。ログインIDだけを種類で分けずに置く。
+ * いずれも「保存データを消去」（定期点検）では消さない。
+ */
+export const SETTING_KEY_RAKURAKU_USER_ID = "rakuraku:userId";
+
 export function isStorageAvailable(): boolean {
   return typeof indexedDB !== "undefined";
 }
