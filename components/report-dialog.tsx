@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ModalShell } from "@/components/modal-shell";
+import { PdfPagesPreview } from "@/components/pdf-preview";
 import { downloadBytes } from "@/lib/download";
 import type { ResultRow } from "@/lib/process";
 import { setContactPhone } from "@/lib/contacts";
@@ -16,6 +17,7 @@ import {
 } from "@/lib/tsv";
 import type { Contact } from "@/lib/types";
 import { loadReportAssets, resolveReportFonts } from "@/lib/report/assets";
+import type { ReportFonts } from "@/lib/report/pdf";
 import {
   canQueryLocalFonts,
   clearLocalFonts,
@@ -101,6 +103,13 @@ export function ReportDialog({
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState<"xlsx" | "pdf" | null>(null);
+  /** プレビュー用に組み立てたPDF。signature が今の内容と同じなら、そのままダウンロードにも使う */
+  const [built, setBuilt] = useState<{ id: number; signature: string; bytes: Uint8Array } | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(true);
+  const [previewPages, setPreviewPages] = useState<number | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  /** プレビューを大きく出すか（ダイアログの幅も広げる） */
+  const [large, setLarge] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** PDF作成時の注意 (フォントに無い文字・枠に収まらない欄)。エラーとは分けて残す */
   const [notices, setNotices] = useState<string[]>([]);
@@ -115,6 +124,13 @@ export function ReportDialog({
    * 「（奥様）」を打っている途中の括弧が入力欄から消えないよう、編集中はこちらを表示する。
    */
   const [phoneDraft, setPhoneDraft] = useState<{ index: number; text: string } | null>(null);
+  /** 組み立てた順番（プレビューに「別のPDFになった」と伝えるための名前） */
+  const buildId = useRef(1);
+  /**
+   * 使う書体の覚え書き。端末に登録した游ゴシックは十数MBあり、
+   * IndexedDB から読み直すと打つたびに待たされるので、書体が変わるまで使い回す。
+   */
+  const fontCache = useRef<{ key: string; fonts: ReportFonts } | null>(null);
 
   useEffect(() => {
     void loadLocalFontInfo()
@@ -149,6 +165,49 @@ export function ReportDialog({
         : [{ catIndex: null, label: "", parts: splitSummary(recordSummary(row)) }],
     [row, split],
   );
+  /**
+   * いまの内容から作られるPDFの見分け（内容と書体が同じなら作り直さない）。
+   * ★ダウンロードされるPDFと同じ組み立て（buildReportPdf）をプレビューにも使う。
+   *   別の作り方で描くと「見えているもの」と「保存されるもの」がずれるため。
+   */
+  const fontKey = fontInfo ? `local:${fontInfo.family}:${fontInfo.bytes}` : "bundled";
+  const signature = useMemo(() => `${fontKey}|${JSON.stringify(data)}`, [fontKey, data]);
+
+  /** いま使う書体（同じ書体なら読み直さない） */
+  const fontsOf = async (key: string): Promise<ReportFonts> => {
+    if (fontCache.current?.key === key) return fontCache.current.fonts;
+    const { fonts } = await resolveReportFonts();
+    fontCache.current = { key, fonts };
+    return fonts;
+  };
+
+  // 打つたびに作り直さないよう少し待ってから組み立てる
+  useEffect(() => {
+    let alive = true;
+    setPreviewBusy(true);
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const { buildReportPdf } = await import("@/lib/report/pdf");
+          const { bytes, warnings } = await buildReportPdf(data, await fontsOf(fontKey));
+          if (!alive) return;
+          setBuilt({ id: buildId.current++, signature, bytes });
+          setNotices(warnings);
+          setPreviewError(null);
+        } catch (e) {
+          if (!alive) return;
+          setPreviewError(e instanceof Error ? e.message : String(e));
+        } finally {
+          if (alive) setPreviewBusy(false);
+        }
+      })();
+    }, 400);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [data, signature]);
+
   /**
    * 編集中の項目 (グループごと)。書き戻すときに空欄は落とすので、入力途中の空欄はここで保つ。
    * 行が替わったり工事区分の数が変わったら捨てる (書き戻し先がずれるため)。
@@ -246,10 +305,12 @@ export function ReportDialog({
       if (kind === "xlsx") {
         const { buildReportXlsx } = await import("@/lib/report/xlsx");
         downloadBytes(buildReportXlsx(assets.template, data), REPORT_XLSX_NAME, XLSX_MIME);
+      } else if (built && built.signature === signature) {
+        // プレビューに出ているものと同じPDF。作り直さずにそのまま保存する
+        downloadBytes(built.bytes, REPORT_PDF_NAME, "application/pdf");
       } else {
         const { buildReportPdf } = await import("@/lib/report/pdf");
-        const { fonts } = await resolveReportFonts();
-        const { bytes, warnings } = await buildReportPdf(data, fonts);
+        const { bytes, warnings } = await buildReportPdf(data, await fontsOf(fontKey));
         downloadBytes(bytes, REPORT_PDF_NAME, "application/pdf");
         setNotices(warnings);
       }
@@ -280,7 +341,9 @@ export function ReportDialog({
     <ModalShell
       label={`完了報告書 ${row.ownerDisplay}`}
       onClose={onClose}
-      panelClassName="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+      panelClassName={`flex max-h-[90vh] w-full flex-col overflow-hidden rounded-xl bg-white p-6 shadow-xl ${
+        large ? "max-w-7xl" : "max-w-6xl"
+      }`}
     >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -299,7 +362,14 @@ export function ReportDialog({
           </button>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div
+          className={`mt-3 grid min-h-0 flex-1 gap-4 ${
+            large ? "lg:grid-cols-[minmax(0,1fr)_34rem]" : "lg:grid-cols-[minmax(0,1fr)_20rem]"
+          }`}
+        >
+          {/* 左: 入力欄 (この中だけを縦にスクロールさせ、右のプレビューは動かさない) */}
+          <div className="min-h-0 overflow-y-auto pr-1">
+        <div className="grid gap-3 sm:grid-cols-2">
           {headerFields.map((f) => (
             <label key={f.label} className="block text-sm">
               <span className="font-medium">{f.label}</span>
@@ -538,6 +608,41 @@ export function ReportDialog({
             </p>
           </details>
         </div>
+          </div>
+
+          {/* 右: ダウンロードされるものと同じPDFを、打った内容に合わせて描き直す */}
+          <section className="flex min-h-0 flex-col rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <h4 className="text-sm font-semibold text-slate-700">ダウンロードされるPDF</h4>
+              <button
+                type="button"
+                onClick={() => setLarge((v) => !v)}
+                className="cursor-pointer text-xs text-slate-600 underline hover:text-slate-900"
+              >
+                {large ? "小さく表示" : "大きく表示"}
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              {previewError !== null
+                ? `プレビューを作れませんでした (${previewError})`
+                : previewBusy || built === null
+                  ? "作成中…"
+                  : `全 ${previewPages ?? 1}ページ — 上の欄を直すとここも変わります`}
+            </p>
+            <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
+              <PdfPagesPreview
+                source={
+                  built && {
+                    key: `report:${built.id}`,
+                    load: async () => built.bytes,
+                  }
+                }
+                width={large ? 500 : 280}
+                onState={({ total }) => setPreviewPages(total)}
+              />
+            </div>
+          </section>
+        </div>
 
         {error && (
           <p role="alert" className="mt-3 rounded bg-red-50 px-2 py-1.5 text-xs text-red-900">
@@ -546,7 +651,7 @@ export function ReportDialog({
         )}
         {notices.map((notice) => (
           <p key={notice} className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
-            作成したPDFについて: {notice}
+            PDFについて: {notice}
           </p>
         ))}
 

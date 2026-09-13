@@ -5,6 +5,7 @@ import { Dropzone } from "@/components/dropzone";
 import { FallbackTsvDialog } from "@/components/fallback-tsv-dialog";
 import { MailDialog } from "@/components/mail-dialog";
 import { PairTable, type PairView } from "@/components/pair-table";
+import { PdfDocumentDialog } from "@/components/pdf-preview";
 import { ReportDialog } from "@/components/report-dialog";
 import { ResultsTable } from "@/components/results-table";
 import { ExamplesDialog } from "@/components/examples-dialog";
@@ -70,6 +71,8 @@ export default function Home() {
   // ダイアログは pairId で開く (results は再生成されるので行オブジェクトを直接持たない)
   const [mailPairId, setMailPairId] = useState<string | null>(null);
   const [reportPairId, setReportPairId] = useState<string | null>(null);
+  /** 結合PDFを原寸で見ている行 */
+  const [previewPairId, setPreviewPairId] = useState<string | null>(null);
   /**
    * 処理完了時に引渡日を自動で更新した顧客 (pairId → 更新前の顧客データの引渡日)。
    * 「元に戻す」で戻す値を持つため、更新前の値を覚えておく。
@@ -360,6 +363,7 @@ export default function Home() {
 
   const mailRow = mailPairId ? (rows.find((r) => r.pairId === mailPairId) ?? null) : null;
   const reportRow = reportPairId ? (rows.find((r) => r.pairId === reportPairId) ?? null) : null;
+  const previewRow = previewPairId ? (rows.find((r) => r.pairId === previewPairId) ?? null) : null;
 
   const rowsOf = (r: ResultRow) => expandResultRow(r);
 
@@ -599,6 +603,7 @@ export default function Home() {
             results={rows}
             onCellChange={editors.onCellChange}
             onDownloadRow={(row) => download(row.merged!, row.mergedName)}
+            onPreviewRow={(row) => setPreviewPairId(row.pairId)}
             onCopyRow={(row) => copyState.copyRow(row.pairId, rowsOf(row))}
             copiedRowId={copyState.copiedRowId}
             onCategoryChange={editors.onCategoryChange}
@@ -680,6 +685,16 @@ export default function Home() {
             setReportPairId(null);
             storage.refreshFontInfo();
           }}
+        />
+      )}
+
+      {previewRow?.merged && (
+        <PdfDocumentDialog
+          title={previewRow.mergedName}
+          subtitle="ダウンロードされるPDFです (写真報告書 → 点検報告書の順に結合したもの)"
+          load={async () => previewRow.merged as Blob}
+          onDownload={() => download(previewRow.merged as Blob, previewRow.mergedName)}
+          onClose={() => setPreviewPairId(null)}
         />
       )}
 

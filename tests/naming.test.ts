@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMergedPdfName } from "@/lib/naming";
+import { buildMergedPdfName, mergedPdfLabel } from "@/lib/naming";
 
 describe("buildMergedPdfName", () => {
   it("「〇〇目点検報告書_施主名様／物件名.pdf」形式で組み立てる (姓名間は半角スペース)", () => {
@@ -51,5 +51,27 @@ describe("buildMergedPdfName", () => {
         propertyName: "A棟/B棟:計2棟",
       }),
     ).toBe("1年目点検報告書_山田 太郎様／A棟／B棟：計2棟.pdf");
+  });
+});
+
+describe("mergedPdfLabel", () => {
+  it("点検時期を頭に付けた呼び名を返す (ボタンの文字とファイル名の先頭を揃える)", () => {
+    expect(mergedPdfLabel("1年")).toBe("1年目点検報告書");
+    expect(mergedPdfLabel("3ヶ月")).toBe("3ヶ月目点検報告書");
+    expect(mergedPdfLabel("半年")).toBe("半年目点検報告書");
+  });
+
+  it("点検時期が無ければ時期を省く", () => {
+    expect(mergedPdfLabel("")).toBe("点検報告書");
+    expect(mergedPdfLabel(undefined)).toBe("点検報告書");
+    expect(mergedPdfLabel("   ")).toBe("点検報告書");
+  });
+
+  it("ファイル名の先頭と同じ言い方になる", () => {
+    for (const timing of ["1年", "3ヶ月", ""]) {
+      expect(buildMergedPdfName({ timing, ownerName: "山田 太郎" })).toBe(
+        `${mergedPdfLabel(timing)}_山田 太郎様.pdf`,
+      );
+    }
   });
 });

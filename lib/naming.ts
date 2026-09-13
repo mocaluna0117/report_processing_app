@@ -23,6 +23,15 @@ function sanitizeForFileName(s: string): string {
     .trim();
 }
 
+/**
+ * 結合PDFの呼び名 (例: 「1年目点検報告書」)。点検時期が無ければ時期を省く。
+ * ★ファイル名の先頭と画面のボタンで同じ言い方をするために、ここ1か所で決める。
+ */
+export function mergedPdfLabel(timing: string | undefined): string {
+  const t = sanitizeForFileName(timing ?? "");
+  return t ? `${t}目点検報告書` : "点検報告書";
+}
+
 export function buildMergedPdfName(opts: {
   /** 点検時期の抽出値 (例: 1年, 3ヶ月) */
   timing?: string;
@@ -33,11 +42,10 @@ export function buildMergedPdfName(opts: {
   /** 抽出失敗時に使うファイル名由来の氏名 */
   fallbackOwner?: string;
 }): string {
-  const timing = sanitizeForFileName(opts.timing ?? "");
   const owner = sanitizeForFileName(opts.ownerName || opts.fallbackOwner || "");
   const property = sanitizeForFileName(opts.propertyName ?? "");
 
-  const prefix = timing ? `${timing}目点検報告書` : "点検報告書";
+  const prefix = mergedPdfLabel(opts.timing);
   const ownerPart = owner ? `${owner}様` : "施主不明";
   const propertyPart = property ? `／${property}` : "";
 

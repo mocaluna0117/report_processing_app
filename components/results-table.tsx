@@ -1,10 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { PdfThumbnail } from "@/components/pdf-preview";
 import type { ColumnName } from "@/lib/cells";
+import { mergedPdfLabel } from "@/lib/naming";
 import type { ResultRow } from "@/lib/process";
 import { isSummarySplit } from "@/lib/summary";
-import { COLUMNS, SUMMARY_COL, TREATMENT_COL, WORK_COL } from "@/lib/tsv";
+import { COLUMNS, RECEPTION_TYPE_COL, SUMMARY_COL, TREATMENT_COL, WORK_COL } from "@/lib/tsv";
 import type { Confidence, WorkCategoryEntry } from "@/lib/types";
 import { WORK_CATEGORIES } from "@/lib/work-categories";
 
@@ -58,6 +60,46 @@ const BIG_CELL_CLASS = "w-full rounded border px-2 py-1 text-sm leading-snug";
 
 const EMPTY_CATEGORY: WorkCategoryEntry = { value: "", confidence: "ok" };
 
+/**
+ * 結合PDFのダウンロードと、その中身の縮小画像 (押すと原寸で開く)。
+ * ボタンの呼び名は受付種別 (点検時期) から作り、保存されるファイル名と同じ言い方にする
+ * (受付種別のセルを直すとボタンの文字も変わる。実際の保存名はボタンの説明に出す)。
+ */
+function PdfCell({
+  row,
+  onDownload,
+  onPreview,
+}: {
+  row: ResultRow;
+  onDownload: () => void;
+  onPreview?: () => void;
+}) {
+  const merged = row.merged;
+  if (!merged) return <span className="text-xs text-slate-400">PDFなし</span>;
+  return (
+    <div className="flex items-start gap-2">
+      <button
+        type="button"
+        onClick={onDownload}
+        title={`保存名: ${row.mergedName}`}
+        className="cursor-pointer whitespace-nowrap rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+      >
+        {mergedPdfLabel(row.cells[RECEPTION_TYPE_COL])}をDL
+      </button>
+      {onPreview && (
+        <PdfThumbnail
+          source={{
+            key: `merged:${row.pairId}:${row.mergedName}:${merged.size}`,
+            load: async () => new Uint8Array(await merged.arrayBuffer()),
+          }}
+          title="ダウンロードされるPDF (押すと大きく表示します)"
+          onClick={onPreview}
+        />
+      )}
+    </div>
+  );
+}
+
 /** 決まった値から選ばせる列 (アフターメンテナンスの受付種別・受付者) */
 export interface SelectColumn {
   options: readonly string[];
@@ -71,6 +113,7 @@ export function ResultsTable<R extends ResultRow>({
   results,
   onCellChange,
   onDownloadRow,
+  onPreviewRow,
   onCopyRow,
   copiedRowId,
   onCategoryChange,
@@ -93,6 +136,8 @@ export function ResultsTable<R extends ResultRow>({
   onCellChange: (pairId: string, col: number, value: string) => void;
   /** showPdf を false にした画面では使わない */
   onDownloadRow?: (row: R) => void;
+  /** 結合PDFの縮小画像を押したとき (原寸で開く)。渡さなければ縮小画像を出さない */
+  onPreviewRow?: (row: R) => void;
   onCopyRow: (row: R) => void;
   copiedRowId: string | null;
   onCategoryChange: (pairId: string, index: number, value: string) => void;
@@ -122,6 +167,8 @@ export function ResultsTable<R extends ResultRow>({
   rowLabel?: string;
 }) {
   const isHidden = (col: number) => hiddenColumns?.has(col) ?? false;
+  // 操作列の幅。結合PDFの欄があると「〇年目点検報告書をDL」と縮小画像が横に並ぶので広くする
+  const actionsWidth = showPdf ? "w-64" : "w-44";
   const visibleColumnCount = COLUMNS.length - (hiddenColumns?.size ?? 0);
   return (
     // 枠線・角丸は外側に持たせ、スクロールするのは表だけにする
@@ -130,7 +177,11 @@ export function ResultsTable<R extends ResultRow>({
       {/* 行が増えても横スクロールバーに届くよう、表の高さを区切ってこの中でスクロールさせる。
           縦もこの中でスクロールするので、見出しの sticky が画面内に残る。
           scroll-p* は Tab移動でセルが固定した見出し・左右の列の下に潜らないための余白。 */}
-      <div className="max-h-[70vh] scroll-pt-10 scroll-pl-28 scroll-pr-44 overflow-auto">
+      <div
+        className={`max-h-[70vh] scroll-pt-10 scroll-pl-28 overflow-auto ${
+          showPdf ? "scroll-pr-64" : "scroll-pr-44"
+        }`}
+      >
         {/* min-w は列幅の合計 (アフターの23列分)。fixed の表幅は max(width, 列幅の合計) なので
             定期点検 (24列) は合計まで伸びる。合計より大きくすると余りが全列 (固定列を含む) に
             配られて幅指定と scroll-pr がずれるので、増やすときは COL_WIDTH と一緒に見直す。 */}
@@ -152,7 +203,9 @@ export function ResultsTable<R extends ResultRow>({
                 ),
               )}
               {/* 操作列は右端に固定し、横スクロールの対象外にする */}
-              <th className="sticky right-0 top-0 z-30 w-44 whitespace-nowrap border-l border-b border-slate-200 bg-slate-50 px-2 py-2">
+              <th
+                className={`sticky right-0 top-0 z-30 whitespace-nowrap border-l border-b border-slate-200 bg-slate-50 px-2 py-2 ${actionsWidth}`}
+              >
                 操作
               </th>
             </tr>
@@ -339,18 +392,13 @@ export function ResultsTable<R extends ResultRow>({
                           {copiedRowId === row.pairId ? "コピー済 ✓" : "行をコピー"}
                         </button>
                       )}
-                      {showPdf &&
-                        (row.merged ? (
-                        <button
-                          type="button"
-                          onClick={() => onDownloadRow?.(row)}
-                          className="whitespace-nowrap rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          PDFをDL
-                        </button>
-                        ) : (
-                          <span className="text-xs text-slate-400">PDFなし</span>
-                        ))}
+                      {showPdf && (
+                        <PdfCell
+                          row={row}
+                          onDownload={() => onDownloadRow?.(row)}
+                          onPreview={onPreviewRow ? () => onPreviewRow(row) : undefined}
+                        />
+                      )}
                       {!row.error && (
                         <button
                           type="button"
