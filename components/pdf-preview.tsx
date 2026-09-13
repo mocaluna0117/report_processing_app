@@ -1,132 +1,22 @@
 "use client";
 
-// PDFのプレビュー（縮小画像・ページの一覧・原寸のダイアログ）。
-// 定期点検の結合PDF（「〇年目点検報告書をDL」の横）と、完了報告書のダイアログで使う。
+// PDFのプレビュー（ページを並べて出す／原寸のダイアログ）。
+// 定期点検の結合PDF（「プレビュー」ボタン）と、完了報告書のダイアログで使う。
 //
 // ★描画はすべてこのブラウザの中で行う（PDFを外部へ送らない）。
 // ★描き直すかどうかは source.key だけで決める（呼ぶ側がその場で作った入れ物を渡しても、
 //   中身が同じなら描き直さない。オブジェクトの同一性で見ると毎回描き直して止まらなくなる）。
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ModalShell } from "@/components/modal-shell";
 import { type RenderedPdfPage, renderPdfPages } from "@/lib/pdf/preview";
 
 /** 何も描けていないときの紙（A4縦の比） */
 const A4_RATIO = "1 / 1.414";
 
-/** 縮小画像の覚え書き（key → 1ページ目の絵）。表を開き直すたびに描き直さないため */
-const thumbCache = new Map<string, RenderedPdfPage>();
-/** 覚えておく数の上限（1枚あたり数KBだが、際限なく増やさない） */
-const THUMB_CACHE_MAX = 200;
-
-function rememberThumb(key: string, page: RenderedPdfPage): void {
-  if (thumbCache.size >= THUMB_CACHE_MAX) {
-    const oldest = thumbCache.keys().next();
-    if (!oldest.done) thumbCache.delete(oldest.value);
-  }
-  thumbCache.set(key, page);
-}
-
 export interface PdfSource {
   /** 中身が同じなら同じ名前にする（描き直しの判断に使う） */
   key: string;
   load: () => Promise<Uint8Array>;
-}
-
-/**
- * PDFの1ページ目の縮小画像。押すと親が原寸で開ける。
- * ★画面に入ってから描く。表の行が多いときに、見えていないPDFまで開かないため。
- */
-export function PdfThumbnail({
-  source,
-  width = 56,
-  title,
-  onClick,
-}: {
-  source: PdfSource;
-  /** 画面に出す幅（px） */
-  width?: number;
-  title: string;
-  onClick?: () => void;
-}) {
-  const [page, setPage] = useState<RenderedPdfPage | null>(() => thumbCache.get(source.key) ?? null);
-  const [failed, setFailed] = useState(false);
-  const [visible, setVisible] = useState(false);
-  const boxRef = useRef<HTMLDivElement>(null);
-  const load = useRef(source.load);
-  load.current = source.load;
-  const key = source.key;
-
-  // 画面に入ったかを見る（入ったら以後は見張らない）
-  useEffect(() => {
-    const el = boxRef.current;
-    if (!el || visible) return;
-    if (typeof IntersectionObserver === "undefined") {
-      setVisible(true);
-      return;
-    }
-    const io = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) setVisible(true);
-    });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [visible]);
-
-  useEffect(() => {
-    const cached = thumbCache.get(key);
-    setFailed(false);
-    setPage(cached ?? null);
-    if (cached || !visible) return;
-    let alive = true;
-    void (async () => {
-      try {
-        const { pages } = await renderPdfPages(await load.current(), { width, maxPages: 1 });
-        if (!alive) return;
-        if (pages[0]) {
-          rememberThumb(key, pages[0]);
-          setPage(pages[0]);
-        } else {
-          setFailed(true);
-        }
-      } catch {
-        // 開けないPDFでも表の操作は止めない（印だけ出す）
-        if (alive) setFailed(true);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [key, visible, width]);
-
-  const inner: ReactNode = failed ? (
-    <span className="flex items-center justify-center text-[10px] text-slate-400" style={{ aspectRatio: A4_RATIO }}>
-      開けません
-    </span>
-  ) : page ? (
-    <img src={page.src} alt="" className="block h-auto w-full rounded-sm" />
-  ) : (
-    <span className="flex items-center justify-center text-[10px] text-slate-400" style={{ aspectRatio: A4_RATIO }}>
-      …
-    </span>
-  );
-
-  return (
-    <div ref={boxRef} style={{ width }} className="shrink-0">
-      {onClick && !failed ? (
-        <button
-          type="button"
-          onClick={onClick}
-          title={title}
-          className="block w-full cursor-pointer rounded border border-slate-300 bg-white p-0.5 shadow-sm hover:border-slate-500"
-        >
-          {inner}
-        </button>
-      ) : (
-        <div title={title} className="w-full rounded border border-slate-200 bg-white p-0.5">
-          {inner}
-        </div>
-      )}
-    </div>
-  );
 }
 
 /**
@@ -311,15 +201,4 @@ export function PdfDocumentDialog({
       )}
     </ModalShell>
   );
-}
-
-/** Blob を読む PdfSource を作る（大きさと名前が同じなら同じPDFとみなす） */
-export function useBlobSource(prefix: string, blob: Blob | null, name: string): PdfSource | null {
-  return useMemo(() => {
-    if (!blob) return null;
-    return {
-      key: `${prefix}:${name}:${blob.size}`,
-      load: async () => new Uint8Array(await blob.arrayBuffer()),
-    };
-  }, [prefix, blob, name]);
 }

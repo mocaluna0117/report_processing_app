@@ -90,6 +90,14 @@ const api = createRakurakuApi();
  * ★フォルダーを使う許可を尋ねるのは、ボタンを押したときだけ（読み込み直後に尋ねるとブラウザが断る）。
  * ★取得はこの画面を離れても続く。ブラウザのタブを閉じると止まる。
  */
+/**
+ * ★今までの方式 (PCのツール) の記録を取り込む欄を出すかどうか。
+ * 移行が済んだので false にして画面から外している。
+ * また使うときはここを true にするだけでよい (取り込みの仕組みは消していない。
+ * components/tenmatsu/tenmatsu-import-records.tsx と lib/tenmatsu/local/import.ts)。
+ */
+const SHOW_IMPORT: boolean = false;
+
 export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; header?: ReactNode }) {
   const kind = DOC_KIND_BY_ID[kindId];
   const kept = getFolderSession(kind.id);
@@ -690,7 +698,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
             </p>
           )}
           {connectionError && <p className={ERROR_CLASS}>{connectionError}</p>}
-          {connected && client && (
+          {SHOW_IMPORT && connected && client && (
             <TenmatsuImportRecords
               kind={kind}
               client={client}

@@ -1,7 +1,6 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { PdfThumbnail } from "@/components/pdf-preview";
 import type { ColumnName } from "@/lib/cells";
 import { mergedPdfLabel } from "@/lib/naming";
 import type { ResultRow } from "@/lib/process";
@@ -61,7 +60,7 @@ const BIG_CELL_CLASS = "w-full rounded border px-2 py-1 text-sm leading-snug";
 const EMPTY_CATEGORY: WorkCategoryEntry = { value: "", confidence: "ok" };
 
 /**
- * 結合PDFのダウンロードと、その中身の縮小画像 (押すと原寸で開く)。
+ * 結合PDFのダウンロードと、その中身のプレビュー。
  * ボタンの呼び名は受付種別 (点検時期) から作り、保存されるファイル名と同じ言い方にする
  * (受付種別のセルを直すとボタンの文字も変わる。実際の保存名はボタンの説明に出す)。
  */
@@ -87,14 +86,14 @@ function PdfCell({
         {mergedPdfLabel(row.cells[RECEPTION_TYPE_COL])}をDL
       </button>
       {onPreview && (
-        <PdfThumbnail
-          source={{
-            key: `merged:${row.pairId}:${row.mergedName}:${merged.size}`,
-            load: async () => new Uint8Array(await merged.arrayBuffer()),
-          }}
-          title="ダウンロードされるPDF (押すと大きく表示します)"
+        <button
+          type="button"
           onClick={onPreview}
-        />
+          title="ダウンロードされるPDFを開いて中身を確かめる"
+          className="cursor-pointer whitespace-nowrap rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+        >
+          プレビュー
+        </button>
       )}
     </div>
   );
