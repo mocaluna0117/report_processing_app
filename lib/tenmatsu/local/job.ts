@@ -11,12 +11,13 @@
  *   **この実行の中で1回だけ**ログインし直して同じ伝票をやり直す。
  * ★本体PDFが取れなかった伝票は記録せず見送る（次回やり直す）。続けて2件なら止める（ログイン切れの可能性）。
  */
+import { KINDS } from "@/lib/rakuraku/kinds";
 import type { ReceivedFile, ScanTarget } from "@/lib/rakuraku/protocol";
 import { scanSummary } from "@/lib/rakuraku/parse/list";
 import type { RunLogLine, SavedItem, StatusPayload } from "@/lib/tenmatsu/client";
 import { RUN_LOG_MAX_LINES } from "@/lib/tenmatsu/run-log";
 import type { FolderStore } from "./fs";
-import { type LocalKindConfig, MANIFEST_NAME, PENDING_MERGED_NAME, RECORDS_DIR } from "./kind-config";
+import { LOCAL_KINDS, type LocalKindConfig, MANIFEST_NAME, PENDING_MERGED_NAME, RECORDS_DIR } from "./kind-config";
 import { type ManifestPart, recordPages } from "./manifest";
 import { mergeParts } from "./merge";
 import { decideOutputName, safeComponent, stemOf } from "./naming";
@@ -31,7 +32,7 @@ import {
   recordsPath,
   registerPending,
 } from "./records";
-import { type RakurakuApi, RakurakuApiError, type StreamHandlers } from "./server-api";
+import { type AttachmentFailure, type FetchResult, type RakurakuApi, RakurakuApiError, type StreamHandlers } from "./server-api";
 
 /** 楽楽精算のログインに使うもの。★パスワードはメモリにだけ置く（呼ぶ側が持つ） */
 export interface RunAuth {
@@ -178,12 +179,147 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
 
   let currentNo = "(未着手)";
 
+  /**
+   * 捺印決裁書を組み立てる。**必ず保留**（あとから利用者が入れる書類があるため）。
+   * 移植元: tenmatsu.py 4631-4790（_process_composed の並べる・結合する・保留にする部分）
+   *
+   * 並びは **[0] あとから入れる書類 → 選んだ添付 → 専決決裁書の本体 → 捺印決裁書の本体**。
+   * 取れなかったものは「欠け」として残し、あとから足せるようにする。
+   * ★先頭は本体ではない（あとから入れる書類）ので、結合は先頭の失敗でも止めない（strictFirst: false）。
+   */
+  const processComposed = async (target: ScanTarget, result: FetchResult): Promise<"pending"> => {
+    const { denpyoNo } = target;
+    const compose = result.compose;
+    const rules = KINDS[cfg.id].compose;
+    if (!compose || !rules) throw new RunStop("捺印決裁書の組み立ての結果を受け取れませんでした");
+    const linkedCfg = LOCAL_KINDS[rules.linkedKind];
+    const llabel = linkedCfg.label;
+    const linked = result.linked;
+
+    // 時間の上限で取れなかった紐づく添付を、1つずつ取り直す
+    const linkedFiles = [...(linked?.attachments ?? [])];
+    const linkedFailures: AttachmentFailure[] = [];
+    for (const failure of linked?.failures ?? []) {
+      if (failure.code !== "TIME_BUDGET_EXCEEDED" || !linked) {
+        linkedFailures.push(failure);
+        continue;
+      }
+      try {
+        print(`    ${llabel}の添付 ${failure.index}件目を取り直します`);
+        linkedFiles.push(
+          await withSession((token) =>
+            api.attachment(
+              {
+                sessionToken: token,
+                kind: rules.linkedKind,
+                denpyoNo: linked.denpyoNo,
+                href: linked.href,
+                deptCode: deps.deptCode,
+                index: failure.index,
+                expectedName: failure.name,
+              },
+              handlers,
+            ),
+          ),
+        );
+      } catch (e) {
+        if (e instanceof RakurakuApiError && e.sessionLost) throw e;
+        linkedFailures.push({ ...failure, code: "ATTACHMENT_FAILED", reason: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    // --- 並べる。番号は 0 から順に振る（確定するときもこの順で結合する）
+    const parts: { name: string; bytes: Uint8Array }[] = [];
+    const slots: ManifestPart[] = [{ index: 0, name: rules.uploadName, files: [], status: "awaiting", reason: rules.uploadName }];
+    compose.picked.forEach((picked, at) => {
+      const index = at + 1;
+      const file = linkedFiles.find((f) => f.index === picked.index);
+      if (file) {
+        const partName = `${pad(index, 3)}_${safeComponent(stemOf(picked.name))}${file.ext}`;
+        parts.push({ name: partName, bytes: file.bytes });
+        slots.push({ index, name: picked.name, file: partName, status: "ok" });
+      } else {
+        const failure = linkedFailures.find((f) => f.index === picked.index);
+        slots.push({ index, name: picked.name, file: null, status: "failed", reason: failure?.reason ?? "添付が見つかりませんでした" });
+      }
+    });
+    const n = compose.picked.length;
+    if (linked?.body) {
+      const partName = `${pad(n + 1, 3)}_${llabel}本体${linked.body.ext}`;
+      parts.push({ name: partName, bytes: linked.body.bytes });
+      slots.push({ index: n + 1, name: `${llabel} 本体（No.${compose.linkedNo}）`, file: partName, status: "ok" });
+    } else {
+      slots.push({
+        index: n + 1,
+        name: `${llabel} 本体（No.${compose.linkedNo ?? "?"}）`,
+        file: null,
+        status: "failed",
+        reason: compose.linkReason ?? `${llabel}の本体PDFがありません`,
+      });
+    }
+    const body = result.body as ReceivedFile;
+    const ownName = `${pad(n + 2, 3)}_本体${body.ext}`;
+    parts.push({ name: ownName, bytes: body.bytes });
+    slots.push({ index: n + 2, name: "本体", file: ownName, status: "ok" });
+
+    // --- 見られるように、あるものだけで1つにしておく（確定前のプレビュー用）
+    const merged = await mergeParts(parts, { collectFailures: true, strictFirst: false });
+    print(`  結合: ${parts.length - merged.skipped.length - merged.failed.length}ファイル → ${merged.totalPages}ページ`);
+    const byFile = new Map(slots.filter((sl) => sl.file).map((sl) => [sl.file as string, sl]));
+    for (const bad of merged.failed) {
+      const slot = byFile.get(bad.name);
+      if (slot) Object.assign(slot, { status: "failed", reason: bad.reason });
+    }
+    for (const name of merged.skipped) {
+      const slot = byFile.get(name);
+      if (slot) slot.status = "skipped";
+    }
+    recordPages(slots, parts.map((pt) => pt.name), merged.pageCounts);
+
+    // --- 記録に残す項目
+    const meta: Record<string, unknown> = { ...target.meta };
+    for (const [key, value] of Object.entries(result.fields)) if (hasValue(value)) meta[key] = value;
+    // ★支払先・決裁申請額は捺印決裁書の画面に無い。専決決裁書から写す（既に読めている分は上書きしない）
+    for (const key of rules.copyFromLinked) {
+      if (!hasValue(meta[key]) && linked?.fields[key]) meta[key] = linked.fields[key];
+    }
+    // ★名前の決め方を後から直せるように、紐づく伝票の添付の名前は全部残す
+    if (linked?.attachmentNames) meta.linked_attachments = linked.attachmentNames;
+    if (merged.skipped.length > 0) meta.skipped_attachments = merged.skipped.map((x) => x.replace(/^\d{3}_/, ""));
+    meta.final_name = compose.finalName;
+    if (compose.linkReason) print(`  ! ${compose.linkReason}`);
+
+    // --- 保留にする（★ファイルを置いてから記録する）
+    const dirName = safeComponent(denpyoNo);
+    const dir = pendingDirPath(dirName);
+    await store.remove(dir, { recursive: true });
+    for (const part of parts) await store.writeBytes([...dir, part.name], part.bytes);
+    await store.writeBytes([...dir, PENDING_MERGED_NAME], merged.bytes);
+    await store.writeBytes(
+      [...dir, MANIFEST_NAME],
+      JSON.stringify({ denpyo_no: denpyoNo, kind: cfg.id, at: localStamp(now()), parts: slots, merged_pages: merged.totalPages }, null, 2),
+    );
+    const missing: MissingEntry[] = slots
+      .filter((sl) => sl.status === "awaiting" || sl.status === "failed")
+      .map((sl) => ({ index: Number(sl.index), name: sl.name, reason: sl.reason ?? "", ...(sl.status === "awaiting" ? { awaiting: true } : {}) }));
+    await registerPending(store, cfg, denpyoNo, dirName, missing, meta, now());
+    print(`  ! アップロード待ちで保留にしました（${compose.finalName}）`);
+    pending.push({ denpyo_no: denpyoNo, missing: missing.map((m) => m.name), awaiting: true });
+    return "pending";
+  };
+
   /** 伝票1件を取得して、保存か保留にする */
   const processOne = async (target: ScanTarget): Promise<"saved" | "pending"> => {
     const { denpyoNo } = target;
+    const linkKey = KINDS[cfg.id].compose?.linkKey;
+    const linkedNo = linkKey ? (target.meta[linkKey] ?? null) : null;
     const result = await withSession((token) =>
-      api.fetch({ sessionToken: token, kind: cfg.id, denpyoNo, href: target.href, deptCode: deps.deptCode }, handlers),
+      api.fetch(
+        { sessionToken: token, kind: cfg.id, denpyoNo, href: target.href, deptCode: deps.deptCode, ...(linkedNo ? { linkedNo } : {}) },
+        handlers,
+      ),
     );
+    if (cfg.composed) return await processComposed(target, result);
 
     // 時間の上限で取れなかった添付を、1つずつ取り直す
     const attachments = [...result.attachments];
@@ -287,7 +423,6 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
   };
 
   const run = async (): Promise<void> => {
-    if (cfg.composed) throw new RunStop(`${cfg.label}の取得は、この画面ではまだ使えません`);
     const records = await readRecords(store, cfg);
     const held = Object.keys(records.pending).length;
     print(`処理済み: ${records.done.length}件（${recordsPath(cfg).join("/")}）${held > 0 ? ` / 保留 ${held}件` : ""}`);
@@ -341,7 +476,8 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
           state.processed += 1;
           emit({ message: `${saved.at(-1)!.file} を保存しました`, done: idx });
         } else {
-          emit({ message: `伝票No. ${target.denpyoNo} は添付を結合できず保留にしました`, done: idx });
+          const waiting = pending.at(-1)?.awaiting === true;
+          emit({ message: `伝票No. ${target.denpyoNo} は${waiting ? "アップロード待ちで保留" : "添付を結合できず保留"}にしました`, done: idx });
         }
       } catch (e) {
         if (!(e instanceof RakurakuApiError) || e.code !== "BODY_PDF_FAILED") throw e;
@@ -357,8 +493,12 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
       if (idx < total) await sleep(intervalMs);
     }
 
-    const held2 = pending.length;
-    const notes = (held2 > 0 ? `（${held2}件は添付を結合できず保留）` : "") + (skipped.length > 0 ? `（${skipped.length}件は本体PDFを取れず見送り）` : "");
+    const waiting = pending.filter((p) => p.awaiting).length;
+    const held2 = pending.length - waiting;
+    const notes =
+      (held2 > 0 ? `（${held2}件は添付を結合できず保留）` : "") +
+      (waiting > 0 ? `（${waiting}件はアップロード待ち）` : "") +
+      (skipped.length > 0 ? `（${skipped.length}件は本体PDFを取れず見送り）` : "");
     print("");
     print(`完了: ${state.processed}件を保存しました${notes}`);
     emit({ state: "done", message: `${state.processed}件を保存しました${notes}`, current: null });

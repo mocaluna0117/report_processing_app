@@ -2,7 +2,7 @@
 <meta charset="utf-8">
 <title>遅れて描かれる伝票画面（テスト用）</title>
 <!--
-  URL が変わってから表と印刷ボタンが 600ミリ秒遅れて現れる伝票画面（架空データ）。
+  URL が変わってから表と印刷ボタンが 600ミリ秒（?late= で変えられる）遅れて現れる伝票画面（架空データ）。
   移植元 smoke_test.py の SLOW_DETAIL_HTML を写した。
   ★待たずに読むと申請日が空になる（時刻が入らなかった実バグの再現）。
 -->
@@ -13,6 +13,6 @@ setTimeout(function () {
   document.getElementById('late').innerHTML =
     '<table class="d_table_contents"><tr><th>申請日</th><td>2026/09/05 10:20:30</td></tr></table>' +
     '<button class="accesskeyPrint" onclick="window.__printClicked = true">print 印刷</button>';
-}, 600);
+}, Number(new URLSearchParams(location.search).get('late')) || 600);
 </script>
 </body>

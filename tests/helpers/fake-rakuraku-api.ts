@@ -22,7 +22,7 @@ export interface FakeApi extends RakurakuApi {
   calls: { method: string; request?: unknown }[];
 }
 
-export function file(role: "body" | "attachment", index: number, name: string, ext: string, bytes: Uint8Array): ReceivedFile {
+export function file(role: ReceivedFile["role"], index: number, name: string, ext: string, bytes: Uint8Array): ReceivedFile {
   return { role, index, name, ext, bytes };
 }
 

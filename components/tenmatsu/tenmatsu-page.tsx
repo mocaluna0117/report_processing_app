@@ -6,16 +6,11 @@ import { TenmatsuLocalServerPage } from "@/components/tenmatsu/tenmatsu-local-se
 import { isStorageAvailable } from "@/lib/storage";
 import { DOC_KIND_BY_ID, type DocKindId } from "@/lib/tenmatsu/kinds";
 import { hasActiveRun } from "@/lib/tenmatsu/local/client";
-import { LOCAL_KINDS } from "@/lib/tenmatsu/local/kind-config";
 import { type TenmatsuSource, defaultSource, loadSource, loadToken, saveSource } from "@/lib/tenmatsu/store";
 
 /** このページ読み込みの中で決まった取得の方法（タブを行き来しても読み直さない） */
 const chosen = new Map<DocKindId, TenmatsuSource>();
 
-/** 新しい方式で取得できる種類か。★捺印決裁書は紐づく専決決裁書から組み立てる部分がまだ無い */
-export function folderSupported(kind: DocKindId): boolean {
-  return !LOCAL_KINDS[kind].composed;
-}
 
 /**
  * 顛末書・専決決裁書・捺印決裁書のタブ。取得の方法を切り替えられるようにしてある。
@@ -27,8 +22,7 @@ export function folderSupported(kind: DocKindId): boolean {
  */
 export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
   const kind = DOC_KIND_BY_ID[kindId];
-  const canUseFolder = folderSupported(kindId);
-  const [source, setSource] = useState<TenmatsuSource | null>(() => (canUseFolder ? (chosen.get(kindId) ?? null) : "local-server"));
+  const [source, setSource] = useState<TenmatsuSource | null>(() => chosen.get(kindId) ?? null);
 
   useEffect(() => {
     if (source !== null) return;
@@ -64,7 +58,7 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
     return <p className="mt-4 text-sm text-slate-500">読み込んでいます…</p>;
   }
 
-  const header = canUseFolder ? (
+  const header = (
     <fieldset className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
       <legend className="px-1 text-xs font-semibold text-slate-600">取得の方法</legend>
       <div className="flex flex-wrap gap-x-6 gap-y-2">
@@ -88,13 +82,9 @@ export function TenmatsuPage({ kind: kindId }: { kind: DocKindId }) {
         2つの方式は取得の記録が別々です。同じ{kind.label}を二重に取得しないよう、どちらか一方だけを使ってください。
       </p>
     </fieldset>
-  ) : (
-    <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-      {kind.label}は、いまはPCの顛末書取得ツールでだけ取得できます (このブラウザで取得する新しい方式は準備中です)。
-    </p>
   );
 
-  return source === "folder" && canUseFolder ? (
+  return source === "folder" ? (
     <TenmatsuFolderPage kind={kindId} header={header} />
   ) : (
     <TenmatsuLocalServerPage kind={kindId} header={header} />

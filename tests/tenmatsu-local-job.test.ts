@@ -29,6 +29,8 @@ function fetched(extra: Partial<FetchResult> = {}): FetchResult {
     attachmentNames: [],
     attachments: [],
     failures: [],
+    linked: null,
+    compose: null,
     ...extra,
   };
 }
@@ -368,10 +370,4 @@ describe("止める・画面へ伝える", () => {
     expect(all.map((l) => l.text)).toContain("  1ページ目: 1行");
   });
 
-  it("捺印決裁書はまだこの流れで取らない（理由を出して止める）", async () => {
-    const s = setup();
-    const { status } = await run(s, { scan: scanOf([]) }, 10, { cfg: LOCAL_KINDS.natsuin });
-    expect(status.state).toBe("error");
-    expect(status.error).toContain("まだ使えません");
-  });
 });

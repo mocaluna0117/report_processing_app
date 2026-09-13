@@ -33,7 +33,7 @@ import {
   pickFolder,
   queryFolderPermission,
 } from "@/lib/tenmatsu/local/folder-handle";
-import { RUN_LIMITS } from "@/lib/tenmatsu/local/kind-config";
+import { LOCAL_KINDS, RUN_LIMITS } from "@/lib/tenmatsu/local/kind-config";
 import { createRakurakuApi, RakurakuApiError } from "@/lib/tenmatsu/local/server-api";
 import {
   type FolderConnection,
@@ -877,10 +877,17 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
           )}
           {!canRun && !running && runBlockedReason && <p className="mt-2 text-xs text-slate-500">{runBlockedReason}</p>}
 
+          {/* この種類だけの進み方（捺印決裁書は取得しただけでは終わらない） */}
+          {kind.text.flowNote && <p className="mt-2 text-sm text-slate-600">{kind.text.flowNote}</p>}
+
           <p className="mt-2 text-xs text-slate-500">
-            添付のPDFと画像 (JPG・PNG) を本体と結合します。開くのにパスワードが要らない保護のかかったPDFも結合できます。
-            Excel・Word・PowerPoint・メールの添付は結合できないので、その{kind.label}を保留にして、本体と結合できた添付だけのPDFをフォルダーの _保留 に置き、残りの取得は続けます。
-            一覧の「{kind.text.resolveButton}」から、手でPDFにしたものを入れて確定してください (どうしても手に入らないときは、欠けたまま確定することもできます)。
+            {LOCAL_KINDS[kind.id].composed
+              ? "捺印決裁書そのものの添付は結合しません。紐づく専決決裁書を楽楽精算で探し、その本体と、決定通知書 (無ければ見積総覧・見積：・写真) の添付を並べます。"
+              : "添付のPDFと画像 (JPG・PNG) を本体と結合します。"}
+            開くのにパスワードが要らない保護のかかったPDFも結合できます。
+            Excel・Word・PowerPoint・メールの添付は結合できないので、その{kind.label}を保留にして、結合できたものだけのPDFをフォルダーの _保留 に置き、残りの取得は続けます。
+            一覧の「{kind.text.resolveButton}」から、手でPDFにしたものを入れて確定してください
+            {kind.text.flowNote ? " (あとからアップロードする書類は必ず入れる必要があります)。" : " (どうしても手に入らないときは、欠けたまま確定することもできます)。"}
             動画・音声は紙にできないので結合せず飛ばし、その行に「動画は未結合」と出します。
           </p>
 

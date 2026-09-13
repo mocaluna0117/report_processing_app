@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>捺印決裁書（本体を受け取れる・テスト用）</title>
+<!--
+  印刷で本体PDFを受け取れる捺印決裁書の画面（架空データ）。作りは natsuin_detail.html と同じ。
+  ?link=番号 で「専決決裁書№」の値を変える（空にすると読めない伝票の再現）。
+-->
+<body>
+<table class="d_table_contents">
+  <tr><th>伝票No.</th><td>NA00001001</td></tr>
+  <tr><th>申請日</th><td>2026/09/05 10:20:30</td></tr>
+  <tr><th>内容</th><td>外壁補修工事の捺印依頼</td></tr>
+  <tr><th>専決決裁書№</th><td id="link"></td></tr>
+  <tr><th>備考</th><td>物件情報 物件名：架空邸 施主名：架空 太郎</td></tr>
+  <tr><th>添付ファイル</th><td>
+    <span class="dummyLink" onclick="WorkflowDenpyo.downloadFileData(this, 1)">捺印依頼書.pdf</span>
+  </td></tr>
+</table>
+<button type="button" class="common-btn white output accesskeyPrint">印刷</button>
+<script>
+var params = new URLSearchParams(location.search);
+document.getElementById('link').textContent = params.has('link') ? params.get('link') : '2267';
+var WorkflowDenpyo = { downloadFileData: function () { window.__ownAttachmentClicked = true; } };
+document.querySelector('button.accesskeyPrint').addEventListener('click', function () {
+  location.href = 'files/body.pdf?dl=1&fn=natsuin.pdf';
+});
+</script>
+</body>

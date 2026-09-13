@@ -43,7 +43,7 @@ function setup(script: FakeApiScript = {}, kind: "tenmatsu" | "senketsu" | "nats
 }
 
 async function fetched(): Promise<FetchResult> {
-  return { fields: { shinsei_date: "2026/09/10 11:37:00" }, body: file("body", 0, "本体", ".pdf", await makePdf(1)), attachmentNames: [], attachments: [], failures: [] };
+  return { fields: { shinsei_date: "2026/09/10 11:37:00" }, body: file("body", 0, "本体", ".pdf", await makePdf(1)), attachmentNames: [], attachments: [], failures: [], linked: null, compose: null };
 }
 
 describe("フォルダー版のクライアント（旧方式と同じ約束で動く）", () => {

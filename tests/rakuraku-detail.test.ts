@@ -151,9 +151,10 @@ describe.skipIf(!browser)("伝票画面から項目を読む", () => {
   });
 
   it("★表が遅れて描かれる画面は、描かれるまで待ってから読む（待たないと申請日が空になる）", async () => {
-    const page = await open("slow_detail.html");
+    // ほかの検証と並んで走ると読み込みが遅れるので、描かれるまでの遅れを長めにとる
+    const page = await open("slow_detail.html?late=4000");
     expect(await readDetailFields(page.mainFrame(), KINDS.tenmatsu)).toEqual({});
-    const ready = await waitForDetailReady(page, page.mainFrame(), KINDS.tenmatsu, 3_000);
+    const ready = await waitForDetailReady(page, page.mainFrame(), KINDS.tenmatsu, 10_000);
     expect(await readDetailFields(ready, KINDS.tenmatsu)).toEqual({ shinsei_date: "2026/09/05 10:20:30" });
     await page.close();
   });

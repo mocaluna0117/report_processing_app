@@ -1,0 +1,34 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>専決決裁書（紐づく伝票・テスト用）</title>
+<!--
+  捺印決裁書に紐づく専決決裁書の画面（架空データ）。本体と添付を実際に受け取れる。?no= で中身を変える:
+    2267 … 決定通知書なし（見積総覧・見積：・写真を結合し、名前は見積総覧の括弧から）。御見積書は結合しない
+    2268 … 決定通知書あり（決定通知書だけを結合し、名前は保険金請求書（…））
+    2269 … 印刷を押しても何も起きない（本体が取れない）。添付は取れる
+-->
+<body>
+<table class="d_table_contents">
+  <tr><th>申請日</th><td>2026/09/04 17:51:38</td></tr>
+  <tr><th>表題</th><td>外壁補修工事の発注</td></tr>
+  <tr><th>支払先</th><td>架空塗装</td></tr>
+  <tr><th>決裁申請額(税込)</th><td>352,000 円</td></tr>
+  <tr><th>添付ファイル</th><td id="att"></td></tr>
+</table>
+<button type="button" class="common-btn white output accesskeyPrint">印刷</button>
+<script>
+var no = new URLSearchParams(location.search).get('no');
+var pdf = 'files/body.pdf?dl=1&fn=a.pdf';
+var list = no === '2268'
+  ? [['見積総覧（架空邸）.pdf', pdf], ['【決定通知書】保険金支払額の計算（架空県_架空邸_123）.pdf', pdf]]
+  : [['見積総覧（架空邸）.pdf', pdf], ['見積：架空商店 20260916.pdf', pdf], ['写真1.jpg', 'files/photo.png?dl=1&fn=p.jpg'], ['無関係.pdf', pdf], ['御見積書（架空邸）.pdf', pdf]];
+document.getElementById('att').innerHTML = list.map(function (a, i) {
+  return '<span class="dummyLink" onclick="WorkflowDenpyo.downloadFileData(this,' + i + ')">' + a[0] + '</span>';
+}).join(' ');
+var WorkflowDenpyo = { downloadFileData: function (el, i) { location.href = list[i][1]; } };
+document.querySelector('button.accesskeyPrint').addEventListener('click', function () {
+  if (no === '2269') return;
+  location.href = 'files/body.pdf?dl=1&fn=senketsu.pdf';
+});
+</script>
+</body>

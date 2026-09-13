@@ -8,6 +8,7 @@
  */
 import {
   type AttachmentRequest,
+  type ComposeEvent,
   type DepartmentOption,
   type ErrorEvent,
   type FetchRequest,
@@ -68,6 +69,19 @@ export interface AttachmentFailure {
   retryable: boolean;
 }
 
+/** 捺印決裁書に紐づく専決決裁書から受け取ったもの */
+export interface LinkedResult {
+  denpyoNo: string;
+  href: string | null;
+  /** 写す項目（支払先・決裁申請額など） */
+  fields: Record<string, string>;
+  /** 添付の表示名ぜんぶ */
+  attachmentNames: string[] | null;
+  body: ReceivedFile | null;
+  attachments: ReceivedFile[];
+  failures: AttachmentFailure[];
+}
+
 export interface FetchResult {
   fields: Record<string, string>;
   body: ReceivedFile | null;
@@ -75,6 +89,10 @@ export interface FetchResult {
   attachmentNames: string[] | null;
   attachments: ReceivedFile[];
   failures: AttachmentFailure[];
+  /** 紐づく専決決裁書（捺印決裁書で、一覧に見つかったときだけ） */
+  linked: LinkedResult | null;
+  /** 組み立ての結果（捺印決裁書だけ。★これが無いまま終わったら受け取りきれていない） */
+  compose: ComposeEvent | null;
 }
 
 export interface RakurakuApi {
@@ -200,8 +218,12 @@ export function createRakurakuApi(options: { fetchImpl?: typeof fetch; baseUrl?:
     },
 
     fetch: async (request, handlers = {}, signal) => {
-      const out: FetchResult = { fields: {}, body: null, attachmentNames: null, attachments: [], failures: [] };
+      const out: FetchResult = { fields: {}, body: null, attachmentNames: null, attachments: [], failures: [], linked: null, compose: null };
       let gotFields = false;
+      const linked = (): LinkedResult => {
+        out.linked ??= { denpyoNo: "", href: null, fields: {}, attachmentNames: null, body: null, attachments: [], failures: [] };
+        return out.linked;
+      };
       await stream(
         "fetch",
         request,
@@ -214,16 +236,28 @@ export function createRakurakuApi(options: { fetchImpl?: typeof fetch; baseUrl?:
           } else if (event.type === "attachments") {
             out.attachmentNames = event.names;
           } else if (event.type === "attachment.failed") {
-            const { type: _type, ...failure } = event;
-            out.failures.push(failure);
+            const { type: _type, role, ...failure } = event;
+            if (role === "linked-attachment") linked().failures.push(failure);
+            else out.failures.push(failure);
+          } else if (event.type === "linked.found") {
+            linked().denpyoNo = event.denpyoNo;
+            linked().href = event.href;
+          } else if (event.type === "linked.fields") {
+            linked().fields = event.fields;
+          } else if (event.type === "linked.attachments") {
+            linked().attachmentNames = event.names;
+          } else if (event.type === "compose") {
+            out.compose = event;
           }
         },
         (file) => {
           if (file.role === "body") out.body = file;
-          else out.attachments.push(file);
+          else if (file.role === "attachment") out.attachments.push(file);
+          else if (file.role === "linked-body") linked().body = file;
+          else linked().attachments.push(file);
         },
       );
-      if (!gotFields || !out.body) {
+      if (!gotFields || !out.body || (request.kind === "natsuin" && !out.compose)) {
         throw new RakurakuApiError("STREAM_CUT", "伝票の取得結果を受け取りきれませんでした", true);
       }
       return out;

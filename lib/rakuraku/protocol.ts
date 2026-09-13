@@ -69,8 +69,29 @@ export type ProgressStage =
   | "body"
   | "attachments";
 
-/** 流すファイルの役割。body = 伝票の本体PDF、attachment = 添付（index は画面の表示順・1始まり） */
-export type FileRole = "body" | "attachment";
+/**
+ * 流すファイルの役割。body = 伝票の本体PDF、attachment = 添付（index は画面の表示順・1始まり）。
+ * linked-body / linked-attachment は、捺印決裁書に紐づく専決決裁書の本体と添付（index はその伝票画面での表示順）。
+ */
+export type FileRole = "body" | "attachment" | "linked-body" | "linked-attachment";
+
+export type ComposeGroupName = "decision" | "summary" | "estimate" | "other";
+
+/** 捺印決裁書の組み立ての結果（最後に1回だけ流す） */
+export interface ComposeEvent {
+  type: "compose";
+  /** 紐づく専決決裁書の伝票No.（数字だけ）。読めなければ null */
+  linkedNo: string | null;
+  pattern: 1 | 2;
+  /** 結合する添付（この順に並べる）。index は専決決裁書の伝票画面での表示順 */
+  picked: { index: number; name: string; group: ComposeGroupName }[];
+  paren: string | null;
+  parenFrom: "decision" | "summary" | "estimate" | "quote" | null;
+  /** 確定したときに付ける名前 */
+  finalName: string;
+  /** 紐づけに失敗した理由（番号が読めない／一覧を開けない／見つからない／本体が取れない）。うまくいけば null */
+  linkReason: string | null;
+}
 
 /** ファイルを流すときの1かたまりの大きさ（base64 にする前）。1行を大きくしすぎない */
 export const FILE_CHUNK_BYTES = 192 * 1024;
@@ -139,7 +160,23 @@ export type RakurakuEvent =
    * 添付を取れなかった。取れなかった添付は結合せず、保留にして手で入れられるようにする（黙って落とさない）。
    * code が TIME_BUDGET_EXCEEDED のときは、`/attachment` で個別に取り直せる。
    */
-  | { type: "attachment.failed"; index: number; name: string; code: RakurakuCode; reason: string; retryable: boolean }
+  | {
+      type: "attachment.failed";
+      index: number;
+      name: string;
+      code: RakurakuCode;
+      reason: string;
+      retryable: boolean;
+      /** 紐づく専決決裁書の添付か（省略は自分の添付） */
+      role?: "attachment" | "linked-attachment";
+    }
+  /** 紐づく専決決裁書が一覧で見つかった */
+  | { type: "linked.found"; denpyoNo: string; href: string | null }
+  /** 紐づく専決決裁書の画面から写す項目（支払先・決裁申請額など。捺印決裁書の画面に無いもの） */
+  | { type: "linked.fields"; fields: Record<string, string> }
+  /** 紐づく専決決裁書の添付の表示名ぜんぶ（★名前の決め方を後から直せるように全部残す） */
+  | { type: "linked.attachments"; names: string[] }
+  | ComposeEvent
   | { type: "done" }
   | ErrorEvent;
 
@@ -168,6 +205,8 @@ export interface FetchRequest {
   href: string | null;
   /** 部門の値（href が無くて一覧を開くときに使う）。部門の切り替えが無いアカウントは null */
   deptCode: string | null;
+  /** 一覧で読んだ、紐づく伝票の番号（捺印決裁書の「専決決裁書№」）。伝票画面で読めなかったときに使う */
+  linkedNo?: string | null;
 }
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; message: string };
@@ -238,9 +277,20 @@ export function parseFetchRequest(raw: unknown): Parsed<FetchRequest> {
   if (deptCode !== null && (typeof deptCode !== "string" || !DEPT_CODE_RE.test(deptCode))) {
     return { ok: false, message: "部門の値が不正です" };
   }
+  const { linkedNo } = raw;
+  if (linkedNo !== undefined && linkedNo !== null && (typeof linkedNo !== "string" || linkedNo.length > MAX_DENPYO_CHARS)) {
+    return { ok: false, message: "紐づく伝票の番号が不正です" };
+  }
   return {
     ok: true,
-    value: { sessionToken, kind, denpyoNo: denpyoNo.trim(), href: href as string | null, deptCode: deptCode as string | null },
+    value: {
+      sessionToken,
+      kind,
+      denpyoNo: denpyoNo.trim(),
+      href: href as string | null,
+      deptCode: deptCode as string | null,
+      ...(typeof linkedNo === "string" && linkedNo.trim() !== "" ? { linkedNo: linkedNo.trim() } : {}),
+    },
   };
 }
 

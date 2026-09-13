@@ -11,6 +11,7 @@ import {
   fetchBodyPdf,
   locateAttachments,
 } from "./download";
+import { fetchComposedParts } from "./compose";
 import { RakurakuError } from "./errors";
 import { sendFile } from "./file-frames";
 import type { RakurakuKind } from "./kinds";
@@ -32,7 +33,7 @@ export interface FetchRun {
   /** ログイン後に着いた画面（封じたセッションから取り出したもの） */
   home: string;
   kind: RakurakuKind;
-  request: Pick<FetchRequest, "denpyoNo" | "href" | "deptCode">;
+  request: Pick<FetchRequest, "denpyoNo" | "href" | "deptCode" | "linkedNo">;
   /** 前にメニューをたどって見つけた一覧の URL */
   listUrlFound: string | null;
   log: Log;
@@ -41,6 +42,8 @@ export interface FetchRun {
   send: (event: RakurakuEvent) => Promise<void>;
   /** これを過ぎたら、残りの添付は取りに行かず TIME_BUDGET_EXCEEDED にする（関数の実行時間の上限に備える） */
   attachmentDeadlineAt?: number;
+  /** 紐づく種類の設定（検証で差し替えるためのもの。本番では渡さない） */
+  linkedKind?: RakurakuKind;
   /** 検証で待ち時間を縮めるためのもの。本番では渡さない */
   timing?: {
     detail?: DetailTiming;
@@ -185,8 +188,8 @@ export async function fetchOne(run: FetchRun): Promise<{ foundUrl: string | null
   await sendFile(send, { role: "body", index: 0, name: "本体", ext: extOf(body.name), bytes: body.bytes });
 
   if (kind.compose) {
-    // 捺印決裁書は自身の添付を結合しない（紐づく専決決裁書から組む）。組み立ては後の段で足す
-    log("  （捺印決裁書の自身の添付は結合しないので取りません）");
+    // 捺印決裁書は自身の添付を結合しない。紐づく専決決裁書の本体と、要件に合う添付を取る
+    await fetchComposedParts(run, record.fields);
     return { foundUrl: record.foundUrl };
   }
 

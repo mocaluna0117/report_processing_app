@@ -142,3 +142,55 @@ describe("Folio のサーバーを呼ぶ", () => {
     expect(calls[0].body).toMatchObject({ index: 2, expectedName: "写真.jpg" });
   });
 });
+
+describe("捺印決裁書の取得結果を受け取る", () => {
+  it("★紐づく専決決裁書の本体・添付・写す項目・組み立ての結果を、自分の本体と分けて受け取る", async () => {
+    const { impl } = fakeFetch({
+      "/api/rakuraku/fetch": () =>
+        stream(async (sink) => {
+          await sink.send({ type: "fields", fields: { senketsu_no: "2267" } });
+          await sendFile(sink.send, { role: "body", index: 0, name: "本体", ext: ".pdf", bytes: new Uint8Array([1]) });
+          await sink.send({ type: "linked.found", denpyoNo: "SE00002267", href: "https://example.test/abcd/d?no=2267" });
+          await sink.send({ type: "linked.fields", fields: { payee: "架空塗装" } });
+          await sendFile(sink.send, { role: "linked-body", index: 0, name: "専決決裁書 本体（No.2267）", ext: ".pdf", bytes: new Uint8Array([2]) });
+          await sink.send({ type: "linked.attachments", names: ["見積総覧（架空邸）.pdf", "写真1.jpg"] });
+          await sendFile(sink.send, { role: "linked-attachment", index: 1, name: "見積総覧（架空邸）.pdf", ext: ".pdf", bytes: new Uint8Array([3]) });
+          await sink.send({ type: "attachment.failed", role: "linked-attachment", index: 2, name: "写真1.jpg", code: "TIME_BUDGET_EXCEEDED", reason: "時間", retryable: true });
+          await sink.send({
+            type: "compose",
+            linkedNo: "2267",
+            pattern: 1,
+            picked: [{ index: 1, name: "見積総覧（架空邸）.pdf", group: "summary" }],
+            paren: "架空邸",
+            parenFrom: "summary",
+            finalName: "御見積書（架空邸）.pdf",
+            linkReason: null,
+          });
+        }),
+    });
+    const result = await createRakurakuApi({ fetchImpl: impl }).fetch({ ...FETCH, kind: "natsuin" });
+    expect(result.body?.bytes).toEqual(new Uint8Array([1]));
+    expect(result.attachments).toEqual([]);
+    expect(result.failures).toEqual([]);
+    expect(result.linked).toMatchObject({
+      denpyoNo: "SE00002267",
+      fields: { payee: "架空塗装" },
+      attachmentNames: ["見積総覧（架空邸）.pdf", "写真1.jpg"],
+      failures: [{ index: 2, code: "TIME_BUDGET_EXCEEDED" }],
+    });
+    expect(result.linked?.body?.bytes).toEqual(new Uint8Array([2]));
+    expect(result.linked?.attachments.map((a) => a.index)).toEqual([1]);
+    expect(result.compose?.finalName).toBe("御見積書（架空邸）.pdf");
+  });
+
+  it("★捺印決裁書で組み立ての結果が届かないまま終わったら、成功にしない", async () => {
+    const { impl } = fakeFetch({
+      "/api/rakuraku/fetch": () =>
+        stream(async (sink) => {
+          await sink.send({ type: "fields", fields: {} });
+          await sendFile(sink.send, { role: "body", index: 0, name: "本体", ext: ".pdf", bytes: new Uint8Array([1]) });
+        }),
+    });
+    expect(await createRakurakuApi({ fetchImpl: impl }).fetch({ ...FETCH, kind: "natsuin" }).catch((e: unknown) => e)).toMatchObject({ code: "STREAM_CUT" });
+  });
+});

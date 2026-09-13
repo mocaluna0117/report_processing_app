@@ -184,7 +184,7 @@ export const NATSUIN: DocKind = defineKind({
   route: "/natsuin",
   menuLabel: "捺印決裁書",
   pageTitle: "Folio — 捺印決裁書",
-  pageDescription: "捺印決裁書PDFの取得 (このPCのローカルサーバー経由) と取得済み一覧の確認",
+  pageDescription: "捺印決裁書PDFの取得 (楽楽精算から取得してPCのフォルダーへ保存) と取得済み一覧の確認",
   filePrefix: "捺印決裁書No.",
   showStaffSync: false,
   canRecompose: true,
