@@ -4,18 +4,27 @@ import { readFinalApprovedAt } from "./approval-log";
 import type { TenantConfig } from "./config";
 import type { EnsureDepartmentOptions } from "./department";
 import { type DetailFields, type DetailTiming, openDetail, readDetailFields } from "./detail";
+import {
+  type DownloadTiming,
+  defaultDownloadTiming,
+  fetchAttachment,
+  fetchBodyPdf,
+  locateAttachments,
+} from "./download";
 import { RakurakuError } from "./errors";
+import { sendFile } from "./file-frames";
 import type { RakurakuKind } from "./kinds";
 import { type ListTiming, type Log, defaultTiming, scanListForNo } from "./list";
 import { type NavigationTiming, applyDepartment, gotoList, openHome } from "./navigation";
 import { parseStaffNames } from "./parse/fields";
-import type { FetchRequest, ProgressStage } from "./protocol";
+import { extOf } from "./parse/sniff";
+import type { FetchRequest, ProgressStage, RakurakuEvent } from "./protocol";
 
 /**
- * 伝票1件を取得する（`/api/rakuraku/fetch` の中身）。
+ * 伝票1件を取得する（`/api/rakuraku/fetch` と `/api/rakuraku/attachment` の中身）。
  *
  * 移植元: tenmatsu.py `process_one` 4791-4945 の手順。**保存も記録もしない**（ブラウザ側が行う）。
- * いまは「伝票を開く → 項目を読む → 承認履歴」まで。本体PDFと添付は次の段で足す。
+ * 捺印決裁書の組み立て（紐づく専決決裁書を取りに行く）はまだ無い。
  */
 export interface FetchRun {
   page: Page;
@@ -28,6 +37,10 @@ export interface FetchRun {
   listUrlFound: string | null;
   log: Log;
   progress: (stage: ProgressStage, message: string) => void;
+  /** 行を送る（ファイルは大きいので、送り終わるのを待つ） */
+  send: (event: RakurakuEvent) => Promise<void>;
+  /** これを過ぎたら、残りの添付は取りに行かず TIME_BUDGET_EXCEEDED にする（関数の実行時間の上限に備える） */
+  attachmentDeadlineAt?: number;
   /** 検証で待ち時間を縮めるためのもの。本番では渡さない */
   timing?: {
     detail?: DetailTiming;
@@ -35,12 +48,16 @@ export interface FetchRun {
     list?: ListTiming;
     navigation?: NavigationTiming;
     department?: EnsureDepartmentOptions;
+    download?: DownloadTiming;
+    /** 添付1件のダウンロードを待つ上限。移植元 60 秒 */
+    attachmentTimeoutMs?: number;
+    /** 添付1件ごとにあける間隔。移植元 1.5 秒 */
+    requestIntervalMs?: number;
   };
 }
 
-export interface DetailRecord {
-  fields: DetailFields;
-  /** 開いている伝票画面（承認履歴を開いたときは開き直したあと） */
+export interface OpenedDetail {
+  /** 開いている伝票画面 */
   frame: Frame;
   /** 伝票画面の URL。開き直しに使う */
   href: string;
@@ -48,18 +65,17 @@ export interface DetailRecord {
   foundUrl: string | null;
 }
 
+export interface DetailRecord extends OpenedDetail {
+  fields: DetailFields;
+}
+
 /**
- * 伝票画面を開いて、項目と最終承認日を読む。
- *
- * ★**項目を読むのは印刷より先**。保存のあとにブラウザの操作を挟むと、そこで失敗したときに
- *   「PDFはあるのに記録が無い」状態を作れてしまう（記録漏れの実バグと同じ形）。
- * ★承認履歴を開いたら、伝票画面を開き直してから返す。ダイアログが「印刷」に重なると押せなくなる。
- *   ダイアログの「閉じる」は押さない（同じ URL への GET なので開き直しに副作用は無い）。
+ * トップを開き、頼まれた伝票の画面を開く。
+ * 伝票画面の URL が分からない伝票は、一覧を開いて行を探してから開く。
  */
-export async function readDetailRecord(run: FetchRun): Promise<DetailRecord> {
+export async function openRequestedDetail(run: FetchRun): Promise<OpenedDetail> {
   const { page, kind, tenant, log, progress } = run;
   const { denpyoNo } = run.request;
-  const detailOptions = { log, timing: run.timing?.detail };
 
   progress("open", "楽楽精算を開いています");
   await openHome(page, tenant, run.home);
@@ -67,7 +83,6 @@ export async function readDetailRecord(run: FetchRun): Promise<DetailRecord> {
   let href = run.request.href;
   let foundUrl: string | null = null;
   if (!href) {
-    // 一覧で伝票画面の URL が読めなかった伝票。一覧を開いて行を探し、そこから開く
     log(`  伝票画面のURLが分からないので、${kind.label}一覧から探します`);
     progress("department", "所属部門を確かめています");
     await applyDepartment(page, run.request.deptCode, { log, reopenUrl: run.home, ...run.timing?.department });
@@ -88,10 +103,24 @@ export async function readDetailRecord(run: FetchRun): Promise<DetailRecord> {
   }
 
   progress("detail", `伝票No. ${denpyoNo} を開いています`);
-  let frame = await openDetail(page, kind, tenant, denpyoNo, href, detailOptions);
+  const frame = await openDetail(page, kind, tenant, denpyoNo, href, { log, timing: run.timing?.detail });
   // ★開き直しには、実際に開けた伝票画面の URL を使う。移植元は URL が無い伝票を
   //   もう一度「一覧のリンクを押して」開き直そうとしており、伝票画面には一覧が無いので必ず失敗していた
-  const detailUrl = href ?? frame.url();
+  return { frame, href: href ?? frame.url(), foundUrl };
+}
+
+/**
+ * 伝票画面を開いて、項目と最終承認日を読む。
+ *
+ * ★**項目を読むのは印刷より先**。保存のあとにブラウザの操作を挟むと、そこで失敗したときに
+ *   「PDFはあるのに記録が無い」状態を作れてしまう（記録漏れの実バグと同じ形）。
+ * ★承認履歴を開いたら、伝票画面を開き直してから返す。ダイアログが「印刷」に重なると押せなくなる。
+ *   ダイアログの「閉じる」は押さない（同じ URL への GET なので開き直しに副作用は無い）。
+ */
+export async function readDetailRecord(run: FetchRun): Promise<DetailRecord> {
+  const { page, kind, tenant, log, progress } = run;
+  const opened = await openRequestedDetail(run);
+  let { frame } = opened;
 
   const fields = await readDetailFields(frame, kind);
   progress("approval-log", "承認履歴を読んでいます");
@@ -110,7 +139,133 @@ export async function readDetailRecord(run: FetchRun): Promise<DetailRecord> {
   );
 
   if (approval.opened) {
-    frame = await openDetail(page, kind, tenant, denpyoNo, detailUrl, detailOptions);
+    frame = await openDetail(page, kind, tenant, run.request.denpyoNo, opened.href, { log, timing: run.timing?.detail });
   }
-  return { fields, frame, href: detailUrl, foundUrl };
+  return { ...opened, frame, fields };
+}
+
+const errorText = (e: unknown) => (e instanceof Error ? e.message.split("\n")[0].slice(0, 200) : "失敗しました");
+
+/**
+ * 伝票1件を取得する: 項目 → 本体PDF → 添付。
+ *
+ * 流す行: fields → file.*（本体）→ attachments → file.*（添付）/ attachment.failed …
+ *
+ * ★本体PDFは**2回まで**。2回目の前に伝票画面を開き直す（画面の描き直しと印刷ウィンドウの出方は毎回ぶれる）。
+ *   2回とも駄目なら BODY_PDF_FAILED（retryable）。**この伝票だけの失敗**で、ブラウザは記録せずに見送る。
+ * ★添付は1件取れなくても止めない（取れなかった添付は保留にして手で入れられる）。
+ *   ただし**続けて2回失敗したらセッション切れとみなして止める**（1件ごとに60秒待って全部落とすより早い）。
+ * ★添付1件ごとに間隔をあける（成否に関わらず）。
+ */
+export async function fetchOne(run: FetchRun): Promise<{ foundUrl: string | null }> {
+  const { page, kind, tenant, log, progress, send } = run;
+  const record = await readDetailRecord(run);
+  await send({ type: "fields", fields: record.fields });
+
+  // --- 本体PDF（伝票画面の「印刷」経由）
+  progress("body", "本体PDFを取得しています");
+  log("  本体PDFを取得");
+  const downloadTiming = run.timing?.download ?? defaultDownloadTiming(kind);
+  let frame = record.frame;
+  let body = null;
+  for (const attempt of [1, 2]) {
+    try {
+      body = await fetchBodyPdf(page, frame, kind, tenant, log, downloadTiming);
+      break;
+    } catch (e) {
+      if (e instanceof RakurakuError && e.sessionLost) throw e;
+      if (attempt === 2) {
+        throw new RakurakuError("BODY_PDF_FAILED", `本体PDFを取れませんでした（${errorText(e)}）`, { retryable: true });
+      }
+      log(`    ! 取れなかったので開き直してもう一度試します（${errorText(e)}）`);
+      frame = await openDetail(page, kind, tenant, run.request.denpyoNo, record.href, { log, timing: run.timing?.detail });
+    }
+  }
+  if (!body) throw new RakurakuError("BODY_PDF_FAILED", "本体PDFを取れませんでした", { retryable: true });
+  await sendFile(send, { role: "body", index: 0, name: "本体", ext: extOf(body.name), bytes: body.bytes });
+
+  if (kind.compose) {
+    // 捺印決裁書は自身の添付を結合しない（紐づく専決決裁書から組む）。組み立ては後の段で足す
+    log("  （捺印決裁書の自身の添付は結合しないので取りません）");
+    return { foundUrl: record.foundUrl };
+  }
+
+  // --- 添付（表示順に1件ずつ。楽楽精算は一括ダウンロードができない）
+  progress("attachments", "添付を取得しています");
+  const attachments = await locateAttachments(frame, kind);
+  await send({ type: "attachments", names: attachments.map((a) => a.name) });
+  log(`  添付 ${attachments.length}件`);
+
+  const timeoutMs = run.timing?.attachmentTimeoutMs ?? 60_000;
+  const intervalMs = run.timing?.requestIntervalMs ?? 1_500;
+  let misses = 0;
+  for (const item of attachments) {
+    if (run.attachmentDeadlineAt !== undefined && Date.now() >= run.attachmentDeadlineAt) {
+      // ★黙って落とさない。残りは「時間切れ」として伝え、ブラウザが個別に取り直す
+      for (const rest of attachments.filter((a) => a.index >= item.index)) {
+        await send({
+          type: "attachment.failed",
+          index: rest.index,
+          name: rest.name,
+          code: "TIME_BUDGET_EXCEEDED",
+          reason: "時間の上限が近いので、この添付は続けて個別に取得します",
+          retryable: true,
+        });
+      }
+      log(`  （時間の上限が近いので、${item.index}件目からの添付は個別に取得します）`);
+      break;
+    }
+    try {
+      const file = await fetchAttachment(page, item, timeoutMs);
+      await sendFile(send, { role: "attachment", index: item.index, name: item.name, ext: file.ext, bytes: file.bytes });
+      log(`    ${item.index}件目を取得しました（${file.ext || "拡張子なし"}）`);
+      misses = 0;
+    } catch (e) {
+      if (e instanceof RakurakuError && e.sessionLost) throw e;
+      const reason = errorText(e);
+      await send({ type: "attachment.failed", index: item.index, name: item.name, code: "ATTACHMENT_FAILED", reason, retryable: true });
+      log(`    ! ${item.index}件目を取得できませんでした（${reason}）`);
+      misses += 1;
+      if (misses >= 2) {
+        throw new RakurakuError("ATTACHMENT_FAILED", "添付の取得が続けて失敗しました（ログインが切れた可能性があります）", {
+          sessionLost: true,
+        });
+      }
+    }
+    if (intervalMs > 0) await page.waitForTimeout(intervalMs);
+  }
+  return { foundUrl: record.foundUrl };
+}
+
+/**
+ * 添付を1つだけ取り直す（`/fetch` で時間切れになった添付を、あとから個別に取るため）。
+ *
+ * ★表示名が `/fetch` のときと違っていたら取らない（ATTACHMENT_MISMATCH）。
+ *   あいだに添付が差し替わっていると、別の書類を別の枠に入れてしまうため。
+ */
+export async function fetchOneAttachment(
+  run: FetchRun,
+  index: number,
+  expectedName: string,
+): Promise<{ foundUrl: string | null }> {
+  const opened = await openRequestedDetail(run);
+  run.progress("attachments", "添付を取得しています");
+  const attachments = await locateAttachments(opened.frame, run.kind);
+  const item = attachments.find((a) => a.index === index);
+  if (!item || item.name !== expectedName) {
+    throw new RakurakuError(
+      "ATTACHMENT_MISMATCH",
+      `伝票 ${run.request.denpyoNo} の添付が変わっています（${index}件目が見つからないか、名前が違います）。この伝票を取り直してください`,
+    );
+  }
+  let file;
+  try {
+    file = await fetchAttachment(run.page, item, run.timing?.attachmentTimeoutMs ?? 60_000);
+  } catch (e) {
+    if (e instanceof RakurakuError) throw e;
+    throw new RakurakuError("ATTACHMENT_FAILED", `添付を取得できませんでした（${errorText(e)}）`, { retryable: true });
+  }
+  await run.send({ type: "attachments", names: attachments.map((a) => a.name) });
+  await sendFile(run.send, { role: "attachment", index: item.index, name: item.name, ext: file.ext, bytes: file.bytes });
+  return { foundUrl: opened.foundUrl };
 }

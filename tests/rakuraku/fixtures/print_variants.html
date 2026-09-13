@@ -1,0 +1,36 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>印刷の出方の見本（テスト用）</title>
+<!--
+  「印刷」を押したあとの本体PDFの出方を、問い合わせ部分（?mode=）で切り替える見本（架空データ）。
+  印刷ボタンの実装は楽楽精算の外部JSにあり、実物の出方は未確認なので、ありうる形を並べる。
+    download      … そのままダウンロードになる
+    popup-download… 別ウィンドウで開き、そこでダウンロードになる（ヘッドレスの Chromium で PDF を開いた形）
+    late-popup    … about:blank の別ウィンドウが開き、1.2秒後に PDF の画面へ移動する
+    same-frame    … 同じ画面の中の枠で PDF が開く
+    preview-only  … 別ウィンドウに PDF ではない画面が出るだけ
+    login         … 別ウィンドウにログイン画面が返ってくる（セッション切れ）
+    nothing       … 押しても何も起きない
+-->
+<body>
+<table class="d_table_contents"><tr><th>申請日</th><td>2026/09/05 10:20:30</td></tr></table>
+<button type="button" class="common-btn white output accesskeyPrint">
+  <i class="fa fa-print darkblue">print</i>印刷</button>
+<script>
+var mode = new URLSearchParams(location.search).get('mode') || 'download';
+document.querySelector('button.accesskeyPrint').addEventListener('click', function () {
+  window.__printClicked = (window.__printClicked || 0) + 1;
+  if (mode === 'download') location.href = 'files/body.pdf?dl=1&fn=print.pdf';
+  else if (mode === 'popup-download') window.open('files/body.pdf?dl=1&fn=print.pdf', '_blank');
+  else if (mode === 'late-popup') {
+    var w = window.open('', '_blank');
+    setTimeout(function () { w.location.href = new URL('files/body.pdf?view=1', location.href).href; }, 1200);
+  } else if (mode === 'same-frame') {
+    var f = document.createElement('iframe');
+    f.src = 'files/body.pdf?view=1';
+    document.body.appendChild(f);
+  } else if (mode === 'preview-only') window.open('files/preview.html', '_blank');
+  else if (mode === 'login') window.open('files/login.pdf', '_blank');
+});
+</script>
+</body>

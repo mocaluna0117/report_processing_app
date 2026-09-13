@@ -385,6 +385,7 @@ describe.skipIf(!browser)("伝票1件の項目を読む（通し）", () => {
     listUrlFound: null,
     log,
     progress: (stage: string) => stages.push(stage),
+    send: async () => undefined,
     timing: {
       detail: QUICK,
       list: { requestIntervalMs: 0, nextPageWaitMs: 2_000 },

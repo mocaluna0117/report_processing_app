@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type RakurakuEvent,
   isTerminalEvent,
+  parseAttachmentRequest,
   parseEventLine,
   parseFetchRequest,
   parseScanRequest,
@@ -144,5 +145,33 @@ describe("/fetch の本文を確かめる", () => {
     ["種類が不正", { kind: "keihi" }],
   ])("%sなら断る", (_label, patch) => {
     expect(parseFetchRequest({ ...FETCH, ...patch }).ok).toBe(false);
+  });
+});
+
+describe("/attachment の本文を確かめる", () => {
+  const ATT = {
+    sessionToken: "a.b.c",
+    kind: "tenmatsu",
+    denpyoNo: "TE00009005",
+    href: "https://example.test/abcd/detail?no=5",
+    deptCode: null,
+    index: 2,
+    expectedName: "現場写真.jpg",
+  };
+
+  it("正しい本文はそのまま通す", () => {
+    expect(parseAttachmentRequest(ATT)).toEqual({ ok: true, value: ATT });
+  });
+
+  it.each([
+    ["番号が0", { index: 0 }],
+    ["番号が小数", { index: 1.5 }],
+    ["番号が文字", { index: "2" }],
+    ["番号が大きすぎる", { index: 100 }],
+    ["名前が空", { expectedName: "" }],
+    ["名前が無い", { expectedName: undefined }],
+    ["伝票No.が無い", { denpyoNo: "" }],
+  ])("%sなら断る", (_label, patch) => {
+    expect(parseAttachmentRequest({ ...ATT, ...patch }).ok).toBe(false);
   });
 });

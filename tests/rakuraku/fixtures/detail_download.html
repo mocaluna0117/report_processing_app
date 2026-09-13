@@ -1,0 +1,55 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>添付を実際に受け取れる伝票画面（テスト用）</title>
+<!--
+  印刷と添付で本当にファイルを受け取れる伝票画面（架空データ）。作りは detail_structure.html と同じ。
+  問い合わせ部分（?mode=）で出方を変える:
+    （なし）  … 1 見積書.pdf / 2 現場写真.jpg（中身はPNG）/ 3 押しても何も起きない / 4 図面.pdf / 5 中身が画面(HTML)
+    twofail  … 1 と 2 がどちらも何も起きない（続けて2回失敗）
+    login    … 1 がログイン画面を返す（セッション切れ）
+    flaky    … 1回目の「印刷」は何も起きず、開き直したあとは受け取れる
+    noprint  … 「印刷」を押しても何も起きない
+-->
+<body>
+<table class="d_table_contents">
+  <tr><th>伝票No.</th><td>TE00009005</td></tr>
+  <tr><th>申請日</th><td>2026/09/04 17:51:38</td></tr>
+  <tr><th>どこで</th><td>注文受注物件：架空台3丁目C号棟　施主名：架空　太郎　監督：架空　一郎/営業：架空　二郎</td></tr>
+  <tr><th>PJコード</th><td>9901230105</td></tr>
+  <tr><th>添付ファイル</th><td>
+    <span class="fileName1 dummyLink" onclick="WorkflowDenpyo.downloadFileData(this, 1)">見積書.pdf</span>
+    <span class="fileName2 dummyLink" onclick="WorkflowDenpyo.downloadFileData(this, 2)">現場写真.jpg</span>
+    <span class="fileName3 dummyLink" onclick="WorkflowDenpyo.downloadFileData(this, 3)">壊れた添付.pdf</span>
+    <span class="fileName4 dummyLink" onclick="WorkflowDenpyo.downloadFileData(this, 4)">図面.pdf</span>
+    <span class="fileName5 dummyLink" onclick="WorkflowDenpyo.downloadFileData(this, 5)">エラー画面.pdf</span>
+    <span class="fileName6 dummyLink" style="display:none" onclick="WorkflowDenpyo.downloadFileData(this, 6)">&nbsp;</span>
+  </td></tr>
+</table>
+<button type="button" class="common-btn white output accesskeyPrint">
+  <i class="fa fa-print darkblue">print</i>印刷</button>
+<script>
+var mode = new URLSearchParams(location.search).get('mode') || '';
+var urls = {
+  1: 'files/body.pdf?dl=1&fn=mitsumori.pdf',
+  2: 'files/photo.png?dl=1&fn=genba.jpg',
+  3: null,
+  4: 'files/body.pdf?dl=1&fn=zumen.pdf',
+  5: 'files/preview.html?dl=1&fn=error.pdf'
+};
+if (mode === 'twofail') { urls[1] = null; urls[2] = null; }
+if (mode === 'login') urls[1] = 'files/login.pdf?dl=1&fn=mitsumori.pdf';
+var WorkflowDenpyo = {
+  downloadFileData: function (el, i) {
+    if (urls[i]) location.href = urls[i];
+  }
+};
+document.querySelector('button.accesskeyPrint').addEventListener('click', function () {
+  if (mode === 'noprint') return;
+  if (mode === 'flaky' && !sessionStorage.getItem('printedOnce')) {
+    sessionStorage.setItem('printedOnce', '1');
+    return;
+  }
+  location.href = 'files/body.pdf?dl=1&fn=honntai.pdf';
+});
+</script>
+</body>

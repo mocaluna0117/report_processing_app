@@ -59,7 +59,21 @@ export interface DepartmentOption {
 }
 
 /** 進み具合の段階（画面の「いま何をしているか」に出す） */
-export type ProgressStage = "open" | "department" | "navigate" | "collect" | "detail" | "approval-log";
+export type ProgressStage =
+  | "open"
+  | "department"
+  | "navigate"
+  | "collect"
+  | "detail"
+  | "approval-log"
+  | "body"
+  | "attachments";
+
+/** 流すファイルの役割。body = 伝票の本体PDF、attachment = 添付（index は画面の表示順・1始まり） */
+export type FileRole = "body" | "attachment";
+
+/** ファイルを流すときの1かたまりの大きさ（base64 にする前）。1行を大きくしすぎない */
+export const FILE_CHUNK_BYTES = 192 * 1024;
 
 /** 一覧から見つけた、取得する伝票 */
 export interface ScanTarget {
@@ -110,6 +124,22 @@ export type RakurakuEvent =
    * 使う側は**値があるときだけ**一覧の値を上書きする（取れなかった値で既存の値を消さない）。
    */
   | { type: "fields"; fields: Record<string, string> }
+  /**
+   * ファイルの始まり。name は画面に出ていた名前（本体は「本体」）、ext は**中身で確かめた**拡張子
+   * （判定できなければ名前の拡張子、それも無ければ空文字）。bytes は全体の大きさ。
+   */
+  | { type: "file.begin"; id: string; role: FileRole; index: number; name: string; ext: string; bytes: number }
+  /** ファイルの中身の一部（base64）。seq は 0 始まりの通し番号 */
+  | { type: "file.chunk"; id: string; seq: number; data: string }
+  /** ファイルの終わり。★受け取った側は、かたまりの数と sha256 が合うか必ず確かめる */
+  | { type: "file.end"; id: string; chunks: number; sha256: string }
+  /** 伝票画面の添付の表示名（表示順）。★取れなかった添付も含めた全部 */
+  | { type: "attachments"; names: string[] }
+  /**
+   * 添付を取れなかった。取れなかった添付は結合せず、保留にして手で入れられるようにする（黙って落とさない）。
+   * code が TIME_BUDGET_EXCEEDED のときは、`/attachment` で個別に取り直せる。
+   */
+  | { type: "attachment.failed"; index: number; name: string; code: RakurakuCode; reason: string; retryable: boolean }
   | { type: "done" }
   | ErrorEvent;
 
@@ -214,6 +244,36 @@ export function parseFetchRequest(raw: unknown): Parsed<FetchRequest> {
   };
 }
 
+export interface AttachmentRequest {
+  sessionToken: string;
+  kind: KindId;
+  denpyoNo: string;
+  href: string | null;
+  deptCode: string | null;
+  /** 添付の番号（画面の表示順・1始まり） */
+  index: number;
+  /** `/fetch` で受け取った表示名。★違っていたら取らない（伝票の添付が差し替わっている） */
+  expectedName: string;
+}
+
+/** 1つの伝票に置ける添付の数の上限（楽楽精算の枠は5つ。余裕を持たせる） */
+const MAX_ATTACHMENT_INDEX = 99;
+const MAX_NAME_CHARS = 512;
+
+/** `/attachment` の本文を確かめる */
+export function parseAttachmentRequest(raw: unknown): Parsed<AttachmentRequest> {
+  const base = parseFetchRequest(raw);
+  if (!base.ok) return base;
+  const { index, expectedName } = raw as Record<string, unknown>;
+  if (typeof index !== "number" || !Number.isInteger(index) || index < 1 || index > MAX_ATTACHMENT_INDEX) {
+    return { ok: false, message: "添付の番号が不正です" };
+  }
+  if (typeof expectedName !== "string" || expectedName === "" || expectedName.length > MAX_NAME_CHARS) {
+    return { ok: false, message: "添付の名前が不正です" };
+  }
+  return { ok: true, value: { ...base.value, index, expectedName } };
+}
+
 /** 流れてきた1行を読む。★知らない形は読み飛ばさずに失敗させる（取り違えたまま進まない） */
 export function parseEventLine(line: string): RakurakuEvent {
   let value: unknown;
@@ -260,4 +320,97 @@ export async function* readNdjson(body: ReadableStream<Uint8Array>): AsyncGenera
 /** 最後の行か（これが来たら、その呼び出しは終わり） */
 export function isTerminalEvent(event: RakurakuEvent): event is { type: "done" } | ErrorEvent {
   return event.type === "done" || event.type === "error";
+}
+
+// ---------------------------------------------------------------------------
+// 流れてきたファイルを組み立てる（ブラウザ側）
+// ---------------------------------------------------------------------------
+
+export interface ReceivedFile {
+  role: FileRole;
+  index: number;
+  name: string;
+  ext: string;
+  bytes: Uint8Array;
+}
+
+function base64ToBytes(data: string): Uint8Array {
+  const binary = atob(data);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
+function toHex(buffer: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buffer), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * `file.begin` → `file.chunk`… → `file.end` を受け取って、ファイルに組み立てる。
+ *
+ * ★**欠けたファイルを正しいファイルとして渡さない**。かたまりの順番・数・大きさ・sha256 のどれかが
+ *   合わなければ例外にする（途中で切れた PDF をフォルダーに置かないため）。
+ * ★かたまりは届いたそばから復元し、巨大な文字列を溜めない。
+ */
+export class FileAssembler {
+  private readonly open = new Map<
+    string,
+    { role: FileRole; index: number; name: string; ext: string; bytes: number; parts: Uint8Array[]; received: number; next: number }
+  >();
+
+  /** ファイルに関する行なら処理して true、それ以外の行なら false。組み上がったら onFile を呼ぶ */
+  async accept(event: RakurakuEvent, onFile: (file: ReceivedFile) => void | Promise<void>): Promise<boolean> {
+    switch (event.type) {
+      case "file.begin": {
+        if (this.open.has(event.id)) throw new Error("同じファイルが二重に始まりました");
+        this.open.set(event.id, {
+          role: event.role,
+          index: event.index,
+          name: event.name,
+          ext: event.ext,
+          bytes: event.bytes,
+          parts: [],
+          received: 0,
+          next: 0,
+        });
+        return true;
+      }
+      case "file.chunk": {
+        const file = this.open.get(event.id);
+        if (!file) throw new Error("始まっていないファイルの続きが届きました");
+        if (event.seq !== file.next) throw new Error("ファイルの一部が抜けています（途中で切れた可能性があります）");
+        const part = base64ToBytes(event.data);
+        file.parts.push(part);
+        file.received += part.length;
+        file.next += 1;
+        if (file.received > file.bytes) throw new Error("ファイルが予定より大きくなりました");
+        return true;
+      }
+      case "file.end": {
+        const file = this.open.get(event.id);
+        if (!file) throw new Error("始まっていないファイルの終わりが届きました");
+        this.open.delete(event.id);
+        if (event.chunks !== file.next || file.received !== file.bytes) {
+          throw new Error("ファイルの一部が抜けています（途中で切れた可能性があります）");
+        }
+        const bytes = new Uint8Array(file.bytes);
+        let offset = 0;
+        for (const part of file.parts) {
+          bytes.set(part, offset);
+          offset += part.length;
+        }
+        const digest = toHex(await crypto.subtle.digest("SHA-256", bytes));
+        if (digest !== event.sha256) throw new Error("ファイルの中身が送られたものと一致しません");
+        await onFile({ role: file.role, index: file.index, name: file.name, ext: file.ext, bytes });
+        return true;
+      }
+      default:
+        return false;
+    }
+  }
+
+  /** 組み上がっていないファイルが残っているか（最後の行を受け取ったあとに確かめる） */
+  get pending(): number {
+    return this.open.size;
+  }
 }

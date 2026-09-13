@@ -69,7 +69,8 @@ describe("行ごとの JSON で流す応答", () => {
     const response = ndjsonResponse(
       request(),
       async () => {
-        await new Promise((resolve) => setTimeout(resolve, 150));
+        // ほかの検証と並んで走るとタイマーが遅れるので、間隔の10倍以上待つ
+        await new Promise((resolve) => setTimeout(resolve, 500));
       },
       { stage: "list", pingIntervalMs: 30 },
     );
