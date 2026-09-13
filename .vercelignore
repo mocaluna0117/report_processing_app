@@ -1,0 +1,30 @@
+# ★vercel deploy（手元からの公開）は .gitignore を見ない。ここに書いたものだけがアップロードから外れる。
+#   2026-09-13 まで、このファイルが無かったため、下の個人情報を含むフォルダーも毎回アップロードされていた。
+#   .gitignore に「絶対にコミットしない」ものを足したら、ここにも必ず足すこと。
+
+# 顛末書ツール（別プロジェクト）。実在の顛末書の記録・楽楽精算のURL・トークンを含む
+tenmatsu-dl/
+
+# 実在のお客様の個人情報を含む（ローカル専用）
+写真報告書_例/
+点検報告書_例/
+完了報告書_例/
+アフターメンテナンス顧客データ/
+tests/fixtures/
+*.pdf
+*.PDF
+*.csv
+
+# 鍵・設定（本番の値は Vercel の環境変数に入っている）
+.env*
+!.env.example
+certificates/
+
+# 作り直せるもの・手元の作業用
+.next/
+.cache/
+*.tsbuildinfo
+next-env.d.ts
+public/pdf.worker.min.mjs
+public/report/harfbuzz-subset.wasm
+.claude/

@@ -114,7 +114,9 @@ async function readDownload(download: Download, timeoutMs: number): Promise<Fetc
   try {
     const path = await within(download.path(), timeoutMs);
     if (!path) throw new Error(`${Math.round(timeoutMs / 1000)}秒待ってもダウンロードが終わりませんでした`);
-    const bytes = new Uint8Array(await readFile(path));
+    // ★ビルドが「どのファイルを読むか分からない」と判断してプロジェクト全体を関数に同梱しないよう、追跡から外す
+    //   （読むのは Playwright がダウンロードを置いた一時ファイルだけ）
+    const bytes = new Uint8Array(await readFile(/* turbopackIgnore: true */ path));
     const suggested = download.suggestedFilename() || "download";
     return { name: fixExtension(suggested, bytes), bytes };
   } finally {

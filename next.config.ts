@@ -25,6 +25,24 @@ const nextConfig: NextConfig = {
       "./node_modules/playwright-core/**/*",
     ],
   },
+  /**
+   * ★個人情報を含む手元だけのフォルダーを、サーバーの関数に**絶対に同梱しない**。
+   *   2026-09-13 に、楽楽精算のルートの関数へ tenmatsu-dl/（取得の記録＝施主名などを含む）が
+   *   丸ごと入っていたのを見つけた。追跡の理由に関わらず、ここで必ず外す。
+   *   アップロードそのものは .vercelignore で止める（二重の備え）。
+   */
+  outputFileTracingExcludes: {
+    "/*": [
+      "./tenmatsu-dl/**/*",
+      "./写真報告書_例/**/*",
+      "./点検報告書_例/**/*",
+      "./完了報告書_例/**/*",
+      "./アフターメンテナンス顧客データ/**/*",
+      "./certificates/**/*",
+      "./tests/**/*",
+      "./.env*",
+    ],
+  },
 
   async headers() {
     return [
