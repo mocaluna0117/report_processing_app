@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { launchBrowser } from "@/lib/rakuraku/browser";
+import { RakurakuError } from "@/lib/rakuraku/errors";
 import { GuardError, assertEnabled, assertSameOrigin } from "@/lib/rakuraku/guard";
 import { autoLoginOnce } from "@/lib/rakuraku/login";
 import { log } from "@/lib/rakuraku/log";
@@ -95,7 +96,7 @@ export async function POST(request: Request) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (e) {
-    const code = e instanceof SessionError ? "SESSION_SECRET" : "INTERNAL";
+    const code = e instanceof RakurakuError ? e.code : e instanceof SessionError ? "SESSION_SECRET" : "INTERNAL";
     log("login", { ok: false, code, ms_total: Date.now() - started });
     // ★ 例外の中身に資格情報が混ざらないよう、1行目だけを短く返す
     return fail(code, e instanceof Error ? e.message.split("\n")[0].slice(0, 200) : "失敗しました");

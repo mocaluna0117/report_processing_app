@@ -80,6 +80,10 @@ export class RunStop extends Error {
 
 const pad = (n: number, width: number) => String(n).padStart(width, "0");
 
+/** 混み合っていたときに待つ時間と、試す回数（Folio のサーバーは30秒待ってから断るので、合わせて約2分待つ） */
+const BUSY_WAIT_MS = 20_000;
+const BUSY_ATTEMPTS = 3;
+
 /** 移植元の stamp() と同じ形（20260913_101500） */
 export function fileStamp(now: Date): string {
   return `${now.getFullYear()}${pad(now.getMonth() + 1, 2)}${pad(now.getDate(), 2)}_${pad(now.getHours(), 2)}${pad(now.getMinutes(), 2)}${pad(now.getSeconds(), 2)}`;
@@ -149,6 +153,22 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
     session: (token) => auth.setToken(token),
   };
 
+  /**
+   * Folio のサーバーが混み合っている（BROWSER_BUSY）ときだけ、少し待ってやり直す。
+   * ★BROWSER_BUSY は楽楽精算に触る前に断られたもの（ログインもしていない）なので、やり直しても安全。
+   */
+  const whenFree = async <T>(call: () => Promise<T>): Promise<T> => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await call();
+      } catch (e) {
+        if (!(e instanceof RakurakuApiError) || e.code !== "BROWSER_BUSY" || attempt >= BUSY_ATTEMPTS) throw e;
+        print(`  （ほかの人の取得と重なって混み合っているので、${BUSY_WAIT_MS / 1000}秒待ってやり直します）`);
+        await sleep(BUSY_WAIT_MS);
+      }
+    }
+  };
+
   // --- ログイン（★自動でやり直すのは、切れたときの1回だけ）
   let relogged = false;
   const ensureLogin = async () => {
@@ -157,7 +177,7 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
     if (!password) throw new RunStop("楽楽精算のパスワードを入力してから取得してください");
     print("楽楽精算にログインします");
     emit({ message: "楽楽精算にログインしています" });
-    const { sessionToken } = await api.login(auth.userId, password);
+    const { sessionToken } = await whenFree(() => api.login(auth.userId, password));
     auth.setToken(sessionToken);
     print("  ログインしました");
   };
@@ -165,7 +185,7 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
   const withSession = async <T>(call: (token: string) => Promise<T>): Promise<T> => {
     await ensureLogin();
     try {
-      return await call(auth.token()!);
+      return await whenFree(() => call(auth.token()!));
     } catch (e) {
       if (!(e instanceof RakurakuApiError) || !e.sessionLost) throw e;
       auth.setToken(null);
@@ -173,7 +193,7 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
       relogged = true;
       print("  ! 楽楽精算のログインが切れたので、1回だけログインし直してやり直します");
       await ensureLogin();
-      return await call(auth.token()!);
+      return await whenFree(() => call(auth.token()!));
     }
   };
 

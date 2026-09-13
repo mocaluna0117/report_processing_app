@@ -33,6 +33,7 @@ export async function withSessionPage(
   try {
     launched = await launchBrowser();
   } catch (e) {
+    if (e instanceof RakurakuError) throw e; // 混み合っている（BROWSER_BUSY）
     throw new RakurakuError(
       "BROWSER_LAUNCH_FAILED",
       `ブラウザを起動できませんでした（${e instanceof Error ? e.name : "Error"}）`,

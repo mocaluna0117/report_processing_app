@@ -3,6 +3,8 @@ import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Browser } from "playwright-core";
+import { RakurakuError } from "./errors";
+import { SlotTimeoutError, createSlots } from "./slots";
 
 /**
  * 楽楽精算を操作するためのブラウザを起こす。
@@ -20,6 +22,14 @@ export interface LaunchedBrowser {
 }
 
 const PROFILE_PREFIX = "rakuraku-";
+
+/**
+ * 同じ実行環境で同時に動かすブラウザの数と、空きを待つ上限（lib/rakuraku/slots.ts）。
+ * 1日に数十件の使い方なので、重なるのはほぼ2人が同時に押したときだけ。
+ */
+const MAX_BROWSERS = 2;
+const SLOT_WAIT_MS = 30_000;
+const slots = createSlots(MAX_BROWSERS);
 
 function isServerless(): boolean {
   return process.env.VERCEL === "1" || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
@@ -46,7 +56,39 @@ async function sweepOldProfiles(): Promise<void> {
   }
 }
 
+/**
+ * ブラウザを起こす。★空きが無ければ待ち、待っても空かなければ BROWSER_BUSY（やり直してよい）。
+ * 使い終わったら必ず close() する（空きを返す）。
+ */
 export async function launchBrowser(): Promise<LaunchedBrowser> {
+  let release: () => void;
+  try {
+    release = await slots.acquire(SLOT_WAIT_MS);
+  } catch (e) {
+    if (!(e instanceof SlotTimeoutError)) throw e;
+    throw new RakurakuError("BROWSER_BUSY", "ほかの人の取得と重なって混み合っています。少し待ってからもう一度試してください", {
+      retryable: true,
+    });
+  }
+  try {
+    const launched = await startBrowser();
+    return {
+      ...launched,
+      close: async () => {
+        try {
+          await launched.close();
+        } finally {
+          release();
+        }
+      },
+    };
+  } catch (e) {
+    release();
+    throw e;
+  }
+}
+
+async function startBrowser(): Promise<LaunchedBrowser> {
   const { chromium } = await import("playwright-core");
   await sweepOldProfiles();
   const profileDir = await mkdtemp(join(tmpdir(), PROFILE_PREFIX));

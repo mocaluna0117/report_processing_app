@@ -371,3 +371,25 @@ describe("止める・画面へ伝える", () => {
   });
 
 });
+
+describe("混み合っているとき", () => {
+  it("★Folio のサーバーが混み合っていたら、少し待ってやり直す（楽楽精算には触っていないので安全）", async () => {
+    const s = setup();
+    const busy = new RakurakuApiError("BROWSER_BUSY", "混み合っています", true);
+    let scans = 0;
+    const { status, log } = await run(s, {
+      scan: () => (++scans === 1 ? busy : scanOf([])),
+    });
+    expect(status.state).toBe("done");
+    expect(scans).toBe(2);
+    expect(s.sleeps).toContain(20_000);
+    expect(log.some((l) => l.includes("混み合っているので"))).toBe(true);
+  });
+
+  it("何度待っても混み合っていれば、理由を出して止める", async () => {
+    const s = setup();
+    const { status } = await run(s, { scan: new RakurakuApiError("BROWSER_BUSY", "混み合っています", true) });
+    expect(status.state).toBe("error");
+    expect(status.error).toContain("混み合っています");
+  });
+});

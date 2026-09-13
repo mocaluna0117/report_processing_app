@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { BrowserContextOptions } from "playwright-core";
 import { launchBrowser } from "@/lib/rakuraku/browser";
 import { currentDepartment, listDepartments } from "@/lib/rakuraku/department";
-import { DEPT_SELECT_MISSING_TEXT } from "@/lib/rakuraku/errors";
+import { DEPT_SELECT_MISSING_TEXT, RakurakuError } from "@/lib/rakuraku/errors";
 import { assertTenantUrl } from "@/lib/rakuraku/config";
 import { GuardError, assertEnabled, assertSameOrigin } from "@/lib/rakuraku/guard";
 import { isLoginScreen } from "@/lib/rakuraku/login";
@@ -81,7 +81,7 @@ export async function POST(request: Request) {
       totalMs: Date.now() - started,
     });
   } catch (e) {
-    const code = e instanceof SessionError ? "SESSION_EXPIRED" : "INTERNAL";
+    const code = e instanceof RakurakuError ? e.code : e instanceof SessionError ? "SESSION_EXPIRED" : "INTERNAL";
     log("list", { ok: false, code });
     return json({
       ok: false,
