@@ -77,6 +77,15 @@ async function loadPdf(part: MergePart): Promise<PDFDocument> {
   }
 }
 
+/** PDF のページ数。読めなければ null（★黙って 0 にしない）。保護は解いて数える */
+export async function countPdfPages(bytes: Uint8Array): Promise<number | null> {
+  try {
+    return (await loadPdf({ name: "", bytes })).getPageCount();
+  } catch {
+    return null;
+  }
+}
+
 async function addPdf(out: PDFDocument, part: MergePart): Promise<void> {
   let src: PDFDocument;
   try {

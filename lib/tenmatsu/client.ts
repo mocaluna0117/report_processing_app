@@ -327,6 +327,10 @@ export type FailureKind =
   | "tooLarge" // 413
   | "forbidden" // 403 (ブラウザからは通常見えない。下の注記を参照)
   | "server"
+  /** 保存先フォルダーへの許可が無い（フォルダー版） */
+  | "permission"
+  /** 保存先フォルダーが見つからない（移動・削除された。フォルダー版） */
+  | "folderMissing"
   | "unknown";
 
 /** ローカルサーバーとのやり取りが失敗したときに投げる */
