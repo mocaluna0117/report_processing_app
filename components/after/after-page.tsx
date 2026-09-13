@@ -21,6 +21,7 @@ import {
   type ImportReport,
 } from "@/lib/after/customer-store";
 import { parseCustomerFile } from "@/lib/after/import";
+import { buildCaseStaff } from "@/lib/after/match-staff";
 import {
   AFTER_HIDDEN_COLUMNS,
   AFTER_SELECT_COLUMNS,
@@ -51,6 +52,8 @@ const uid = () =>
 
 export function AfterPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
+  /** 監督・営業をお客様の情報に登録した行 (ボタンに「登録しました」と出す) */
+  const [staffSavedId, setStaffSavedId] = useState<string | null>(null);
   const [cases, setCases] = useState<AfterCase[]>([]);
   const [query, setQuery] = useState("");
   const [reviewOnly, setReviewOnly] = useState(false);
@@ -169,6 +172,41 @@ export function AfterPage() {
     } catch (e) {
       storage.setStorageError(
         `顧客データの手直しを保存できませんでした (${e instanceof Error ? e.message : String(e)})`,
+      );
+    }
+  };
+
+  /**
+   * 行に手入力した監督・営業を、その受付のお客様の情報に登録する。
+   * ★手直し (edits) として書くので、顧客データを取り込み直しても残る
+   *   (台帳に値が入れば applyEdits の規則で自然に外れる)。
+   * ★別の値が入っているときは、何が入れ替わるかを出して確認してから書く。
+   */
+  const registerStaff = async (row: AfterCase) => {
+    const customer = customers.find((c) => c.id === row.customerId);
+    const plan = buildCaseStaff(row.cells, customer);
+    if (!customer || Object.keys(plan.patch).length === 0) return;
+    if (
+      plan.conflicts.length > 0 &&
+      !confirm(
+        `${row.ownerDisplay || "このお客様"} の情報を入れ替えます。\n` +
+          plan.conflicts
+            .map((c) => `${c.label}: ${c.current} → ${c.next}`)
+            .join("\n") +
+          "\nよろしいですか？",
+      )
+    ) {
+      return;
+    }
+    const next = applyEdits(customer, plan.patch, Date.now());
+    setCustomers((prev) => prev.map((c) => (c.id === next.id ? next : c)));
+    setStaffSavedId(row.pairId);
+    setTimeout(() => setStaffSavedId((prev) => (prev === row.pairId ? null : prev)), 2500);
+    try {
+      await saveCustomerEdits(customer.id, plan.patch);
+    } catch (e) {
+      storage.setStorageError(
+        `監督・営業を顧客データに保存できませんでした (${e instanceof Error ? e.message : String(e)})`,
       );
     }
   };
@@ -423,7 +461,29 @@ export function AfterPage() {
             onDeleteRow={deleteCase}
             renderRowActions={(row) => {
               const state = learning.learnState(row);
+              const staff = buildCaseStaff(
+                row.cells,
+                customers.find((c) => c.id === row.customerId),
+              );
+              const canSave = Object.keys(staff.patch).length > 0;
+              const saved = staffSavedId === row.pairId;
               return (
+                <>
+                <button
+                  type="button"
+                  disabled={!canSave}
+                  title={staff.reason}
+                  onClick={() => void registerStaff(row)}
+                  className={`whitespace-nowrap rounded-md border px-2.5 py-1 text-xs font-medium ${
+                    saved
+                      ? "cursor-default border-emerald-300 bg-emerald-50 text-emerald-700"
+                      : canSave
+                        ? "cursor-pointer border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                        : "cursor-default border-slate-200 bg-slate-50 text-slate-400"
+                  }`}
+                >
+                  {saved ? "登録しました ✓" : "監督・営業を登録"}
+                </button>
                 <button
                   type="button"
                   disabled={state.disabled}
@@ -437,6 +497,7 @@ export function AfterPage() {
                 >
                   {state.label}
                 </button>
+                </>
               );
             }}
           />

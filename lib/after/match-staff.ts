@@ -371,3 +371,100 @@ export function buildRowStaff(
       return { pairId: row.pairId, pj, updates, status, reason };
     });
 }
+
+// --------------------------------------------------------------------------
+// 3. アフターメンテナンスの行 → お客様の情報
+// --------------------------------------------------------------------------
+
+export type CaseStaffStatus =
+  /** 行に入力された値をお客様の情報へ入れられる (お客様側は空欄) */
+  | "ready"
+  /** お客様の情報に別の値が入っている (確認してから入れ替える) */
+  | "overwrite"
+  /** 同じ値が既に入っている */
+  | "same"
+  /** 行の監督・営業がどちらも空 */
+  | "empty"
+  /** そのお客様が顧客データに見つからない */
+  | "missing";
+
+export interface CaseStaffPlan {
+  status: CaseStaffStatus;
+  /** お客様の情報に書く値 (空なら押せない) */
+  patch: { supervisor?: string; salesRep?: string };
+  /** 入れ替えになる項目 (確認に出す) */
+  conflicts: { label: string; current: string; next: string }[];
+  /** ボタンの説明 */
+  reason: string;
+}
+
+/**
+ * アフターの行に手入力した監督・営業を、そのお客様の情報へ登録する計画。
+ *
+ * ★顛末書からの反映 (buildStaffSync) と違い、**利用者がその行に自分で入力した値**を
+ *   ボタンで登録する操作なので、お客様側に別の値が入っていても候補にする。
+ *   ただし黙って消さないよう conflicts に出し、画面で確認してから書き換える。
+ * ★行は customerId でお客様に結びついているので、PJでの突き合わせはしない
+ *   (同じ現場の別棟まで書き換えない)。
+ */
+export function buildCaseStaff(
+  cells: readonly string[],
+  customer: Customer | undefined,
+): CaseStaffPlan {
+  const typed = ROW_TARGETS.map(({ key, col, label }) => ({
+    key,
+    label,
+    value: trimWide(cells[col] ?? ""),
+  })).filter((t) => staffKey(t.value));
+
+  if (typed.length === 0) {
+    return {
+      status: "empty",
+      patch: {},
+      conflicts: [],
+      reason: "行の「監督」「営業」に入力すると、お客様の情報に登録できます",
+    };
+  }
+  if (!customer) {
+    return {
+      status: "missing",
+      patch: {},
+      conflicts: [],
+      reason: "このお客様の情報が見つかりません (顧客データを取り込み直してください)",
+    };
+  }
+
+  const fields = effectiveFields(customer);
+  const patch: { supervisor?: string; salesRep?: string } = {};
+  const conflicts: { label: string; current: string; next: string }[] = [];
+  for (const t of typed) {
+    const current = trimWide(fields[t.key] ?? "");
+    if (staffKey(current) === staffKey(t.value)) continue;
+    patch[t.key] = t.value;
+    if (staffKey(current)) conflicts.push({ label: t.label, current, next: t.value });
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return {
+      status: "same",
+      patch: {},
+      conflicts: [],
+      reason: `同じ${typed.map((t) => t.label).join("・")}がお客様の情報に入っています`,
+    };
+  }
+  const writing = typed
+    .filter((t) => patch[t.key] !== undefined)
+    .map((t) => `${t.label}「${t.value}」`)
+    .join(" / ");
+  return {
+    status: conflicts.length > 0 ? "overwrite" : "ready",
+    patch,
+    conflicts,
+    reason:
+      conflicts.length > 0
+        ? `${writing} を登録します。お客様の情報の ${conflicts
+            .map((c) => `${c.label}「${c.current}」`)
+            .join(" / ")} は入れ替わります (確認が出ます)`
+        : `${writing} をお客様の情報に登録します (手直しとして保存され、顧客データを取り込み直しても残ります)`,
+  };
+}

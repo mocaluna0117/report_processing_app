@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyEdits } from "@/lib/after/customer";
 import {
+  buildCaseStaff,
   buildRowStaff,
   buildStaffSync,
   hasStaffFields,
@@ -336,5 +337,64 @@ describe("buildRowStaff (お客様の情報 → 定期点検の行)", () => {
   it("処理に失敗した行は対象にしない", () => {
     const broken = { ...row(), error: "読めませんでした" };
     expect(buildRowStaff([broken], [dx("2101230101")])).toHaveLength(0);
+  });
+});
+
+describe("buildCaseStaff (アフターの行 → お客様の情報)", () => {
+  const cellsOf = (supervisor: string, salesRep = "") =>
+    row({ 監督: entry(supervisor), 営業: entry(salesRep) }).cells;
+
+  it("空欄のお客様には、行に入力した監督・営業を登録できる", () => {
+    const plan = buildCaseStaff(cellsOf("架空 一郎", "架空 二郎"), dx("2101230101"));
+    expect(plan.status).toBe("ready");
+    expect(plan.patch).toEqual({ supervisor: "架空 一郎", salesRep: "架空 二郎" });
+    expect(plan.conflicts).toEqual([]);
+  });
+
+  it("行が空なら押せない", () => {
+    const plan = buildCaseStaff(cellsOf("", ""), dx("2101230101"));
+    expect(plan.status).toBe("empty");
+    expect(plan.patch).toEqual({});
+  });
+
+  it("同じ値が入っていれば押せない (空白の違いは同じ値とみなす)", () => {
+    const plan = buildCaseStaff(
+      cellsOf("架空　一郎"),
+      dx("2101230101", { supervisor: "架空 一郎" }),
+    );
+    expect(plan.status).toBe("same");
+    expect(plan.patch).toEqual({});
+  });
+
+  it("別の値が入っているときは入れ替えとして知らせる (黙って消さない)", () => {
+    const plan = buildCaseStaff(
+      cellsOf("架空 一郎"),
+      dx("2101230101", { supervisor: "架空 三郎" }),
+    );
+    expect(plan.status).toBe("overwrite");
+    expect(plan.patch).toEqual({ supervisor: "架空 一郎" });
+    expect(plan.conflicts).toEqual([
+      { label: "監督", current: "架空 三郎", next: "架空 一郎" },
+    ]);
+  });
+
+  it("片方だけ違うときは、その項目だけを書く", () => {
+    const plan = buildCaseStaff(
+      cellsOf("架空 一郎", "架空 二郎"),
+      dx("2101230101", { supervisor: "架空 一郎" }),
+    );
+    expect(plan.patch).toEqual({ salesRep: "架空 二郎" });
+    expect(plan.status).toBe("ready");
+  });
+
+  it("手直しした値と同じなら押せない (取り込み値ではなく実効値で比べる)", () => {
+    const edited = applyEdits(dx("2101230101"), { supervisor: "架空 一郎" }, 2);
+    expect(buildCaseStaff(cellsOf("架空 一郎"), edited).status).toBe("same");
+  });
+
+  it("お客様が見つからないときは理由を出す", () => {
+    const plan = buildCaseStaff(cellsOf("架空 一郎"), undefined);
+    expect(plan.status).toBe("missing");
+    expect(plan.reason).toContain("見つかりません");
   });
 });
