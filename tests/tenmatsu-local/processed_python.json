@@ -1,0 +1,56 @@
+{
+  "done": [
+    "TE00009101",
+    "TE00009102"
+  ],
+  "log": [
+    {
+      "denpyo_no": "TE00009101",
+      "file": "顛末書No.9101.pdf",
+      "at": "2026-09-01T10:00:00",
+      "shinsei_date": "2026/08/28 09:12:34",
+      "shinseisha": "テスト 太郎",
+      "amount": "16,500 円",
+      "payee": "テスト工業",
+      "where": "注文受注物件：架空台1丁目A号棟　施主名：架空　太郎　監督：架空　一郎/営業：架空　二郎",
+      "final_approved_at": "2026/08/30 17:36"
+    },
+    {
+      "denpyo_no": "TE00009102",
+      "file": "顛末書No.9102.pdf",
+      "at": "2026-09-02T11:30:05",
+      "shinsei_date": "2026/08/29",
+      "skipped_attachments": [
+        "現場動画.mp4"
+      ],
+      "pj": "9901230101"
+    }
+  ],
+  "flags": {
+    "TE00009101": {
+      "budget_entered": true,
+      "updated_at": "2026-09-03T08:00:00",
+      "cloud_stored": false
+    }
+  },
+  "pending": {
+    "TE00009103": {
+      "at": "2026-09-04T12:00:00",
+      "dir": "TE00009103",
+      "missing": [
+        {
+          "index": 2,
+          "name": "見積.xlsx",
+          "reason": "ValueError: 結合できない形式です"
+        }
+      ],
+      "meta": {
+        "shinsei_date": "2026/09/01 08:00:00",
+        "amount": "3,300 円"
+      }
+    }
+  },
+  "future_key": {
+    "note": "移植元にだけある項目も落とさない"
+  }
+}

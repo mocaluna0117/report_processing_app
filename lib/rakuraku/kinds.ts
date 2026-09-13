@@ -1,4 +1,3 @@
-import "server-only";
 import { DEFAULT_COMPOSE, type ComposeRules } from "./parse/natsuin";
 import { type KindId, isKindId } from "./protocol";
 
@@ -14,6 +13,8 @@ export { type KindId, isKindId } from "./protocol";
  *   平らにしたもの同士を混ぜると、列の指定や捺印決裁書の合成の設定が**別の種類へ漏れる**
  *   不具合があった（tenmatsu.py:219-223）。ここでは種類ごとの値がそのまま見える形にする。
  * ★テナントの URL は書かない。一覧のパスは**相対**で持ち、`resolveTenantPath` で組む。
+ * ★ブラウザ側（記録に残す項目の決定）からも読むので、Playwright にも server-only にも依存しない。
+ *   秘密の値は置かないこと。
  */
 
 export interface MenuStep {
