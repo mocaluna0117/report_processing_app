@@ -97,7 +97,13 @@ export function mergeRecords(
   const done = [...new Set([...incoming.done, ...current.done])];
   const doneSet = new Set(done);
 
-  const seen = new Set<string>();
+  // ★名前を変えられて結び直した記録（relinked_from）は、元の名前の記録と同じものとみなす。
+  //   でないと、同じ記録を取り込み直したときに元の名前の行が増えてしまう
+  const seen = new Set<string>(
+    current.log
+      .filter((e) => typeof e.relinked_from === "string" && e.relinked_from)
+      .map((e) => logKey({ ...e, file: e.relinked_from as string })),
+  );
   const log: LogEntry[] = [];
   for (const entry of [...incoming.log, ...current.log]) {
     const key = logKey(entry);

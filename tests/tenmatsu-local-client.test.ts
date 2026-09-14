@@ -67,7 +67,10 @@ describe("フォルダー版のクライアント（旧方式と同じ約束で�
     expect(result).toMatchObject({ started: true, maxPerRun: 5 });
     const states: string[] = [];
     const stop = client.subscribe((s) => states.push(s.state));
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // 決まった時間だけ待つと、ほかのテストと並んで重いときに間に合わない。終わるまで待つ (最大5秒)
+    for (let waited = 0; (await client.status()).state === "running" && waited < 5000; waited += 20) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
     stop();
     const status = await client.status(0);
     expect(status.state).toBe("done");

@@ -10,7 +10,9 @@
  * ★知らない項目は消さずに残す（将来の項目や、移植元が足した項目を落とさない）。
  * ※JS は数字だけのキーを先頭へ並べ替える。伝票No.は「TE00001500」のように文字で始まるので影響しない。
  */
+import { last4 } from "@/lib/rakuraku/parse/natsuin";
 import type { FlagKey } from "@/lib/tenmatsu/client";
+import { type PdfFingerprint, nameKey } from "./fingerprint";
 import { type FolderStore, type Path } from "./fs";
 import { type LocalKindConfig, PARTS_DIR, PENDING_DIR, RECORDS_DIR } from "./kind-config";
 
@@ -20,6 +22,12 @@ export interface LogEntry {
   denpyo_no: string;
   file: string;
   at: string;
+  /** 保存したPDFの大きさと SHA-256（名前を変えられても中身で探せるように。fingerprint.ts） */
+  pdf_size?: number;
+  pdf_sha256?: string;
+  /** 名前を変えられたPDFにつなぎ直したときの、元の名前と日時 */
+  relinked_from?: string;
+  relinked_at?: string;
   [key: string]: unknown;
 }
 
@@ -176,6 +184,24 @@ export function withRecordsLock<T>(store: FolderStore, cfg: LocalKindConfig, fn:
   return run;
 }
 
+/**
+ * 読んで、変えて、**変えたときだけ**書く（ロックの中で）。
+ * ★自動で行う書き換え（ファイル名のつなぎ直し・指紋の後付け）に使う。
+ *   何も変えないのに書くと `.bak`（控えは1世代だけ）を無駄に上書きしてしまうため。
+ */
+export function modifyRecords<T>(
+  store: FolderStore,
+  cfg: LocalKindConfig,
+  change: (data: ProcessedData) => Promise<{ changed: boolean; result: T }> | { changed: boolean; result: T },
+): Promise<T> {
+  return withRecordsLock(store, cfg, async () => {
+    const data = await readRecords(store, cfg);
+    const { changed, result } = await change(data);
+    if (changed) await writeRecords(store, cfg, data);
+    return result;
+  });
+}
+
 /** 読んで、変えて、書く（ロックの中で） */
 export function updateRecords<T>(
   store: FolderStore,
@@ -214,8 +240,9 @@ export async function appendProcessed(
   savedName: string,
   meta: Record<string, unknown> | null,
   now: Date = new Date(),
+  fingerprint?: PdfFingerprint,
 ): Promise<void> {
-  await updateRecords(store, cfg, (data) => addLogEntry(data, cfg, denpyoNo, savedName, meta, now));
+  await updateRecords(store, cfg, (data) => addLogEntry(data, cfg, denpyoNo, savedName, meta, now, fingerprint));
 }
 
 /** 読んである記録に、保存できた1件を足す（書くのは呼ぶ側。ほかの書き換えと1回にまとめるため） */
@@ -226,10 +253,42 @@ export function addLogEntry(
   savedName: string,
   meta: Record<string, unknown> | null,
   now: Date = new Date(),
+  fingerprint?: PdfFingerprint,
 ): void {
   if (!data.done.includes(denpyoNo)) data.done.push(denpyoNo);
-  // キーの順は移植元と同じ（denpyo_no, file, at のあとに記録する項目の順）
-  data.log.push({ denpyo_no: denpyoNo, file: savedName, at: localStamp(now), ...pickMeta(cfg, meta) });
+  // キーの順は移植元と同じ（denpyo_no, file, at のあとに記録する項目の順）。指紋は最後に足す
+  // ★指紋は metaKeys に入れない（前の記録から写さず、いま書いたバイト列からだけ作るため）
+  data.log.push({
+    denpyo_no: denpyoNo,
+    file: savedName,
+    at: localStamp(now),
+    ...pickMeta(cfg, meta),
+    ...(fingerprint ? { pdf_size: fingerprint.pdf_size, pdf_sha256: fingerprint.pdf_sha256 } : {}),
+  });
+}
+
+/** 伝票ごとの最後の記録（同じ伝票を何度か記録していれば、最後のものが今の状態） */
+export function latestEntries(data: ProcessedData): Map<string, LogEntry> {
+  const latest = new Map<string, LogEntry>();
+  for (const entry of data.log) if (entry && typeof entry.denpyo_no === "string" && entry.denpyo_no) latest.set(entry.denpyo_no, entry);
+  return latest;
+}
+
+/** その伝票の保存名（記録に名前が無ければ、移植元と同じく 接頭辞＋下4桁） */
+export function recordedFileName(cfg: LocalKindConfig, denpyoNo: string, entry: LogEntry | undefined): string {
+  return typeof entry?.file === "string" && entry.file ? entry.file : `${cfg.filePrefix}${last4(denpyoNo)}.pdf`;
+}
+
+/**
+ * 保存済みの記録が使っているファイル名の鍵（nameKey）。
+ * ★新しく保存する名前・つなぎ直す候補から外すのに使う。利用者が名前を変えて空いた名前を、
+ *   別の伝票が使ってしまうと、元の記録が別のPDFを指したまま「取得済み」に見えてしまう。
+ */
+export function claimedNames(data: ProcessedData, cfg: LocalKindConfig): Set<string> {
+  const latest = latestEntries(data);
+  const names = new Set<string>();
+  for (const no of data.done) names.add(nameKey(recordedFileName(cfg, no, latest.get(no))));
+  return names;
 }
 
 /**

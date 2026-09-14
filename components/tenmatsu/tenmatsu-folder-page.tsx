@@ -6,6 +6,7 @@ import { TenmatsuImportRecords } from "@/components/tenmatsu/tenmatsu-import-rec
 import { TenmatsuList } from "@/components/tenmatsu/tenmatsu-list";
 import { TenmatsuPendingDialog } from "@/components/tenmatsu/tenmatsu-pending-dialog";
 import { TenmatsuPreviewDialog } from "@/components/tenmatsu/tenmatsu-preview-dialog";
+import { TenmatsuRelinkDialog } from "@/components/tenmatsu/tenmatsu-relink-dialog";
 import { TenmatsuRunLog } from "@/components/tenmatsu/tenmatsu-run-log";
 import { TenmatsuStaffSync } from "@/components/tenmatsu/tenmatsu-staff-sync";
 import type { DepartmentOption } from "@/lib/rakuraku/protocol";
@@ -22,7 +23,7 @@ import {
   isPending,
 } from "@/lib/tenmatsu/client";
 import { DOC_KIND_BY_ID, type DocKindId, clearListConfirmText, clearedNoticeText, flagErrorText } from "@/lib/tenmatsu/kinds";
-import type { ListFilter } from "@/lib/tenmatsu/list-view";
+import type { ListFilter, ListSort } from "@/lib/tenmatsu/list-view";
 import { activeRunKind, createLocalFolderClient, hasActiveRun, type LocalFolderClient } from "@/lib/tenmatsu/local/client";
 import { FolderStore } from "@/lib/tenmatsu/local/fs";
 import {
@@ -42,6 +43,9 @@ import {
   getPassword,
   getSessionToken,
   keepFolderSession,
+  rememberDepartments,
+  restoreLogin,
+  restoredDepartments,
   setLogin,
   subscribeLogin,
 } from "@/lib/tenmatsu/local/session";
@@ -87,6 +91,7 @@ const api = createRakurakuApi();
  * 利用者が選んだ PC のフォルダーへ書く（Folio のサーバーには残さない）。
  *
  * ★楽楽精算のパスワードは保存しない。ログインに使ったあとはメモリにだけ置く（再読み込みで消える）。
+ *   封じたログイン状態だけはこのタブに残るので、再読み込みしてもログインしたまま（lib/tenmatsu/local/session.ts）。
  * ★フォルダーを使う許可を尋ねるのは、ボタンを押したときだけ（読み込み直後に尋ねるとブラウザが断る）。
  * ★取得はこの画面を離れても続く。ブラウザのタブを閉じると止まる。
  */
@@ -131,6 +136,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   const [recentNos, setRecentNos] = useState<ReadonlySet<string>>(kept.recentNos);
   const [showCompleted, setShowCompleted] = useState(kept.showCompleted);
   const [listFilter, setListFilter] = useState<ListFilter>(kept.listFilter);
+  const [listSort, setListSort] = useState<ListSort>(kept.listSort);
   const [maxInput, setMaxInput] = useState(kept.maxInput);
 
   const [userId, setUserId] = useState("");
@@ -151,6 +157,8 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   const [previewNo, setPreviewNo] = useState<string | null>(null);
   const [pendingNo, setPendingNo] = useState<string | null>(null);
   const [recomposeNo, setRecomposeNo] = useState<string | null>(null);
+  /** 「PDFを選ぶ」で選び直している伝票 */
+  const [relinkNo, setRelinkNo] = useState<string | null>(null);
 
   // サーバーで描くときは window が無いので、ブラウザに来てから判定する
   useEffect(() => {
@@ -158,15 +166,31 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   }, []);
 
   // ほかの種類のタブでログインした・忘れたときも、この画面の表示を揃える
-  useEffect(
-    () =>
-      subscribeLogin(() => {
-        setLoggedIn(getSessionToken() !== null);
-        setHasPassword(getPassword() !== null);
-        if (getSessionToken() === null) setDepartments((prev) => (prev === null ? prev : null));
-      }),
-    [],
-  );
+  useEffect(() => {
+    const unsubscribe = subscribeLogin(() => {
+      const token = getSessionToken();
+      setLoggedIn(token !== null);
+      setHasPassword(getPassword() !== null);
+      if (token === null) {
+        setDepartments((prev) => (prev === null ? prev : null));
+        return;
+      }
+      // 再読み込みの前に読んでいた部門の選択肢を戻す (楽楽精算へ読みに行かずに済む)
+      const remembered = restoredDepartments(kind.id);
+      if (remembered) {
+        setDepartments((prev) => prev ?? remembered.departments);
+        setDeptCode((prev) => prev ?? remembered.deptCode);
+      }
+    });
+    // ★このタブに残したログイン状態を戻す。描いたあとで行う (サーバーで描いた HTML と揃えるため)
+    restoreLogin();
+    return unsubscribe;
+  }, []);
+
+  // 部門の選択肢と選んだ部門をタブに覚える (再読み込みしても選び直さずに済むように)
+  useEffect(() => {
+    if (loggedIn && departments !== null) rememberDepartments(kind.id, departments, deptCode);
+  }, [loggedIn, departments, deptCode]);
 
   const storage = usePersistence({
     restore: async () => {
@@ -221,11 +245,21 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     setListError(null);
     setFlagError(null);
     try {
-      const fresh = await target.list();
+      // ★名前を変えられたPDFは、中身で見つけて記録を今の名前に結び直す（lib/tenmatsu/local/relink.ts）
+      const { items: fresh, relinked } = await target.listWithRelinks();
       setItems(fresh);
       setListFresh(true);
       setRecentNos(new Set());
       storage.persist(() => saveFolderList(kind.id, fresh));
+      if (relinked.length > 0) {
+        const first = relinked[0];
+        setListNotice(
+          `名前が変わっていた${kind.label} ${relinked.length}件の記録を、今の名前につなぎ直しました` +
+            ` (${first.from} → ${first.to}${relinked.length > 1 ? ` ほか${relinked.length - 1}件` : ""})`,
+        );
+      }
+      // 以前の記録に中身の指紋を付ける（これから名前を変えても自動で結び直るように）。急がない
+      void target.backfillFingerprints().catch(() => undefined);
     } catch (e) {
       setListError(`一覧を読み込めませんでした (${errorText(e)})`);
       if (e instanceof TenmatsuError && (e.kind === "permission" || e.kind === "folderMissing")) {
@@ -320,7 +354,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     setLoginError(null);
     try {
       const res = await api.departments(token);
-      setLogin({ sessionToken: res.sessionToken });
+      setLogin({ sessionToken: res.sessionToken, ...(res.expiresAt !== null ? { expiresAt: res.expiresAt } : {}) });
       setDepartments(res.departments);
       const saved = await loadDept(kind.id).catch(() => null);
       const pick =
@@ -352,8 +386,8 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     setLoginError(null);
     try {
       // ★ログインは1回だけ。失敗しても自動でやり直さない（楽楽精算はアカウントをロックする）
-      const { sessionToken } = await api.login(id, pass);
-      setLogin({ password: pass, sessionToken });
+      const { sessionToken, expiresAt } = await api.login(id, pass);
+      setLogin({ password: pass, sessionToken, expiresAt });
       setPasswordInput("");
       storage.persist(async () => {
         await saveUserId(id);
@@ -518,6 +552,19 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     [client],
   );
 
+  // 「PDFを選ぶ」ダイアログに渡す読み込み（ダイアログの中で何度も作り直さないよう固定する）
+  const loadRelinkCandidates = useCallback(() => {
+    if (!client || !relinkNo) return Promise.reject(new Error("保存先フォルダーにつないでください"));
+    return client.relinkCandidates(relinkNo);
+  }, [client, relinkNo]);
+  const loadCandidatePdf = useCallback(
+    (name: string) => {
+      if (!client || !relinkNo) return Promise.reject(new Error("保存先フォルダーにつないでください"));
+      return client.candidatePdf(relinkNo, name);
+    },
+    [client, relinkNo],
+  );
+
   // --- 保存データの消去 ---------------------------------------------------------
 
   const clearList = async () => {
@@ -580,6 +627,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
       recentNos,
       showCompleted,
       listFilter,
+      listSort,
       status,
       runObserved,
       logLines,
@@ -625,6 +673,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   const preview = previewNo ? (items.find((i) => i.denpyo_no === previewNo) ?? null) : null;
   const pending = pendingNo ? (items.find((i) => i.denpyo_no === pendingNo && isPending(i)) ?? null) : null;
   const recompose = recomposeNo ? (items.find((i) => i.denpyo_no === recomposeNo && !isPending(i)) ?? null) : null;
+  const relinkItem = relinkNo ? (items.find((i) => i.denpyo_no === relinkNo && !isPending(i)) ?? null) : null;
 
   return (
     <main>
@@ -788,7 +837,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
           )}
           {!loggedIn && (
             <p className="mt-2 text-xs text-slate-500">
-              パスワードは保存しません (このブラウザのメモリにだけ置き、画面を読み込み直すと消えます)。ログインIDだけをこのブラウザに保存します。
+              パスワードは保存しません (このブラウザのメモリにだけ置きます)。ログイン状態 (暗号化したもの) はこのタブにだけ残るので、画面を読み込み直してもログインしたままです (タブやブラウザを閉じると消えます。期限は8時間)。ログインIDはこのブラウザに保存します。
               楽楽精算は続けて失敗するとアカウントがロックされるので、ログインに失敗したときは自動でやり直しません。入力を確かめてから押し直してください。
             </p>
           )}
@@ -943,6 +992,8 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
             items={items}
             filter={listFilter}
             onFilterChange={setListFilter}
+            sort={listSort}
+            onSortChange={setListSort}
             showCompleted={showCompleted}
             onShowCompletedChange={setShowCompleted}
             recentNos={recentNos}
@@ -954,6 +1005,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
             resolveDisabledReason={resolveDisabledReason}
             onResolvePending={setPendingNo}
             onRecompose={setRecomposeNo}
+            onRelink={setRelinkNo}
           />
         </section>
 
@@ -979,6 +1031,23 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
         />
       )}
 
+      {relinkItem && client && (
+        <TenmatsuRelinkDialog
+          kind={kind}
+          item={relinkItem}
+          loadCandidates={loadRelinkCandidates}
+          loadPdf={loadCandidatePdf}
+          relink={async (name) => {
+            const updated = await client.relinkFile(relinkItem.denpyo_no, name);
+            if (updated) setItems((prev) => prev.map((i) => (i.denpyo_no === updated.denpyo_no ? updated : i)));
+            else await refreshListRef.current();
+            setRecentNos((prev) => new Set(prev).add(relinkItem.denpyo_no));
+            setListNotice(`伝票No. ${relinkItem.denpyo_no} の記録を「${name}」に結びました`);
+          }}
+          onClose={() => setRelinkNo(null)}
+        />
+      )}
+
       {recompose && (
         <TenmatsuPendingDialog
           kind={kind}
@@ -996,7 +1065,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
         <StorageBanner
           description={
             storage.canPersist
-              ? `${kind.label}の取得済み一覧の写し (伝票No.・物件名 (施主名を含むことがあります)・申請者・支払先・金額・印)、保存先フォルダーの場所、楽楽精算のログインID、1回に取る件数、選んだ部門を、このブラウザ内にだけ保存しています (folio のサーバーには送りません)。楽楽精算のパスワードは保存しません。記録の正本は保存先フォルダーの _記録 にあり、一覧を消してもつなぎ直せば戻ります。PDFの実体も保存先フォルダーにあり、ブラウザには保存しません。共有の端末では、使い終わったら下のボタンで消してください。`
+              ? `${kind.label}の取得済み一覧の写し (伝票No.・物件名 (施主名を含むことがあります)・申請者・支払先・金額・印)、保存先フォルダーの場所、楽楽精算のログインID、1回に取る件数、選んだ部門を、このブラウザ内にだけ保存しています (folio のサーバーには送りません)。楽楽精算のパスワードは保存しません (ログイン状態は暗号化したものをこのタブにだけ残し、タブを閉じると消えます)。記録の正本は保存先フォルダーの _記録 にあり、一覧を消してもつなぎ直せば戻ります。PDFの実体も保存先フォルダーにあり、ブラウザには保存しません。共有の端末では、使い終わったら下のボタンで消してください。`
               : "このタブでは保存を停止しています (再読み込みすると復元を試み直せます)。"
           }
           detail={`取得済み ${items.length}件 (未完了 ${items.filter((i) => i.completed !== true).length}件)`}
@@ -1014,7 +1083,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
 
       <footer className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-400">
         {kind.label}のPDFは楽楽精算から folio のサーバーを通ってこのブラウザに届き、選んだフォルダーにだけ保存されます
-        (folio のサーバーには保存しません)。楽楽精算のパスワードはログインに使うだけで、どこにも保存しません。
+        (folio のサーバーには保存しません)。楽楽精算のパスワードはログインに使うだけで、どこにも保存しません (ログイン状態はこのタブにだけ残ります)。
       </footer>
     </main>
   );

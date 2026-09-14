@@ -341,6 +341,10 @@ export function recomposeDisabledReason(
   if (item.upload_slots === null) {
     return "この記録には部品が残っていないので差し替えられません (この機能より前に取得したものです)";
   }
+  // ★PDFが見つからないのに差し替えると、元の名前で別のファイルを作ってしまう
+  if (item.exists === false) {
+    return "PDFが保存先に見つかりません。名前を変えた場合は、先に「PDFを選ぶ」で選び直してください";
+  }
   return null;
 }
 

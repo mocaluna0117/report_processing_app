@@ -96,8 +96,11 @@ export interface FetchResult {
 }
 
 export interface RakurakuApi {
-  login(userId: string, password: string): Promise<{ sessionToken: string }>;
-  departments(sessionToken: string): Promise<{ departments: DepartmentOption[]; current: DepartmentOption | null; sessionToken: string }>;
+  /** expiresAt はログイン状態の期限 (ミリ秒)。古いサーバーは返さないので null */
+  login(userId: string, password: string): Promise<{ sessionToken: string; expiresAt: number | null }>;
+  departments(
+    sessionToken: string,
+  ): Promise<{ departments: DepartmentOption[]; current: DepartmentOption | null; sessionToken: string; expiresAt: number | null }>;
   scan(request: ScanRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<ScanResult>;
   fetch(request: FetchRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<FetchResult>;
   attachment(request: AttachmentRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<ReceivedFile>;
@@ -198,12 +201,19 @@ export function createRakurakuApi(options: { fetchImpl?: typeof fetch; baseUrl?:
 
   return {
     login: async (userId, password) => {
-      const res = await json<{ sessionToken: string }>("login", { userId, password });
-      return { sessionToken: res.sessionToken };
+      const res = await json<{ sessionToken: string; expiresAt?: number }>("login", { userId, password });
+      return { sessionToken: res.sessionToken, expiresAt: typeof res.expiresAt === "number" ? res.expiresAt : null };
     },
 
-    departments: async (sessionToken) =>
-      await json<{ departments: DepartmentOption[]; current: DepartmentOption | null; sessionToken: string }>("departments", { sessionToken }),
+    departments: async (sessionToken) => {
+      const res = await json<{
+        departments: DepartmentOption[];
+        current: DepartmentOption | null;
+        sessionToken: string;
+        expiresAt?: number;
+      }>("departments", { sessionToken });
+      return { ...res, expiresAt: typeof res.expiresAt === "number" ? res.expiresAt : null };
+    },
 
     scan: async (request, handlers = {}, signal) => {
       let result: ScanResult | null = null;

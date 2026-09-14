@@ -5,7 +5,7 @@ import { RakurakuError } from "@/lib/rakuraku/errors";
 import { GuardError, assertEnabled, assertSameOrigin } from "@/lib/rakuraku/guard";
 import { autoLoginOnce } from "@/lib/rakuraku/login";
 import { log } from "@/lib/rakuraku/log";
-import { SessionError, seal } from "@/lib/rakuraku/session";
+import { SESSION_TTL_MS, SessionError, seal } from "@/lib/rakuraku/session";
 
 /**
  * 楽楽精算にログインし、その状態を封じた `sessionToken` を返す。
@@ -85,14 +85,17 @@ export async function POST(request: Request) {
       return fail(result.code, result.message);
     }
 
+    // 期限はここで決めて、ブラウザにも伝える（タブに控えを残すとき、期限切れを戻さないため）
+    const expiresAt = Date.now() + SESSION_TTL_MS;
     const sessionToken = seal({
       state: JSON.stringify(await context.storageState()),
       // ★ ログイン画面ではなく「着いた画面」を覚える（次回の状態確認に使う）
       home: result.homeUrl ?? tenant.loginUrl,
+      exp: expiresAt,
     });
     log("login", { ok: true, ms_total: Date.now() - started });
     return NextResponse.json(
-      { ok: true, sessionToken, totalMs: Date.now() - started },
+      { ok: true, sessionToken, expiresAt, totalMs: Date.now() - started },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (e) {

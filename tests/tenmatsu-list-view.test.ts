@@ -466,6 +466,35 @@ describe("sortListItems", () => {
     expect(nextListSort("file-asc")).toBe("file-desc");
     expect(nextListSort("file-desc")).toBe("default");
   });
+
+  it("伝票No.で昇順・降順に並べられる", () => {
+    const src = [item("TE00001476"), item("TE00000999"), item("TE00001000")];
+    expect(nos(sortListItems(src, "no-asc"))).toEqual(["TE00000999", "TE00001000", "TE00001476"]);
+    expect(nos(sortListItems(src, "no-desc"))).toEqual(["TE00001476", "TE00001000", "TE00000999"]);
+  });
+
+  it("★伝票No.も数字は数の大きさで比べる (桁数が違っても 999 が 1000 より前)", () => {
+    const src = [item("TE1000"), item("TE999")];
+    expect(nos(sortListItems(src, "no-asc"))).toEqual(["TE999", "TE1000"]);
+  });
+
+  it("伝票No.の見出しも 既定 → 昇順 → 降順 → 既定 と回る", () => {
+    expect(nextListSort("default", "no")).toBe("no-asc");
+    expect(nextListSort("no-asc", "no")).toBe("no-desc");
+    expect(nextListSort("no-desc", "no")).toBe("default");
+  });
+
+  it("別の列の見出しを押すと、その列の昇順から始める", () => {
+    expect(nextListSort("file-desc", "no")).toBe("no-asc");
+    expect(nextListSort("no-asc", "file")).toBe("file-asc");
+  });
+
+  it("伝票No.で並べても元の配列は書き換えない", () => {
+    const src = [item("TE00000002"), item("TE00000001")];
+    const before = nos(src);
+    sortListItems(src, "no-asc");
+    expect(nos(src)).toEqual(before);
+  });
 });
 
 describe("種類ごとの絞り込み (専決決裁書)", () => {

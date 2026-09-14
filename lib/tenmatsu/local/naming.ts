@@ -7,6 +7,7 @@
  *   `_2`…`_99`。99 まで埋まっていたら例外にする（黙って上書きしない）。
  */
 import { last4 } from "@/lib/rakuraku/parse/natsuin";
+import { nameKey } from "./fingerprint";
 import type { FolderStore, Path } from "./fs";
 
 /**
@@ -37,17 +38,34 @@ export function stemOf(name: string): string {
 export { last4 };
 
 /**
- * `{接頭辞}{下4桁}.pdf`。既にあれば上書きせずフル伝票No.の名前にし、それも埋まっていれば `_2`〜`_99`。
- * 戻り値はファイル名（dir の中の名前）。
+ * その名前を使えるか。ファイルがあれば使わない（上書きしない）。
+ * ★ファイルが無くても、ほかの記録がその名前を指していれば使わない（reserved は nameKey の集合）。
+ *   利用者が名前を変えて空いた名前を別の伝票が使うと、元の記録が別のPDFを指したまま
+ *   「取得済み」に見え、つなぎ直しの案内も出なくなるため。
  */
-export async function decideOutputName(store: FolderStore, dir: Path, denpyoNo: string, prefix: string): Promise<string> {
+async function isFree(store: FolderStore, dir: Path, name: string, reserved: ReadonlySet<string>): Promise<boolean> {
+  if (dir.length === 0 && reserved.has(nameKey(name))) return false;
+  return !(await store.exists([...dir, name]));
+}
+
+/**
+ * `{接頭辞}{下4桁}.pdf`。既にあれば上書きせずフル伝票No.の名前にし、それも埋まっていれば `_2`〜`_99`。
+ * 戻り値はファイル名（dir の中の名前）。reserved はほかの記録が使っている名前（保存先の直下だけに効く）。
+ */
+export async function decideOutputName(
+  store: FolderStore,
+  dir: Path,
+  denpyoNo: string,
+  prefix: string,
+  reserved: ReadonlySet<string> = new Set(),
+): Promise<string> {
   const primary = `${prefix}${safeComponent(last4(denpyoNo))}.pdf`;
-  if (!(await store.exists([...dir, primary]))) return primary;
+  if (await isFree(store, dir, primary, reserved)) return primary;
   const fallback = `${prefix}${safeComponent(denpyoNo)}.pdf`;
-  if (!(await store.exists([...dir, fallback]))) return fallback;
+  if (await isFree(store, dir, fallback, reserved)) return fallback;
   for (let i = 2; i < 100; i++) {
     const candidate = `${prefix}${safeComponent(denpyoNo)}_${i}.pdf`;
-    if (!(await store.exists([...dir, candidate]))) return candidate;
+    if (await isFree(store, dir, candidate, reserved)) return candidate;
   }
   throw new Error(`保存名を決められませんでした: ${denpyoNo}`);
 }
@@ -56,13 +74,18 @@ export async function decideOutputName(store: FolderStore, dir: Path, denpyoNo: 
  * 伝票ごとに決めた名前で保存する（捺印決裁書）。既にあれば `_2`, `_3` … を付ける。
  * ★上書きはしない。全角の「（）」はファイル名に使えるのでそのまま残る。
  */
-export async function decideNamedOutputName(store: FolderStore, dir: Path, name: string): Promise<string> {
+export async function decideNamedOutputName(
+  store: FolderStore,
+  dir: Path,
+  name: string,
+  reserved: ReadonlySet<string> = new Set(),
+): Promise<string> {
   const stem = safeComponent(stemOf(name));
   const primary = `${stem}.pdf`;
-  if (!(await store.exists([...dir, primary]))) return primary;
+  if (await isFree(store, dir, primary, reserved)) return primary;
   for (let i = 2; i < 100; i++) {
     const candidate = `${stem}_${i}.pdf`;
-    if (!(await store.exists([...dir, candidate]))) return candidate;
+    if (await isFree(store, dir, candidate, reserved)) return candidate;
   }
   throw new Error(`保存名を決められませんでした: ${name}`);
 }

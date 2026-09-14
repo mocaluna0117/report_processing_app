@@ -96,32 +96,49 @@ export function visibleListItems(items: ListItem[], options: ListViewOptions): L
 /**
  * 一覧の並べ替え。default は**サーバーが返した順**
  * (PC側の記録に足した順の逆。取得日時の並べ替えではない)。
+ * 押せる見出しは「伝票No.」と「ファイル名」。
  */
-export type ListSort = "default" | "file-asc" | "file-desc";
+export type ListSort = "default" | "file-asc" | "file-desc" | "no-asc" | "no-desc";
 
-/** 見出しを押すたびに 既定 → 昇順 → 降順 → 既定 と回る */
-export function nextListSort(sort: ListSort): ListSort {
-  if (sort === "default") return "file-asc";
-  if (sort === "file-asc") return "file-desc";
-  return "default";
+/** 並べ替えられる列 */
+export type SortColumn = "file" | "no";
+
+/** いまその列で並べているか (昇順・降順のどちらか) */
+export function sortColumnOf(sort: ListSort): SortColumn | null {
+  if (sort === "default") return null;
+  return sort.startsWith("no-") ? "no" : "file";
 }
 
 /**
- * ファイル名の比較。**数字は数値として比べる。**
+ * 見出しを押したときの次の並び。
+ * 同じ列を押すたびに 既定 → 昇順 → 降順 → 既定 と回り、別の列を押すとその列の昇順から始める。
+ */
+export function nextListSort(sort: ListSort, column: SortColumn = "file"): ListSort {
+  const asc: ListSort = column === "no" ? "no-asc" : "file-asc";
+  const desc: ListSort = column === "no" ? "no-desc" : "file-desc";
+  if (sort === asc) return desc;
+  if (sort === desc) return "default";
+  return asc;
+}
+
+/**
+ * ファイル名・伝票No.の比較。**数字は数値として比べる。**
  * 名前が「顛末書No.1476.pdf」の形なので、素の文字列比較だと
  * 1476 < 9001 < 999 の順になってしまう (先頭の文字から1桁ずつ比べるため)。
  */
 const fileCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 /**
- * ファイル名で並べ替える。元の配列は変えない。
+ * ファイル名か伝票No.で並べ替える。元の配列は変えない。
  * default はサーバーの順をそのまま返す (並べ替えない、が「元に戻せる」ことになる)。
  */
 export function sortListItems(items: ListItem[], sort: ListSort): ListItem[] {
-  if (sort === "default") return items;
-  const sign = sort === "file-asc" ? 1 : -1;
-  // sort は安定なので、ファイル名が同じ行はサーバーの順のまま並ぶ
-  return [...items].sort((a, b) => sign * fileCollator.compare(a.file, b.file));
+  const column = sortColumnOf(sort);
+  if (column === null) return items;
+  const sign = sort.endsWith("-asc") ? 1 : -1;
+  const keyOf = column === "no" ? (item: ListItem) => item.denpyo_no : (item: ListItem) => item.file;
+  // sort は安定なので、値が同じ行はサーバーの順のまま並ぶ
+  return [...items].sort((a, b) => sign * fileCollator.compare(keyOf(a), keyOf(b)));
 }
 
 export interface ListCounts {

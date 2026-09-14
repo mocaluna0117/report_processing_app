@@ -120,6 +120,9 @@ describe("取得して保存する", () => {
       where: "注文受注物件：架空台1丁目A号棟\u3000施主名：架空\u3000太郎",
       pj: "9901230101",
       final_approved_at: "2026/09/10 17:36",
+      // ★保存したPDFの中身の指紋 (名前を変えられても中身で探せるように)
+      pdf_size: s.fs.get("顛末書No.9101.pdf")!.byteLength,
+      pdf_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
     expect(log).toContain("  OK 保存: 顛末書No.9101.pdf");
     expect(log).toContain("完了: 2件を保存しました");

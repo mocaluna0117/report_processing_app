@@ -56,7 +56,9 @@ export type PendingErrorKind =
   /** 入れ方が正しくない（形式・枠・足りない書類） */
   | "invalid"
   /** 結合できなかった（保留のまま残す） */
-  | "mergeFailed";
+  | "mergeFailed"
+  /** 保存先に記録の名前のPDFが無い（名前を変えた・消した。差し替えは書かずに止める） */
+  | "fileMissing";
 
 export class PendingError extends Error {
   constructor(

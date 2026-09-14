@@ -222,6 +222,36 @@ export class FolderStore {
     }
   }
 
+  /**
+   * フォルダーの中のファイルを、大きさと更新日時つきで返す（サブフォルダーは含めない）。
+   * ★一覧で持っているハンドルから読むので、名前ごとに探し直さない。読めないファイルは飛ばす。
+   */
+  async listFiles(path: Path): Promise<{ name: string; size: number; lastModified: number }[]> {
+    let dir: DirHandleLike;
+    try {
+      dir = await this.dirAt(path, false);
+    } catch (e) {
+      const error = toFolderError(e, path, "読め");
+      if (absent(error)) return [];
+      throw error;
+    }
+    const out: { name: string; size: number; lastModified: number }[] = [];
+    try {
+      for await (const [name, handle] of dir.entries()) {
+        if (handle.kind !== "file") continue;
+        try {
+          const file = await handle.getFile();
+          out.push({ name, size: file.size, lastModified: file.lastModified });
+        } catch {
+          // その間に消えた・ほかのアプリが掴んでいる、は候補にしないだけ
+        }
+      }
+    } catch (e) {
+      throw toFolderError(e, path, "読め");
+    }
+    return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  }
+
   /** 中の名前（名前順）。フォルダーが無ければ空 */
   async list(path: Path): Promise<{ name: string; kind: "file" | "directory" }[]> {
     let dir: DirHandleLike;

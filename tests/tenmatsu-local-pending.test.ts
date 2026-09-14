@@ -252,6 +252,8 @@ describe("保留を確定する", () => {
       shinsei_date: "2026/09/10 11:37:00",
       amount: "3,300 円",
       replaced_attachments: ["見積（PDF版）.pdf"],
+      pdf_size: fs.get("顛末書No.9106.pdf")!.byteLength,
+      pdf_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
     // 顛末書は部品を残さない
     expect(fs.files().filter((f) => f.startsWith("_保留") || f.startsWith("_部品"))).toEqual([]);

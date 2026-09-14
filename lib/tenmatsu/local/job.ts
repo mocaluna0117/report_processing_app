@@ -16,6 +16,7 @@ import type { ReceivedFile, ScanTarget } from "@/lib/rakuraku/protocol";
 import { scanSummary } from "@/lib/rakuraku/parse/list";
 import type { RunLogLine, SavedItem, StatusPayload } from "@/lib/tenmatsu/client";
 import { RUN_LOG_MAX_LINES } from "@/lib/tenmatsu/run-log";
+import { fingerprintOf } from "./fingerprint";
 import type { FolderStore } from "./fs";
 import { LOCAL_KINDS, type LocalKindConfig, MANIFEST_NAME, PENDING_MERGED_NAME, RECORDS_DIR } from "./kind-config";
 import { type ManifestPart, recordPages } from "./manifest";
@@ -24,6 +25,7 @@ import { decideOutputName, safeComponent, stemOf } from "./naming";
 import {
   type MissingEntry,
   appendProcessed,
+  claimedNames,
   doneAndPending,
   hasValue,
   localStamp,
@@ -433,10 +435,13 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
       return "pending";
     }
 
-    const name = await decideOutputName(store, [], denpyoNo, cfg.filePrefix);
+    // ★ほかの記録が指している名前は使わない（名前を変えて空いた名前を取ると、元の記録が別のPDFを指す）
+    const reserved = claimedNames(await readRecords(store, cfg), cfg);
+    const name = await decideOutputName(store, [], denpyoNo, cfg.filePrefix, reserved);
+    const fingerprint = await fingerprintOf(merged.bytes);
     await store.writeBytes([name], merged.bytes);
     // ★PDF を置いたら、その直後に記録する。この間に何も挟まない
-    await appendProcessed(store, cfg, denpyoNo, name, meta, now());
+    await appendProcessed(store, cfg, denpyoNo, name, meta, now(), fingerprint);
     print(`  OK 保存: ${name}`);
     saved.push({ denpyo_no: denpyoNo, file: name });
     return "saved";

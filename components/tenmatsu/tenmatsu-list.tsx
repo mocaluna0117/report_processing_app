@@ -11,8 +11,10 @@ import {
 import {
   type ListFilter,
   type ListSort,
+  type SortColumn,
   listCounts,
   nextListSort,
+  sortColumnOf,
   sortListItems,
   visibleListItems,
   type StatusBadgeKey,
@@ -81,16 +83,23 @@ const LEFT_TD_CLASS = "sticky z-10 bg-white px-3 py-2 group-hover:bg-slate-50";
 const LEFT_EDGE_CLASS = "border-r-2 border-r-slate-300";
 
 /** ファイル名の見出しに出す印と説明 (押すたびに 既定 → 昇順 → 降順 と回る) */
-const SORT_MARK: Record<ListSort, string> = {
-  default: "↕",
-  "file-asc": "↑",
-  "file-desc": "↓",
+const SORT_LABEL: Record<SortColumn, string> = { no: "伝票No.", file: "ファイル名" };
+
+/** その列の見出しに出す矢印 (この列で並べていなければ ↕) */
+const sortMark = (sort: ListSort, column: SortColumn) =>
+  sortColumnOf(sort) !== column ? "↕" : sort.endsWith("-asc") ? "↑" : "↓";
+
+/** その列の見出しを押すと何が起きるか */
+const sortTitle = (sort: ListSort, column: SortColumn) => {
+  const label = SORT_LABEL[column];
+  if (sortColumnOf(sort) !== column) return `押すと${label}の昇順に並べ替えます (数字は数の大きさで比べます)`;
+  return sort.endsWith("-asc")
+    ? `${label}の昇順です。押すと降順にします`
+    : `${label}の降順です。押すと元の順 (取得した順の逆) に戻します`;
 };
-const SORT_TITLE: Record<ListSort, string> = {
-  default: "押すとファイル名の昇順に並べ替えます (数字は数の大きさで比べます)",
-  "file-asc": "ファイル名の昇順です。押すと降順にします",
-  "file-desc": "ファイル名の降順です。押すと元の順 (取得した順の逆) に戻します",
-};
+
+const ariaSortOf = (sort: ListSort, column: SortColumn) =>
+  sortColumnOf(sort) !== column ? "none" : sort.endsWith("-asc") ? "ascending" : "descending";
 
 /** 空欄の表示。値が無いことを黙って隠さない */
 const dash = (value: string | null | undefined) => (value ? value : "－");
@@ -126,6 +135,9 @@ export function TenmatsuList({
   resolveDisabledReason,
   onResolvePending,
   onRecompose,
+  sort: sortProp,
+  onSortChange,
+  onRelink,
 }: {
   /** 書類の種類 (列・完了の印・絞り込み・文言をここから引く) */
   kind: DocKind;
@@ -149,6 +161,17 @@ export function TenmatsuList({
   /** 確定した行の書類を差し替える (捺印決裁書だけ。押せる行は upload_slots で決まる) */
   onRecompose?: (no: string) => void;
   onResolvePending: (no: string) => void;
+  /**
+   * 並べ替え。渡すと画面側で覚えておける (タブを行き来しても残す)。
+   * 渡さなければこの表の中で持つ (再読み込みで既定に戻る)。
+   */
+  sort?: ListSort;
+  onSortChange?: (sort: ListSort) => void;
+  /**
+   * 「ファイルなし」の保存済みの行で、保存先のPDFを選び直す（新しい方式だけ）。
+   * 渡さなければボタンを出さない。
+   */
+  onRelink?: (no: string) => void;
 }) {
   const view = useMemo(
     () => ({
@@ -160,8 +183,13 @@ export function TenmatsuList({
     }),
     [filter, showCompleted, recentNos, kind],
   );
-  // 並べ替えはこの表の中だけの話なので、ここで持つ (絞り込みと同じく保存しない)
-  const [sort, setSort] = useState<ListSort>("default");
+  // 並べ替えは保存しない (再読み込みで既定に戻る)。画面側が渡してくれればそちらで覚える
+  const [ownSort, setOwnSort] = useState<ListSort>("default");
+  const sort = sortProp ?? ownSort;
+  const setSort = (next: ListSort) => {
+    if (onSortChange) onSortChange(next);
+    else setOwnSort(next);
+  };
   const visible = useMemo(
     () => sortListItems(visibleListItems(items, view), sort),
     [items, view, sort],
@@ -234,7 +262,8 @@ export function TenmatsuList({
           {counts.missingFile > 0 && (
             // 絞り込みで見えていなくても件数だけは必ず伝える
             <span className="ml-1 text-amber-700">
-              ファイルが消えている記録が {counts.missingFile}件あります
+              PDFが見つからない記録が {counts.missingFile}件あります
+              {onRelink && " (名前を変えた場合は、その行の「PDFを選ぶ」で選び直せます)"}
             </span>
           )}
           {counts.pending - counts.awaiting > 0 && (
@@ -277,49 +306,49 @@ export function TenmatsuList({
             <table className="w-full whitespace-nowrap text-sm">
               <thead>
                 <tr className="text-left text-xs text-slate-500">
-                  <th
-                    ref={noHeadRef}
-                    className={`left-0 ${LEFT_TH_CLASS}`}
-                    title={
-                      sort === "default"
-                        ? "PC側の記録に足した順の逆に並びます (申請日での並べ替えではありません)"
-                        : "いまはファイル名で並べ替えています"
-                    }
-                  >
-                    伝票No.
-                  </th>
-                  <th
-                    ref={fileHeadRef}
-                    // aria-sort は「今どう並んでいるか」を読み上げに伝えるためのもの
-                    aria-sort={
-                      sort === "file-asc"
-                        ? "ascending"
-                        : sort === "file-desc"
-                          ? "descending"
-                          : "none"
-                    }
-                    className={`${LEFT_TH_CLASS} ${LEFT_EDGE_CLASS}`}
-                    style={{ left: leftWidths.no }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setSort(nextListSort(sort))}
-                      title={SORT_TITLE[sort]}
-                      className="flex cursor-pointer items-center gap-1 font-medium text-slate-500 hover:text-slate-900"
+                  {(
+                    [
+                      { column: "no", ref: noHeadRef, className: `left-0 ${LEFT_TH_CLASS}`, style: undefined },
+                      {
+                        column: "file",
+                        ref: fileHeadRef,
+                        className: `${LEFT_TH_CLASS} ${LEFT_EDGE_CLASS}`,
+                        style: { left: leftWidths.no },
+                      },
+                    ] as const
+                  ).map(({ column, ref, className, style }) => (
+                    <th
+                      key={column}
+                      ref={ref}
+                      // aria-sort は「今どう並んでいるか」を読み上げに伝えるためのもの
+                      aria-sort={ariaSortOf(sort, column)}
+                      className={className}
+                      style={style}
                     >
-                      ファイル名
-                      {/* 幅を固定する。ここが伸び縮みすると ResizeObserver 経由で
-                          左固定列の left と scroll-padding-left が動いてガタつく */}
-                      <span
-                        aria-hidden
-                        className={`inline-block w-3 text-center ${
-                          sort === "default" ? "text-slate-300" : ""
-                        }`}
+                      <button
+                        type="button"
+                        onClick={() => setSort(nextListSort(sort, column))}
+                        title={
+                          sort === "default" && column === "no"
+                            ? `PC側の記録に足した順の逆に並んでいます。${sortTitle(sort, column)}`
+                            : sortTitle(sort, column)
+                        }
+                        className="flex cursor-pointer items-center gap-1 font-medium text-slate-500 hover:text-slate-900"
                       >
-                        {SORT_MARK[sort]}
-                      </span>
-                    </button>
-                  </th>
+                        {SORT_LABEL[column]}
+                        {/* 幅を固定する。ここが伸び縮みすると ResizeObserver 経由で
+                            左固定列の left と scroll-padding-left が動いてガタつく */}
+                        <span
+                          aria-hidden
+                          className={`inline-block w-3 text-center ${
+                            sortColumnOf(sort) !== column ? "text-slate-300" : ""
+                          }`}
+                        >
+                          {sortMark(sort, column)}
+                        </span>
+                      </button>
+                    </th>
+                  ))}
                   {kind.dataColumns.map((col) => (
                     <th key={col.field} className={TH_CLASS}>
                       {col.head}
@@ -464,21 +493,38 @@ export function TenmatsuList({
                           {/* プレビューと「差し替え」は同じ幅の中に縦に積む
                               (固定枠は1セルなので、横に増やすと見出しとずれる) */}
                           <span className={`flex flex-col gap-1 ${FRAME_BUTTON_SLOT_CLASS}`}>
-                            <button
-                              type="button"
-                              onClick={() => onPreview(item.denpyo_no)}
-                              disabled={!item.exists || !canPreview}
-                              title={
-                                !item.exists
-                                  ? "PCの保存先からファイルが消えています。もう一度取得してください"
-                                  : isPending(item)
-                                    ? "保留中のPDF (本体と結合できた添付) を表示します"
-                                    : undefined
-                              }
-                              className={`${SLOT_BUTTON_CLASS} ${item.exists && canPreview ? "cursor-pointer" : ""}`}
-                            >
-                              プレビュー
-                            </button>
+                            {!item.exists && !isPending(item) && onRelink ? (
+                              // ★名前を変えたPDFは、ここで今の名前のPDFを選んで結び直す
+                              <button
+                                type="button"
+                                aria-label={`${item.denpyo_no} のPDFを選び直す`}
+                                onClick={() => onRelink(item.denpyo_no)}
+                                disabled={!canPreview || resolveDisabledReason !== null}
+                                title={
+                                  resolveDisabledReason ??
+                                  `保存先に「${item.file}」が見つかりません。名前を変えた場合は、押して今の名前のPDFを選んでください`
+                                }
+                                className={`${SLOT_BUTTON_CLASS} ${canPreview && resolveDisabledReason === null ? "cursor-pointer" : ""}`}
+                              >
+                                PDFを選ぶ
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => onPreview(item.denpyo_no)}
+                                disabled={!item.exists || !canPreview}
+                                title={
+                                  !item.exists
+                                    ? `保存先に「${item.file}」が見つかりません (名前を変えた・移動した・消した可能性があります)`
+                                    : isPending(item)
+                                      ? "保留中のPDF (本体と結合できた添付) を表示します"
+                                      : undefined
+                                }
+                                className={`${SLOT_BUTTON_CLASS} ${item.exists && canPreview ? "cursor-pointer" : ""}`}
+                              >
+                                プレビュー
+                              </button>
+                            )}
                             {kind.canRecompose && !isPending(item) && onRecompose && (
                               <button
                                 type="button"

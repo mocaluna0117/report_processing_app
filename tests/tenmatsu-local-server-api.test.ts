@@ -28,7 +28,18 @@ const FETCH: FetchRequest = { sessionToken: "t", kind: "tenmatsu", denpyoNo: "TE
 describe("Folio のサーバーを呼ぶ", () => {
   it("ログイン: 成功ならトークン、失敗なら符号つきの失敗（やり直しはしない）", async () => {
     const ok = fakeFetch({ "/api/rakuraku/login": () => Response.json({ ok: true, sessionToken: "sealed" }) });
-    expect(await createRakurakuApi({ fetchImpl: ok.impl }).login("99-test", "架空")).toEqual({ sessionToken: "sealed" });
+    // 期限を返さない (古い) サーバーでは expiresAt は null
+    expect(await createRakurakuApi({ fetchImpl: ok.impl }).login("99-test", "架空")).toEqual({
+      sessionToken: "sealed",
+      expiresAt: null,
+    });
+    const withExpiry = fakeFetch({
+      "/api/rakuraku/login": () => Response.json({ ok: true, sessionToken: "sealed", expiresAt: 1_900_000_000_000 }),
+    });
+    expect(await createRakurakuApi({ fetchImpl: withExpiry.impl }).login("99-test", "架空")).toEqual({
+      sessionToken: "sealed",
+      expiresAt: 1_900_000_000_000,
+    });
     expect(ok.calls[0].body).toEqual({ userId: "99-test", password: "架空" });
     expect(ok.calls[0].init.credentials).toBe("same-origin");
 

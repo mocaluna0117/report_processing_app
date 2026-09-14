@@ -348,6 +348,8 @@ describe("確定したあとの差し替え（捺印決裁書）", () => {
       "部品が残っていない",
     );
     expect(recomposeDisabledReason(saved, "取得中です")).toBe("取得中です");
+    // ★PDFが見つからない行は差し替えさせない (元の名前で別のファイルを作ってしまうため)
+    expect(recomposeDisabledReason({ ...saved, exists: false }, null)).toContain("PDFを選ぶ");
   });
 
   it("★差し替えの文言に、印が外れることを書く", () => {

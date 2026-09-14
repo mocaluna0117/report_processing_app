@@ -7,7 +7,7 @@ import { assertTenantUrl } from "@/lib/rakuraku/config";
 import { GuardError, assertEnabled, assertSameOrigin } from "@/lib/rakuraku/guard";
 import { isLoginScreen } from "@/lib/rakuraku/login";
 import { log } from "@/lib/rakuraku/log";
-import { SessionError, seal, unseal } from "@/lib/rakuraku/session";
+import { SessionError, reseal, unseal } from "@/lib/rakuraku/session";
 
 /**
  * このアカウントで**実際に選べる部門**を楽楽精算から読む。
@@ -45,7 +45,8 @@ export async function POST(request: Request) {
 
   let launched;
   try {
-    const { state, home } = unseal(sessionToken);
+    const session = unseal(sessionToken);
+    const { state, home } = session;
     // ★ ログイン画面の URL を開いてはいけない。ログイン済みでもフォームが出るので、
     //   「パスワード欄があるか」で見ると必ず「切れている」と誤判定する。
     const target = assertTenantUrl(home, tenant).toString();
@@ -77,7 +78,9 @@ export async function POST(request: Request) {
       ok: true,
       departments,
       current,
-      sessionToken: seal({ state: JSON.stringify(await context.storageState()), home }),
+      // ★期限と一覧のURLは引き継ぐ (以前はここで期限が延び、lists が落ちていた)
+      sessionToken: reseal(session, JSON.stringify(await context.storageState())),
+      expiresAt: session.exp,
       totalMs: Date.now() - started,
     });
   } catch (e) {

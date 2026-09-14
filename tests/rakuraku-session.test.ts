@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SessionError, seal, unseal } from "@/lib/rakuraku/session";
+import { SESSION_TTL_MS, SessionError, reseal, seal, unseal } from "@/lib/rakuraku/session";
 
 const SECRET = "test-secret-0123456789abcdefghijklmnopqrstuvwxyz";
 const saved = process.env.RAKURAKU_SESSION_SECRET;
@@ -101,5 +101,25 @@ describe("メニューで見つけた一覧の URL も封じて持ち回る", ()
     const first = unseal(seal(INPUT, 60_000));
     const again = unseal(seal({ state: first.state, home: first.home, exp: first.exp }));
     expect(again.exp).toBe(first.exp);
+  });
+});
+
+describe("封じ直し (部門を読んだとき)", () => {
+  it("★期限を延ばさず、覚えた一覧のURLも落とさない", () => {
+    const exp = Date.now() + 60_000;
+    const lists = { tenmatsu: "https://example.test/abcd/list" };
+    const first = unseal(seal({ ...INPUT, lists, exp }));
+    const again = unseal(reseal(first, JSON.stringify({ cookies: [], origins: [] })));
+    expect(again.exp).toBe(exp);
+    expect(again.lists).toEqual(lists);
+    expect(again.home).toBe(HOME);
+    expect(again.state).toBe(JSON.stringify({ cookies: [], origins: [] }));
+  });
+
+  it("期限は8時間 (ブラウザが控えを戻すかの判定にも使う)", () => {
+    expect(SESSION_TTL_MS).toBe(8 * 60 * 60 * 1000);
+    const opened = unseal(seal(INPUT));
+    expect(opened.exp - Date.now()).toBeGreaterThan(SESSION_TTL_MS - 5_000);
+    expect(opened.exp - Date.now()).toBeLessThanOrEqual(SESSION_TTL_MS);
   });
 });

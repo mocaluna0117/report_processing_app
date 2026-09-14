@@ -51,11 +51,11 @@ export function createFakeApi(script: FakeApiScript): FakeApi {
       calls.push({ method: "login", request: { userId } });
       const error = script.login?.(userId, password, logins) ?? null;
       if (error) throw error;
-      return { sessionToken: `token-${logins}` };
+      return { sessionToken: `token-${logins}`, expiresAt: null };
     },
     departments: async () => {
       calls.push({ method: "departments" });
-      return { departments: [], current: null, sessionToken: "token-d" };
+      return { departments: [], current: null, sessionToken: "token-d", expiresAt: null };
     },
     scan: async (request, handlers) => {
       scans += 1;

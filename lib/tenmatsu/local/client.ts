@@ -25,6 +25,7 @@ import {
   RUN_COUNT_FORMAT_MESSAGE,
   TenmatsuError,
 } from "@/lib/tenmatsu/client";
+import { createHashMemo } from "./fingerprint";
 import { FolderError, type FolderStore } from "./fs";
 import { ImportError, type ImportSummary, importRecords, previewImport } from "./import";
 import { type RunAuth, type RunHandle, startRun } from "./job";
@@ -32,6 +33,18 @@ import { LOCAL_KINDS, PENDING_MERGED_NAME, RUN_LIMITS } from "./kind-config";
 import { type StatsCache, buildListItems, memoryStatsCache } from "./list";
 import { PendingError } from "./manifest";
 import { completePending, recomposeSaved } from "./pending-ops";
+import {
+  type BackfillTarget,
+  type RelinkCandidate,
+  RelinkError,
+  applyRelinks,
+  otherKindClaims,
+  planBackfill,
+  planRelinks,
+  relinkCandidates,
+  relinkRecord,
+  runBackfill,
+} from "./relink";
 import { RecordNotFoundError, RecordsCorruptError, pendingDirPath, readRecords, retryPending, setFlags } from "./records";
 import type { RakurakuApi } from "./server-api";
 
@@ -76,6 +89,19 @@ export type LocalFolderClient = TenmatsuClient & {
   previewImport(text: string): Promise<ImportSummary>;
   /** 今までの方式の記録を取り込む。★取得中は断る */
   importRecords(text: string): Promise<ImportSummary>;
+  /**
+   * 一覧を読み、名前を変えられたPDFを中身で見つけたら記録を今の名前に結び直す。
+   * relinked は結び直した分（画面で「つなぎ直しました」と伝える）。
+   */
+  listWithRelinks(): Promise<{ items: ListItem[]; relinked: { denpyoNo: string; from: string; to: string }[] }>;
+  /** 以前の記録に中身の指紋を付ける（裏で少しずつ。取得中はやらない） */
+  backfillFingerprints(): Promise<{ written: number; remaining: number }>;
+  /** 「ファイルなし」の伝票について、選べるPDF（どの記録にも使われていない、保存先の直下のPDF） */
+  relinkCandidates(denpyoNo: string): Promise<RelinkCandidate[]>;
+  /** 選んだPDFをその伝票に結ぶ。★取得中は断る */
+  relinkFile(denpyoNo: string, name: string): Promise<ListItem | null>;
+  /** 選ぶ候補のPDFの中身（どの記録にも使われていない直下のPDFだけ読める） */
+  candidatePdf(denpyoNo: string, name: string): Promise<Blob>;
 };
 
 const IDLE: StatusPayload = {
@@ -114,6 +140,11 @@ export function toTenmatsuError(e: unknown): TenmatsuError {
     const kind = e.kind === "invalid" || e.kind === "mergeFailed" ? "badRequest" : "notFound";
     return new TenmatsuError(kind, null, e.message);
   }
+  if (e instanceof RelinkError) {
+    const kind =
+      e.kind === "invalid" ? "badRequest" : e.kind === "notFound" || e.kind === "notSaved" ? "notFound" : "conflict";
+    return new TenmatsuError(kind, null, e.message);
+  }
   if (e instanceof RecordNotFoundError) return new TenmatsuError("notFound", null, e.message);
   if (e instanceof ImportError) return new TenmatsuError("badRequest", null, e.message);
   if (e instanceof RecordsCorruptError) return new TenmatsuError("server", null, e.message);
@@ -141,6 +172,38 @@ export function createLocalFolderClient(options: LocalFolderClientOptions): Loca
     if (running()) {
       throw new TenmatsuError("conflict", null, "取得中は添付を結合できません。取得が終わってから操作してください");
     }
+  };
+
+  /** 中身のハッシュの覚え書き（同じファイルを何度も読まない） */
+  const memo = createHashMemo();
+  /** 直前の一覧で見つけた、指紋を付けたい記録 */
+  let backfillTargets: BackfillTarget[] = [];
+  let backfillRun: Promise<{ written: number; remaining: number }> | null = null;
+
+  const listWithRelinks = async () => {
+    let records = await readRecords(store, cfg);
+    let items = await buildListItems(store, cfg, cache, records);
+    const relinked: { denpyoNo: string; from: string; to: string }[] = [];
+    const missing = items.filter((i) => !i.pending && !i.exists).map((i) => i.denpyo_no);
+    // ★取得中は結び直さない（保存して記録するまでの間と重ならないように。終われば一覧を読み直す）
+    if (missing.length > 0 && !running()) {
+      try {
+        const plan = await planRelinks(store, cfg, records, missing, {
+          memo,
+          otherClaims: await otherKindClaims(store, cfg),
+        });
+        const applied = await applyRelinks(store, cfg, plan.relinks, options.now?.() ?? new Date());
+        if (applied.length > 0) {
+          relinked.push(...applied.map((r) => ({ denpyoNo: r.denpyoNo, from: r.from, to: r.to })));
+          records = await readRecords(store, cfg);
+          items = await buildListItems(store, cfg, cache, records);
+        }
+      } catch {
+        // 結び直しに失敗しても一覧は出す（「ファイルなし」のまま。手で選び直せる）
+      }
+    }
+    backfillTargets = planBackfill(records, cfg, items);
+    return { items, relinked };
   };
 
   const findItem = async (denpyoNo: string): Promise<ListItem | null> =>
@@ -176,7 +239,7 @@ export function createLocalFolderClient(options: LocalFolderClientOptions): Loca
 
     status: async (since) => mine()?.snapshot(since) ?? { ...IDLE, kind: options.kind, ...(since === undefined ? {} : { log: [] }) },
 
-    list: async () => await guard(() => buildListItems(store, cfg, cache)),
+    list: async () => await guard(async () => (await listWithRelinks()).items),
 
     run: async (runOptions: RunOptions = {}): Promise<RunResult> => {
       const limit = runOptions.maxPerRun ?? RUN_LIMITS.value;
@@ -252,6 +315,14 @@ export function createLocalFolderClient(options: LocalFolderClientOptions): Loca
         } else {
           const item = (await buildListItems(store, cfg, cache, records)).find((i) => i.denpyo_no === denpyoNo && !i.pending);
           if (!item) throw new TenmatsuError("notFound", null, `伝票 ${denpyoNo} の記録がありません`);
+          // ★見つからないPDFは開かない（名前を変えた場合は「PDFを選ぶ」で結び直してもらう）
+          if (!item.exists) {
+            throw new TenmatsuError(
+              "notFound",
+              null,
+              `保存先に「${item.file}」が見つかりません。名前を変えた場合は、一覧の「PDFを選ぶ」で選び直してください`,
+            );
+          }
           path = [item.file];
         }
         const bytes = await store.readBytes(path);
@@ -268,6 +339,55 @@ export function createLocalFolderClient(options: LocalFolderClientOptions): Loca
     },
 
     previewImport: async (text: string) => await guard(() => previewImport(store, cfg, text)),
+
+    listWithRelinks: async () => await guard(listWithRelinks),
+
+    backfillFingerprints: async () => {
+      // 同時に2本走らせない（2回目の呼び出しには同じ結果を返す）
+      if (backfillRun) return await backfillRun;
+      backfillRun = (async () => {
+        let written = 0;
+        try {
+          while (backfillTargets.length > 0 && !running()) {
+            const batch = backfillTargets;
+            const result = await runBackfill(store, cfg, batch, memo, { shouldStop: running });
+            written += result.written;
+            if (result.processed === 0) break;
+            backfillTargets = batch.slice(result.processed);
+            // 画面の操作を止めないよう、1回ごとに手を離す
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
+        } catch {
+          // 指紋の後付けは急がない。失敗しても次に一覧を読んだときにやり直す
+        } finally {
+          backfillRun = null;
+        }
+        return { written, remaining: backfillTargets.length };
+      })();
+      return await backfillRun;
+    },
+
+    relinkCandidates: async (denpyoNo: string) => await guard(() => relinkCandidates(store, cfg, denpyoNo, memo)),
+
+    relinkFile: async (denpyoNo: string, name: string) =>
+      await guard(async () => {
+        if (running()) {
+          throw new TenmatsuError("conflict", null, "取得中はPDFを選び直せません。取得が終わってから操作してください");
+        }
+        await relinkRecord(store, cfg, denpyoNo, name, memo, options.now?.() ?? new Date());
+        return await findItem(denpyoNo);
+      }),
+
+    candidatePdf: async (denpyoNo: string, name: string) =>
+      await guard(async () => {
+        // ★選べる候補のPDFだけを読む（ほかの記録のPDFや、フォルダーの中は読まない）
+        const candidates = await relinkCandidates(store, cfg, denpyoNo, memo);
+        if (!candidates.some((c) => c.name === name)) {
+          throw new TenmatsuError("notFound", null, `「${name}」は選べるPDFではありません`);
+        }
+        const bytes = await store.readBytes([name]);
+        return new Blob([bytes as BlobPart], { type: "application/pdf" });
+      }),
 
     importRecords: async (text: string) =>
       await guard(async () => {

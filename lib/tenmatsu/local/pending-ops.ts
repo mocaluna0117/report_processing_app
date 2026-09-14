@@ -6,6 +6,7 @@
  * ★保存先の PDF・記録・部品を書き換える順番に意味がある。各所のコメントを消さないこと。
  */
 import type { PendingFile, PendingUpload } from "@/lib/tenmatsu/client";
+import { fingerprintOf } from "./fingerprint";
 import { type FolderStore, type Path } from "./fs";
 import { type LocalKindConfig, PARTS_DIR, PENDING_MERGED_NAME } from "./kind-config";
 import {
@@ -23,6 +24,7 @@ import { decideNamedOutputName, decideOutputName, last4, safeComponent } from ".
 import {
   type LogEntry,
   addLogEntry,
+  claimedNames,
   hasValue,
   localStamp,
   partsDirPath,
@@ -72,7 +74,8 @@ export function completePending(
   now: Date = new Date(),
 ): Promise<PendingOpResult> {
   return withPendingLock(store, async () => {
-    const info = (await readRecords(store, cfg)).pending[denpyoNo];
+    const records = await readRecords(store, cfg);
+    const info = records.pending[denpyoNo];
     if (!info) throw new PendingError("notPending", `伝票 ${denpyoNo} は保留になっていません`);
     const dir = pendingDirPath(info.dir);
     const manifest = await readManifest(store, dir, { composed: cfg.composed, missing: "noFiles" });
@@ -94,11 +97,14 @@ export function completePending(
     const merged = await mergeManifest(store, dir, manifest, { strictFirst: true });
 
     // 伝票ごとに決めた名前があればそれで保存する（捺印決裁書）。無ければ接頭辞＋下4桁
+    // ★ほかの記録が指している名前は使わない（名前を変えて空いた名前を取ると、元の記録が別のPDFを指す）
+    const reserved = claimedNames(records, cfg);
     const finalName = info.meta?.final_name;
     const savedName =
       typeof finalName === "string" && finalName
-        ? await decideNamedOutputName(store, [], finalName)
-        : await decideOutputName(store, [], denpyoNo, cfg.filePrefix);
+        ? await decideNamedOutputName(store, [], finalName, reserved)
+        : await decideOutputName(store, [], denpyoNo, cfg.filePrefix, reserved);
+    const fingerprint = await fingerprintOf(merged.bytes);
     // 保存先で開かれていて書けないときは FolderError（conflict）。保留はそのまま残る
     await store.writeBytes([savedName], merged.bytes);
 
@@ -109,7 +115,7 @@ export function completePending(
     // ★記録の追加と保留の削除は1回の書き換えで行う。分けると、その間に同じ伝票が
     //   「保存済み」と「保留」の両方で見える
     await updateRecords(store, cfg, (data) => {
-      addLogEntry(data, cfg, denpyoNo, savedName, meta, now);
+      addLogEntry(data, cfg, denpyoNo, savedName, meta, now, fingerprint);
       delete data.pending[denpyoNo];
     });
 
@@ -168,6 +174,19 @@ export function recomposeSaved(
     }
     if (!data.done.includes(denpyoNo)) throw new PendingError("notSaved", `伝票 ${denpyoNo} の記録がありません`);
     const entry: Partial<LogEntry> = [...data.log].reverse().find((e) => e.denpyo_no === denpyoNo) ?? {};
+    const savedName =
+      (typeof entry.file === "string" && entry.file) ||
+      (typeof entry.final_name === "string" && entry.final_name) ||
+      `${cfg.filePrefix}${last4(denpyoNo)}.pdf`;
+    // ★記録の名前のPDFが無ければ書かずに止める。以前は元の名前で新しいファイルを作ってしまい、
+    //   利用者が名前を変えたファイルが古いまま残っていた（クラウドに古い方を上げてしまう）
+    const missingFile = () =>
+      new PendingError(
+        "fileMissing",
+        `保存先に「${savedName}」が見つからないので差し替えできません。` +
+          "名前を変えた場合は、一覧の「PDFを選ぶ」で選び直してから差し替えてください",
+      );
+    if ((await store.stat([savedName]))?.kind !== "file") throw missingFile();
 
     const src = partsDirPath(safeComponent(denpyoNo));
     await readManifest(store, src, { composed: cfg.composed, missing: "noParts" });
@@ -178,17 +197,14 @@ export function recomposeSaved(
 
     let manifest;
     let merged;
-    let savedName: string;
     try {
       manifest = await readManifest(store, work, { composed: cfg.composed, missing: "noParts" });
       await applyUploads(store, work, manifest, files, slots);
       await writeManifest(store, work, manifest);
       checkSlotsFilled(manifest.parts);
       merged = await mergeManifest(store, work, manifest, { strictFirst: true });
-      savedName =
-        (typeof entry.file === "string" && entry.file) ||
-        (typeof entry.final_name === "string" && entry.final_name) ||
-        `${cfg.filePrefix}${last4(denpyoNo)}.pdf`;
+      // 組み立てている間に名前を変えられていたら、やはり書かない
+      if ((await store.stat([savedName]))?.kind !== "file") throw missingFile();
       // ★同じ名前で上書きする。PDF を開いたままだと書けない（FolderError の conflict で案内が出る）
       await store.writeBytes([savedName], merged.bytes);
     } catch (e) {
@@ -219,8 +235,10 @@ export function recomposeSaved(
     if (replaced.length > 0) meta.replaced_attachments = replaced;
     if (merged.skipped.length > 0) meta.skipped_attachments = merged.skipped.map((x) => x.replace(/^\d{3}_(\d{2}_)?/, ""));
     meta.recomposed_at = localStamp(now);
+    // 中身が変わったので指紋も新しいバイト列から作る（前の記録から写さない）
+    const fingerprint = await fingerprintOf(merged.bytes);
     await updateRecords(store, cfg, (records) => {
-      addLogEntry(records, cfg, denpyoNo, savedName, meta, now);
+      addLogEntry(records, cfg, denpyoNo, savedName, meta, now, fingerprint);
       // ★中身が変わったので完了の印は外す（クラウドにあるものは古い）
       delete records.flags[denpyoNo];
     });

@@ -10,7 +10,9 @@ import { type KindId, isKindId } from "./protocol";
  * ★ ブラウザ側ではメモリにだけ置く（保存しない）。有効期限も入れる。
  */
 const ALGORITHM = "aes-256-gcm";
-const DEFAULT_TTL_MS = 8 * 60 * 60 * 1000;
+/** ログイン状態の有効期限 (8時間)。ブラウザはこの期限を過ぎた控えを戻さない */
+export const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const DEFAULT_TTL_MS = SESSION_TTL_MS;
 
 export interface SessionPayload {
   /** playwright の storageState をそのまま入れた文字列 */
@@ -75,6 +77,14 @@ export function seal(
   ]);
   // iv . 認証タグ . 本体
   return [iv, cipher.getAuthTag(), body].map((b) => b.toString("base64url")).join(".");
+}
+
+/**
+ * クッキーだけ新しくして封じ直す。★期限（exp）と一覧のURL（lists）は前のまま引き継ぐ。
+ * 部門を読むだけの呼び出しで期限を延ばしたり、覚えた一覧のURLを落としたりしないため。
+ */
+export function reseal(session: SessionPayload, state: string): string {
+  return seal({ state, home: session.home, lists: session.lists, exp: session.exp });
 }
 
 export function unseal(token: string): SessionPayload {
