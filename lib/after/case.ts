@@ -54,6 +54,10 @@ export function createAfterCase(input: CreateAfterCaseInput): AfterCase {
     ),
     住所: entry(fields.address),
     引渡日: entry(fields.handoverDate ?? "", fields.handoverDate ? "ok" : "warn"),
+    // 監督・営業はお客様の情報に入っていれば入れる (無ければ空欄のまま。
+    // 行に入力して「監督・営業を登録」で、お客様の情報へ戻せる)
+    監督: entry(fields.supervisor ?? ""),
+    営業: entry(fields.salesRep ?? ""),
     アフター受付内容: entry(
       input.summary,
       (input.summaryFailed ? "fail" : input.summary ? "ok" : "warn") as Confidence,

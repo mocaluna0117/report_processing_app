@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createAfterCase } from "@/lib/after/case";
-import { effectiveFields } from "@/lib/after/customer";
+import { applyEdits, effectiveFields } from "@/lib/after/customer";
 import { AFTER_HIDDEN_COLUMNS, DEFAULT_RECEPTIONIST, RECEPTIONISTS, RECEPTION_TYPES } from "@/lib/after/reception";
 import type { Customer, CustomerFields } from "@/lib/after/types";
 import { buildMailText } from "@/lib/email";
@@ -21,7 +21,9 @@ import {
   RECEPTION_DATE_COL,
   RECEPTION_TYPE_COL,
   REMARKS_COL,
+  SALES_COL,
   SUMMARY_COL,
+  SUPERVISOR_COL,
 } from "@/lib/tsv";
 
 const NOW = new Date("2026-08-30T02:00:00Z"); // JST 2026/8/30 11:00
@@ -153,6 +155,35 @@ describe("createAfterCase", () => {
 
   it("結合PDFは持たない (PDFをDLボタンを出さない)", () => {
     expect(build().merged).toBeNull();
+  });
+});
+
+describe("監督・営業", () => {
+  it("お客様の情報に入っていれば受付の行にも入れる", () => {
+    const row = build({ supervisor: "架空 一郎", salesRep: "架空 二郎" });
+    expect(row.cells[SUPERVISOR_COL]).toBe("架空 一郎");
+    expect(row.cells[SALES_COL]).toBe("架空 二郎");
+  });
+
+  it("お客様の情報に無ければ空欄のまま (要確認にはしない)", () => {
+    const row = build();
+    expect(row.cells[SUPERVISOR_COL]).toBe("");
+    expect(row.cells[SALES_COL]).toBe("");
+    expect(row.confidences[SUPERVISOR_COL]).toBe("ok");
+    expect(row.confidences[SALES_COL]).toBe("ok");
+  });
+
+  it("手直しした値を使う (取り込み値ではなく実効値)", () => {
+    const edited = applyEdits(customer(), { supervisor: "架空 三郎" }, 2);
+    const row = createAfterCase({
+      id: "c-2",
+      customer: edited,
+      inquiryText: "x",
+      summary: "y",
+      engine: null,
+      now: NOW,
+    });
+    expect(row.cells[SUPERVISOR_COL]).toBe("架空 三郎");
   });
 });
 
