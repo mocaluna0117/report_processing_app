@@ -43,6 +43,7 @@ import {
   planRelinks,
   relinkCandidates,
   relinkRecord,
+  renamePrefix,
   runBackfill,
 } from "./relink";
 import { RecordNotFoundError, RecordsCorruptError, pendingDirPath, readRecords, retryPending, setFlags } from "./records";
@@ -102,6 +103,8 @@ export type LocalFolderClient = TenmatsuClient & {
   relinkFile(denpyoNo: string, name: string): Promise<ListItem | null>;
   /** 選ぶ候補のPDFの中身（どの記録にも使われていない直下のPDFだけ読める） */
   candidatePdf(denpyoNo: string, name: string): Promise<Blob>;
+  /** 以前の保存名（「顛末書No.1476.pdf」）を、いまの表記（「顛末書№1476.pdf」）に直す。★取得中は断る */
+  renameLegacyNames(): Promise<{ renamed: number; skipped: { denpyoNo: string; reason: string }[] }>;
 };
 
 const IDLE: StatusPayload = {
@@ -387,6 +390,15 @@ export function createLocalFolderClient(options: LocalFolderClientOptions): Loca
         }
         const bytes = await store.readBytes([name]);
         return new Blob([bytes as BlobPart], { type: "application/pdf" });
+      }),
+
+    renameLegacyNames: async () =>
+      await guard(async () => {
+        if (running()) {
+          throw new TenmatsuError("conflict", null, "取得中は保存名を直せません。取得が終わってから操作してください");
+        }
+        const result = await renamePrefix(store, cfg, options.now?.() ?? new Date());
+        return { renamed: result.renamed.length, skipped: result.skipped };
       }),
 
     importRecords: async (text: string) =>

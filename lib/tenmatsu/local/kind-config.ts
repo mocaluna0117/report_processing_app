@@ -8,6 +8,7 @@
  */
 import { KINDS, type KindId } from "@/lib/rakuraku/kinds";
 import type { FlagKey } from "@/lib/tenmatsu/client";
+import { legacyFilePrefix } from "@/lib/tenmatsu/kinds";
 
 /** 記録の置き場（選んだフォルダーの中） */
 export const RECORDS_DIR = "_記録";
@@ -48,6 +49,8 @@ export interface LocalKindConfig {
   /** `_記録/` の中の記録のファイル名（移植元と同じ名前） */
   processedFile: string;
   filePrefix: string;
+  /** 以前の保存名の接頭辞（「顛末書No.」）。まとめて直すのに使う */
+  legacyFilePrefix: string;
   /** 完了の印 */
   flagKeys: readonly FlagKey[];
   /** 確定したあとも部品を残すか（捺印決裁書） */
@@ -84,6 +87,7 @@ function build(id: KindId): LocalKindConfig {
     label: kind.label,
     processedFile: PROCESSED_FILES[id],
     filePrefix: kind.filePrefix,
+    legacyFilePrefix: legacyFilePrefix(kind),
     flagKeys: FLAG_KEYS[id],
     keepParts: kind.keepParts,
     metaKeys: [...new Set([...listKeys, ...detailKeys, ...linked, ...EXTRA_META_KEYS])],

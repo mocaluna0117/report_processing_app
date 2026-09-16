@@ -127,7 +127,7 @@ describe.skipIf(!browser)("捺印決裁書: 紐づく専決決裁書から材料
     const { events, files, compose } = await run("natsuin_download.html?link=");
     expect(events.some((e) => e.type === "linked.found")).toBe(false);
     expect(files.map((f) => f.role)).toEqual(["body"]);
-    expect(compose).toMatchObject({ linkedNo: null, picked: [], finalName: "捺印決裁書No.1001.pdf", linkReason: "専決決裁書№を読めませんでした" });
+    expect(compose).toMatchObject({ linkedNo: null, picked: [], finalName: "捺印決裁書№1001.pdf", linkReason: "専決決裁書№を読めませんでした" });
   }, 60_000);
 
   it("伝票画面で読めなくても、一覧で読んだ番号があれば使う", async () => {

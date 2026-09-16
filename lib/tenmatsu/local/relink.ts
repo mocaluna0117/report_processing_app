@@ -359,7 +359,7 @@ export async function relinkRecord(
     return null;
   };
   const other = claimedBy(records);
-  if (other) throw new RelinkError("claimed", `「${name}」はほかの記録（伝票No. ${other}）のファイルです`);
+  if (other) throw new RelinkError("claimed", `「${name}」はほかの記録（伝票№ ${other}）のファイルです`);
   if ((await otherKindClaims(store, cfg)).has(nameKey(name))) {
     throw new RelinkError("claimed", `「${name}」はほかの種類の記録のファイルです`);
   }
@@ -384,4 +384,104 @@ export async function relinkRecord(
     linkEntry(fresh, cfg, name, { pdf_size: stat.size, pdf_sha256: sha256 }, now);
     return { changed: true, result: undefined };
   });
+}
+
+// ---------------------------------------------------------------------------
+// 4. 以前の保存名（「No.」表記）を、いまの表記（「№」）に直す
+// ---------------------------------------------------------------------------
+
+export interface PrefixRename {
+  denpyoNo: string;
+  from: string;
+  to: string;
+}
+
+/** 以前の接頭辞（「顛末書No.」）で保存されている記録を探す。記録もファイルも変えない */
+export function planPrefixRenames(records: ProcessedData, cfg: LocalKindConfig): PrefixRename[] {
+  const legacy = cfg.legacyFilePrefix;
+  if (!legacy || legacy === cfg.filePrefix) return [];
+  const latest = latestEntries(records);
+  const claimed = claimedNames(records, cfg);
+  const out: PrefixRename[] = [];
+  for (const no of records.done) {
+    if (records.pending[no]) continue;
+    const from = recordedFileName(cfg, no, latest.get(no));
+    if (!from.startsWith(legacy)) continue;
+    const to = `${cfg.filePrefix}${from.slice(legacy.length)}`;
+    // 新しい名前がすでにほかの記録のものなら触らない（取り違えを作らない）
+    if (claimed.has(nameKey(to))) continue;
+    out.push({ denpyoNo: no, from, to });
+  }
+  return out;
+}
+
+/**
+ * 以前の名前のPDFを、いまの表記の名前に直す（コピー → 記録を書き換え → 元を消す、の順）。
+ * ★この順にすると、途中で止まっても「記録はあるがファイルが無い」を作らない
+ *   （両方あるだけで済み、次に押せばそろう）。
+ * ★同じ名前のファイルがすでにあるもの、PDFが見つからないものは触らず、skipped に入れる。
+ */
+export async function renamePrefix(
+  store: FolderStore,
+  cfg: LocalKindConfig,
+  now: Date,
+): Promise<{ renamed: PrefixRename[]; skipped: { denpyoNo: string; reason: string }[] }> {
+  const records = await readRecords(store, cfg);
+  const plan = planPrefixRenames(records, cfg);
+  const skipped: { denpyoNo: string; reason: string }[] = [];
+  const copied: (PrefixRename & { size: number })[] = [];
+
+  for (const item of plan) {
+    const from = await store.stat([item.from]);
+    if (from?.kind !== "file") {
+      skipped.push({ denpyoNo: item.denpyoNo, reason: `「${item.from}」が見つかりません` });
+      continue;
+    }
+    if (await store.exists([item.to])) {
+      skipped.push({ denpyoNo: item.denpyoNo, reason: `「${item.to}」がすでにあります` });
+      continue;
+    }
+    try {
+      await store.copyFile([item.from], [item.to]);
+      const to = await store.stat([item.to]);
+      if (to?.kind !== "file" || to.size !== from.size) throw new Error("写したファイルの大きさが違います");
+      copied.push({ ...item, size: from.size });
+    } catch (e) {
+      // 写せなかったものは元のまま（作りかけがあれば消す）
+      await store.remove([item.to]).catch(() => undefined);
+      skipped.push({ denpyoNo: item.denpyoNo, reason: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  if (copied.length === 0) return { renamed: [], skipped };
+
+  const renamed = await modifyRecords(store, cfg, (data) => {
+    const latest = latestEntries(data);
+    const applied: PrefixRename[] = [];
+    for (const item of copied) {
+      const entry = latest.get(item.denpyoNo);
+      if (!entry || data.pending[item.denpyoNo] || recordedFileName(cfg, item.denpyoNo, entry) !== item.from) continue;
+      entry.relinked_from = item.from;
+      entry.relinked_at = localStamp(now);
+      entry.file = item.to;
+      applied.push({ denpyoNo: item.denpyoNo, from: item.from, to: item.to });
+    }
+    return { changed: applied.length > 0, result: applied };
+  });
+
+  // 記録が新しい名前を指したので、元のファイルを消す（消せなくても記録は正しい）
+  for (const item of renamed) {
+    try {
+      await store.remove([item.from]);
+    } catch {
+      skipped.push({ denpyoNo: item.denpyoNo, reason: `元の「${item.from}」を消せませんでした（手で消してください）` });
+    }
+  }
+  // 写したのに記録を書き換えられなかった分は、写しを片付ける
+  for (const item of copied) {
+    if (!renamed.some((r) => r.denpyoNo === item.denpyoNo)) {
+      await store.remove([item.to]).catch(() => undefined);
+      skipped.push({ denpyoNo: item.denpyoNo, reason: "記録が変わっていたので、この1件は直しませんでした" });
+    }
+  }
+  return { renamed, skipped };
 }

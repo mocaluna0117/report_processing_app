@@ -8,7 +8,7 @@ import { FakeFs } from "./helpers/fake-fs";
 describe("ファイル名に使える形にする", () => {
   it.each([
     ['見積:テスト/工業*?"<>|.pdf', "見積_テスト_工業______.pdf"],
-    ["  顛末書No.1234.  ", "顛末書No.1234"],
+    ["  顛末書№1234.  ", "顛末書№1234"],
     ["...", "unnamed"],
     ["", "unnamed"],
     ["御見積書（架空邸）", "御見積書（架空邸）"],
@@ -41,23 +41,23 @@ describe("★保存名を決める（上書きは絶対にしない）", () => {
     return { fs, store: new FolderStore(fs.root) };
   };
 
-  it("{接頭辞}{下4桁}.pdf → 埋まっていればフル伝票No. → _2 … の順", async () => {
+  it("{接頭辞}{下4桁}.pdf → 埋まっていればフル伝票№ → _2 … の順", async () => {
     const { fs, store } = setup();
-    expect(await decideOutputName(store, [], "TE00001476", "顛末書No.")).toBe("顛末書No.1476.pdf");
-    fs.put("顛末書No.1476.pdf", "1");
-    expect(await decideOutputName(store, [], "TE00001476", "顛末書No.")).toBe("顛末書No.TE00001476.pdf");
-    fs.put("顛末書No.TE00001476.pdf", "1");
-    expect(await decideOutputName(store, [], "TE00001476", "顛末書No.")).toBe("顛末書No.TE00001476_2.pdf");
-    fs.put("顛末書No.TE00001476_2.pdf", "1");
-    expect(await decideOutputName(store, [], "TE00001476", "顛末書No.")).toBe("顛末書No.TE00001476_3.pdf");
+    expect(await decideOutputName(store, [], "TE00001476", "顛末書№")).toBe("顛末書№1476.pdf");
+    fs.put("顛末書№1476.pdf", "1");
+    expect(await decideOutputName(store, [], "TE00001476", "顛末書№")).toBe("顛末書№TE00001476.pdf");
+    fs.put("顛末書№TE00001476.pdf", "1");
+    expect(await decideOutputName(store, [], "TE00001476", "顛末書№")).toBe("顛末書№TE00001476_2.pdf");
+    fs.put("顛末書№TE00001476_2.pdf", "1");
+    expect(await decideOutputName(store, [], "TE00001476", "顛末書№")).toBe("顛末書№TE00001476_3.pdf");
   });
 
   it("99 まで埋まっていたら例外（黙って上書きしない）", async () => {
     const { fs, store } = setup();
-    fs.put("専決決裁書No.3001.pdf", "1");
-    fs.put("専決決裁書No.SE00003001.pdf", "1");
-    for (let i = 2; i < 100; i++) fs.put(`専決決裁書No.SE00003001_${i}.pdf`, "1");
-    await expect(decideOutputName(store, [], "SE00003001", "専決決裁書No.")).rejects.toThrow("保存名を決められませんでした");
+    fs.put("専決決裁書№3001.pdf", "1");
+    fs.put("専決決裁書№SE00003001.pdf", "1");
+    for (let i = 2; i < 100; i++) fs.put(`専決決裁書№SE00003001_${i}.pdf`, "1");
+    await expect(decideOutputName(store, [], "SE00003001", "専決決裁書№")).rejects.toThrow("保存名を決められませんでした");
   });
 
   it("伝票ごとに決めた名前（捺印決裁書）は _2 から", async () => {
@@ -69,8 +69,8 @@ describe("★保存名を決める（上書きは絶対にしない）", () => {
 
   it("別のフォルダーの中で決める", async () => {
     const { fs, store } = setup();
-    fs.put("_部品/x/顛末書No.1476.pdf", "1");
-    expect(await decideOutputName(store, [], "TE00001476", "顛末書No.")).toBe("顛末書No.1476.pdf");
-    expect(await decideOutputName(store, ["_部品", "x"], "TE00001476", "顛末書No.")).toBe("顛末書No.TE00001476.pdf");
+    fs.put("_部品/x/顛末書№1476.pdf", "1");
+    expect(await decideOutputName(store, [], "TE00001476", "顛末書№")).toBe("顛末書№1476.pdf");
+    expect(await decideOutputName(store, ["_部品", "x"], "TE00001476", "顛末書№")).toBe("顛末書№TE00001476.pdf");
   });
 });

@@ -227,7 +227,7 @@ export function TenmatsuStaffSync({
                           : "見つかりません"}
                       </span>
                       <p className="text-xs text-slate-500">
-                        {row.key}（伝票No. {row.denpyoNos.slice(0, 2).join(", ")}
+                        {row.key}（伝票№ {row.denpyoNos.slice(0, 2).join(", ")}
                         {row.denpyoNos.length > 2 && ` ほか${row.denpyoNos.length - 2}件`}）
                       </p>
                     </td>

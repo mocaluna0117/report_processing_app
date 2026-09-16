@@ -42,7 +42,7 @@ const status = (over: Partial<StatusPayload> = {}): StatusPayload => ({
   done: 3,
   total: 10,
   current: "TE00001469",
-  message: "顛末書No.1469.pdf を保存しました",
+  message: "顛末書№1469.pdf を保存しました",
   error: null,
   error_file: null,
   processed: 0,
@@ -67,7 +67,7 @@ async function failureOf(call: () => Promise<unknown>): Promise<TenmatsuError> {
 
 const listItem = (over: Partial<ListItem> = {}): ListItem => ({
   denpyo_no: "TE00009001",
-  file: "顛末書No.9001.pdf",
+  file: "顛末書№9001.pdf",
   at: "2026-09-04T10:00:00",
   exists: true,
   pages: 3,
@@ -82,7 +82,7 @@ const listItem = (over: Partial<ListItem> = {}): ListItem => ({
 /** 完了フラグに未対応のサーバー・この機能より前のキャッシュが返す形 (6項目だけ) */
 const oldShapeItem = {
   denpyo_no: "TE00009002",
-  file: "顛末書No.9002.pdf",
+  file: "顛末書№9002.pdf",
   at: "2026-09-04T10:00:00",
   exists: true,
   pages: 3,
@@ -154,7 +154,7 @@ describe("リクエストの組み立て", () => {
     expect(await blob.text()).toBe("%PDF-1.4");
   });
 
-  it("伝票No.に記号が入っていてもURLを壊さない", async () => {
+  it("伝票№に記号が入っていてもURLを壊さない", async () => {
     const { impl, calls } = fakeFetch(() => new Response("x", { status: 200 }));
     await createTenmatsuClient({ token: "t", fetchImpl: impl }).filePdf("TE 1/2");
     expect(calls[0].url.searchParams.get("no")).toBe("TE 1/2");
@@ -164,7 +164,7 @@ describe("リクエストの組み立て", () => {
   it("一覧の中で形の合わない行は捨てる", async () => {
     const good = {
       denpyo_no: "TE00009001",
-      file: "顛末書No.9001.pdf",
+      file: "顛末書№9001.pdf",
       at: "2026-09-04T10:00:00",
       exists: true,
       pages: 3,
@@ -247,14 +247,14 @@ describe("失敗の扱い", () => {
   it("describeFailure の対応表", () => {
     expect(describeFailure(400).kind).toBe("badRequest");
     // /run と /flags でも 400 になるので、/file 専用の文言を既定にしない
-    expect(describeFailure(400).message).not.toContain("伝票No.");
+    expect(describeFailure(400).message).not.toContain("伝票№");
     expect(describeFailure(403).kind).toBe("forbidden");
     expect(describeFailure(403).message).toContain("allowed_origins");
     expect(describeFailure(418).kind).toBe("unknown");
     expect(describeFailure(418).message).toContain("418");
     // サーバーの文言があれば優先する
-    expect(describeFailure(400, "伝票No.が指定されていません").message).toBe(
-      "伝票No.が指定されていません",
+    expect(describeFailure(400, "伝票№が指定されていません").message).toBe(
+      "伝票№が指定されていません",
     );
     // 空文字は文言なし扱いにする
     expect(describeFailure(404, "  ").message).toBe("見つかりませんでした");
@@ -989,7 +989,7 @@ describe("完了フラグの更新", () => {
   const okFlags = (item: unknown = listItem({ budget_entered: true })) =>
     fakeFetch(() => json({ ok: true, item }));
 
-  it("伝票No.と変えるフラグだけを本文で送る", async () => {
+  it("伝票№と変えるフラグだけを本文で送る", async () => {
     const { impl, calls } = okFlags();
     await createTenmatsuClient({ token: "tok-1", fetchImpl: impl }).setFlags("TE00009001", {
       budget_entered: true,
@@ -1200,7 +1200,7 @@ describe("種類ごとのフラグ", () => {
   it("★その種類のフラグだけで「分かる行」を判定する", () => {
     const onlyCloud: ListItem = {
       denpyo_no: "SE00003001",
-      file: "専決決裁書No.3001.pdf",
+      file: "専決決裁書№3001.pdf",
       at: null,
       exists: true,
       pages: 2,

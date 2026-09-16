@@ -98,10 +98,10 @@ describe("取得して保存する", () => {
     expect(status.state).toBe("done");
     expect(status.processed).toBe(2);
     expect(status.saved).toEqual([
-      { denpyo_no: "TE00009101", file: "顛末書No.9101.pdf" },
-      { denpyo_no: "TE00009102", file: "顛末書No.9102.pdf" },
+      { denpyo_no: "TE00009101", file: "顛末書№9101.pdf" },
+      { denpyo_no: "TE00009102", file: "顛末書№9102.pdf" },
     ]);
-    expect(await pageSizes(s.fs.get("顛末書No.9101.pdf")!)).toEqual([
+    expect(await pageSizes(s.fs.get("顛末書№9101.pdf")!)).toEqual([
       [595, 842],
       [595, 842],
       [400, 400],
@@ -110,7 +110,7 @@ describe("取得して保存する", () => {
     expect(records.done).toEqual(["TE00009101", "TE00009102"]);
     expect(records.log[0]).toEqual({
       denpyo_no: "TE00009101",
-      file: "顛末書No.9101.pdf",
+      file: "顛末書№9101.pdf",
       at: "2026-09-13T11:00:00",
       // ★申請日は伝票画面の秒まである値、どこでは伝票画面の全文で上書きし、一覧にしか無い値は残す
       shinsei_date: "2026/09/10 11:37:00",
@@ -121,10 +121,10 @@ describe("取得して保存する", () => {
       pj: "9901230101",
       final_approved_at: "2026/09/10 17:36",
       // ★保存したPDFの中身の指紋 (名前を変えられても中身で探せるように)
-      pdf_size: s.fs.get("顛末書No.9101.pdf")!.byteLength,
+      pdf_size: s.fs.get("顛末書№9101.pdf")!.byteLength,
       pdf_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
-    expect(log).toContain("  OK 保存: 顛末書No.9101.pdf");
+    expect(log).toContain("  OK 保存: 顛末書№9101.pdf");
     expect(log).toContain("完了: 2件を保存しました");
     // 伝票のあいだは間隔をあける（最後の後は待たない）
     expect(s.sleeps).toEqual([1500]);
@@ -163,12 +163,12 @@ describe("取得して保存する", () => {
     expect(cut.status.message).toContain("701件中 200件目まで");
   });
 
-  it("保存先に同じ名前があれば上書きせず、フル伝票No.の名前にする", async () => {
+  it("保存先に同じ名前があれば上書きせず、フル伝票№の名前にする", async () => {
     const s = setup();
-    s.fs.put("顛末書No.9101.pdf", "前からある");
+    s.fs.put("顛末書№9101.pdf", "前からある");
     await run(s, { scan: scanOf([target("TE00009101")]), fetch: { TE00009101: fetched() } });
-    expect(s.fs.text("顛末書No.9101.pdf")).toBe("前からある");
-    expect(s.fs.get("顛末書No.TE00009101.pdf")).not.toBeNull();
+    expect(s.fs.text("顛末書№9101.pdf")).toBe("前からある");
+    expect(s.fs.get("顛末書№TE00009101.pdf")).not.toBeNull();
   });
 
   it("★動画は結合せずに飛ばし、飛ばした名前を記録に残す（保留にはしない）", async () => {
@@ -220,7 +220,7 @@ describe("保留にする", () => {
     expect(records.pending.TE00009106.meta).toMatchObject({ amount: "3,300 円", pj: "9901230101" });
     expect(log.some((l) => l.includes("保留にしました"))).toBe(true);
     // 正式なフォルダーには入れない
-    expect(s.fs.files().some((f) => f.startsWith("顛末書No."))).toBe(false);
+    expect(s.fs.files().some((f) => f.startsWith("顛末書№"))).toBe(false);
   });
 });
 
@@ -238,7 +238,7 @@ describe("時間切れの添付", () => {
       attachment: (request) => file("attachment", request.index, request.expectedName, ".pdf", attachmentPdf),
     });
     expect(api.calls.find((c) => c.method === "attachment")?.request).toMatchObject({ index: 1, expectedName: "見積.pdf", denpyoNo: "TE1" });
-    expect(await pageSizes(s.fs.get("顛末書No.TE1.pdf")!)).toEqual([
+    expect(await pageSizes(s.fs.get("顛末書№TE1.pdf")!)).toEqual([
       [595, 842],
       [595, 842],
       [400, 400],
@@ -280,7 +280,7 @@ describe("本体PDFが取れない", () => {
     expect(status.error).toContain("本体PDFの取得が続けて失敗しました");
     expect(status.error_file).toBe("_記録/エラー_20260913_110000.txt");
     const report = s.fs.text("_記録/エラー_20260913_110000.txt")!;
-    expect(report).toContain("処理中だった伝票No.: TE2");
+    expect(report).toContain("処理中だった伝票№: TE2");
     expect(report).toContain("見送り: 2件 TE1, TE2");
   });
 });

@@ -89,7 +89,7 @@ export function TenmatsuRelinkDialog({
 
   const submit = async () => {
     if (!selected) return;
-    if (!confirm(`伝票No. ${item.denpyo_no} の記録を「${selected}」に結びます。よろしいですか？`)) return;
+    if (!confirm(`伝票№ ${item.denpyo_no} の記録を「${selected}」に結びます。よろしいですか？`)) return;
     setBusy(true);
     setError(null);
     try {
@@ -110,7 +110,7 @@ export function TenmatsuRelinkDialog({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="font-semibold">PDFを選び直す — 伝票No. {item.denpyo_no}</h3>
+          <h3 className="font-semibold">PDFを選び直す — 伝票№ {item.denpyo_no}</h3>
           <p className="mt-0.5 text-xs text-slate-500">
             記録の名前「{item.file}」のPDFが保存先に見つかりません。名前を変えた場合は、下から今の名前のPDFを選んでください
             (取得 {formatFetchedAt(item.at)})。選べるのは保存先フォルダーの直下にあり、ほかの{kind.label}の記録に使われていないPDFだけです。

@@ -74,9 +74,9 @@ describe("フォルダー版のクライアント（旧方式と同じ約束で�
     stop();
     const status = await client.status(0);
     expect(status.state).toBe("done");
-    expect(status.log?.some((l) => l.text === "  OK 保存: 顛末書No.9101.pdf")).toBe(true);
+    expect(status.log?.some((l) => l.text === "  OK 保存: 顛末書№9101.pdf")).toBe(true);
     const items = await client.list();
-    expect(items.map((i) => [i.denpyo_no, i.file, i.exists])).toEqual([["TE00009101", "顛末書No.9101.pdf", true]]);
+    expect(items.map((i) => [i.denpyo_no, i.file, i.exists])).toEqual([["TE00009101", "顛末書№9101.pdf", true]]);
   });
 
   it("★件数が範囲外・整数でなければ、丸めずに断る", async () => {
@@ -128,9 +128,9 @@ describe("フォルダー版のクライアント（旧方式と同じ約束で�
 
   it("PDF を読む: 保存済みは保存先の PDF、保留中は途中の PDF", async () => {
     const { fs, client, store } = setup();
-    fs.put("顛末書No.0001.pdf", "保存済み");
+    fs.put("顛末書№0001.pdf", "保存済み");
     fs.put("_保留/TE2/_merged.pdf", "途中");
-    await appendProcessed(store, LOCAL_KINDS.tenmatsu, "TE00000001", "顛末書No.0001.pdf", null, NOW);
+    await appendProcessed(store, LOCAL_KINDS.tenmatsu, "TE00000001", "顛末書№0001.pdf", null, NOW);
     await registerPending(store, LOCAL_KINDS.tenmatsu, "TE2", "TE2", [], null, NOW);
     expect(await (await client.filePdf("TE00000001")).text()).toBe("保存済み");
     expect(await (await client.filePdf("TE2")).text()).toBe("途中");
@@ -143,13 +143,13 @@ describe("フォルダー版のクライアント（旧方式と同じ約束で�
     fs.put("_保留/TE00000005/000_本体.pdf", await makePdf(1));
     fs.put("_保留/TE00000005/manifest.json", JSON.stringify(manifest));
     await registerPending(store, LOCAL_KINDS.tenmatsu, "TE00000005", "TE00000005", [{ index: 1, name: "見積.xlsx", reason: "結合できません" }], null, NOW);
-    fs.put("顛末書No.0005.pdf", "前からある");
+    fs.put("顛末書№0005.pdf", "前からある");
     expect(await client.completePending("TE00000005", { files: [], acceptMissing: true })).toMatchObject({
-      file: "顛末書No.TE00000005.pdf",
+      file: "顛末書№TE00000005.pdf",
       pending: false,
       missing_attachments: [{ index: 1, name: "見積.xlsx", reason: "結合できません" }],
     });
-    expect(fs.text("顛末書No.0005.pdf")).toBe("前からある");
+    expect(fs.text("顛末書№0005.pdf")).toBe("前からある");
   });
 
   it("★フォルダーの失敗は、画面が知っている種類に直す（開いていて書けない・許可が無い・無くなった）", () => {

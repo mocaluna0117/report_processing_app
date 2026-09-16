@@ -77,7 +77,7 @@ describe("新しい方式の設定", () => {
   });
 
   it("★新しい方式の一覧は、旧方式の一覧とは別の場所に置く", async () => {
-    const item = { denpyo_no: "TE00009101", file: "顛末書No.9101.pdf", at: null, exists: true, pages: 1, size: 10 };
+    const item = { denpyo_no: "TE00009101", file: "顛末書№9101.pdf", at: null, exists: true, pages: 1, size: 10 };
     await saveFolderList("tenmatsu", [item]);
     expect(await loadFolderList("tenmatsu")).toEqual([item]);
     expect(await loadMeta("tenmatsu:list")).toBeUndefined();

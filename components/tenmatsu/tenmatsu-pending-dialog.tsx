@@ -235,7 +235,7 @@ export function TenmatsuPendingDialog({
         <div>
           <h2 className="text-base font-semibold text-slate-800">{item.file}</h2>
           <p className="mt-1 text-xs text-slate-500">
-            伝票No. {item.denpyo_no}
+            伝票№ {item.denpyo_no}
             {item.senketsu_no ? ` / 専決決裁書 No.${item.senketsu_no}` : ""}
             {item.property_name ? ` / ${item.property_name}` : ""}
           </p>

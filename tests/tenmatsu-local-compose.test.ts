@@ -164,7 +164,7 @@ describe("捺印決裁書を組み立てる（必ずアップロード待ちの�
       fetch: {
         NA00001001: fetched({
           linked: null,
-          compose: compose({ picked: [], paren: null, parenFrom: null, finalName: "捺印決裁書No.1001.pdf", linkReason: "専決決裁書 No.2267 が専決決裁書の一覧に見つかりませんでした" }),
+          compose: compose({ picked: [], paren: null, parenFrom: null, finalName: "捺印決裁書№1001.pdf", linkReason: "専決決裁書 No.2267 が専決決裁書の一覧に見つかりませんでした" }),
         }),
       },
     });
@@ -173,7 +173,7 @@ describe("捺印決裁書を組み立てる（必ずアップロード待ちの�
       { index: 0, name: "あとからアップロードする書類", reason: "あとからアップロードする書類", awaiting: true },
       { index: 1, name: "専決決裁書 本体（No.2267）", reason: "専決決裁書 No.2267 が専決決裁書の一覧に見つかりませんでした" },
     ]);
-    expect(records.pending.NA00001001.meta).toMatchObject({ final_name: "捺印決裁書No.1001.pdf" });
+    expect(records.pending.NA00001001.meta).toMatchObject({ final_name: "捺印決裁書№1001.pdf" });
     expect(records.pending.NA00001001.meta.linked_attachments).toBeUndefined();
     expect(log).toContain("  ! 専決決裁書 No.2267 が専決決裁書の一覧に見つかりませんでした");
   });

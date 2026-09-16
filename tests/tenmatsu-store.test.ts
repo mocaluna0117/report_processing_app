@@ -29,7 +29,7 @@ import {
 
 const item = (no: string, over: Partial<ListItem> = {}): ListItem => ({
   denpyo_no: no,
-  file: `顛末書No.${no.slice(-4)}.pdf`,
+  file: `顛末書№${no.slice(-4)}.pdf`,
   at: "2026-09-04T10:00:00",
   exists: true,
   pages: 3,
@@ -44,7 +44,7 @@ const item = (no: string, over: Partial<ListItem> = {}): ListItem => ({
 /** 完了フラグに未対応だった頃に書かれたキャッシュ (6項目だけ) */
 const oldShapeItem = {
   denpyo_no: "TE00009001",
-  file: "顛末書No.9001.pdf",
+  file: "顛末書№9001.pdf",
   at: "2026-09-04T10:00:00",
   exists: true,
   pages: 3,

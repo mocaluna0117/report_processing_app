@@ -130,7 +130,7 @@ export function TenmatsuLocalServerPage({ kind: kindId, header }: { kind: DocKin
   const [statusError, setStatusError] = useState<string | null>(null);
 
   /**
-   * 変更中のチェックがある行 (伝票No.)。応答は行まるごとなので行単位で止める。
+   * 変更中のチェックがある行 (伝票№)。応答は行まるごとなので行単位で止める。
    * 判定は ref を正にする (state の反映を待たずに「いま保存中か」を見たいため)。
    */
   const savingFlagsRef = useRef<ReadonlySet<string>>(new Set());

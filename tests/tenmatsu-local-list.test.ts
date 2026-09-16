@@ -26,9 +26,9 @@ describe("一覧を組み立てる（顛末書）", () => {
 
   it("★保留中（新しい順）→ 保存済み（記録に足した順の逆）。どの行も画面が受け取れる形", async () => {
     const { fs, store, cache } = setup();
-    fs.put("顛末書No.0001.pdf", await makePdf(3));
-    await appendProcessed(store, tenmatsu, "TE00000001", "顛末書No.0001.pdf", { amount: "1,100 円", where: "注文受注物件：架空台1丁目A号棟\u3000施主名：架空\u3000太郎\u3000監督：架空\u3000一郎/営業：架空\u3000二郎", pj: "9901230101" }, at(1));
-    await appendProcessed(store, tenmatsu, "TE00000002", "顛末書No.0002.pdf", null, at(2));
+    fs.put("顛末書№0001.pdf", await makePdf(3));
+    await appendProcessed(store, tenmatsu, "TE00000001", "顛末書№0001.pdf", { amount: "1,100 円", where: "注文受注物件：架空台1丁目A号棟\u3000施主名：架空\u3000太郎\u3000監督：架空\u3000一郎/営業：架空\u3000二郎", pj: "9901230101" }, at(1));
+    await appendProcessed(store, tenmatsu, "TE00000002", "顛末書№0002.pdf", null, at(2));
     await registerPending(store, tenmatsu, "TE00000003", "TE00000003", [{ index: 1, name: "見積.xlsx", reason: "結合できません" }], { amount: "3,300 円" }, at(3));
     await registerPending(store, tenmatsu, "TE00000004", "TE00000004", [{ index: 2, name: "壊れた.pdf", reason: "取れません" }], null, at(4));
     fs.put("_保留/TE00000004/_merged.pdf", await makePdf(1));
@@ -46,7 +46,7 @@ describe("一覧を組み立てる（顛末書）", () => {
 
     const first = items[3];
     expect(first).toMatchObject({
-      file: "顛末書No.0001.pdf",
+      file: "顛末書№0001.pdf",
       at: "2026-09-01T09:00:00",
       exists: true,
       pages: 3,
@@ -61,9 +61,9 @@ describe("一覧を組み立てる（顛末書）", () => {
       pending: false,
     });
     // ★記録はあるがファイルが消えている行も隠さない
-    expect(items[2]).toMatchObject({ file: "顛末書No.0002.pdf", exists: false, pages: null, size: null });
+    expect(items[2]).toMatchObject({ file: "顛末書№0002.pdf", exists: false, pages: null, size: null });
     // 保留の行は確定したときに付く予定の名前と、途中の PDF の状態
-    expect(items[0]).toMatchObject({ file: "顛末書No.0004.pdf", exists: true, pages: 1, pending: true, missing_attachments: [{ index: 2, name: "壊れた.pdf", reason: "取れません" }] });
+    expect(items[0]).toMatchObject({ file: "顛末書№0004.pdf", exists: true, pages: 1, pending: true, missing_attachments: [{ index: 2, name: "壊れた.pdf", reason: "取れません" }] });
   });
 
   it("完了の印は保存済みの行だけ。全部そろったら completed", async () => {
@@ -104,7 +104,7 @@ describe("一覧を組み立てる（顛末書）", () => {
 describe("一覧を組み立てる（専決決裁書・捺印決裁書）", () => {
   it("★専決決裁書は表題と「内容」からの物件名。どこで・監督・営業・PJ はキーごと持たない", async () => {
     const { store, cache } = setup("専決決裁書");
-    await appendProcessed(store, LOCAL_KINDS.senketsu, "SE1", "専決決裁書No.0001.pdf", { title: "外壁補修工事の発注", content: "物件名：架空台2丁目B号棟\u3000工事内容：外壁の補修", payee: "架空塗装" }, at(1));
+    await appendProcessed(store, LOCAL_KINDS.senketsu, "SE1", "専決決裁書№0001.pdf", { title: "外壁補修工事の発注", content: "物件名：架空台2丁目B号棟\u3000工事内容：外壁の補修", payee: "架空塗装" }, at(1));
     const [item] = await buildListItems(store, LOCAL_KINDS.senketsu, cache);
     expect(item).toMatchObject({ title: "外壁補修工事の発注", property_name: "架空台2丁目B号棟", payee: "架空塗装" });
     expect("pj" in item || "supervisor" in item).toBe(false);

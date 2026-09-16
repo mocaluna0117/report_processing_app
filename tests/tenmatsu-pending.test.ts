@@ -147,11 +147,11 @@ describe("文言", () => {
   });
 
   it("★確認の文に種類の名前と欠けた添付が入る", () => {
-    const text = acceptMissingConfirmText(TENMATSU, "顛末書No.1742.pdf", missing);
-    expect(text).toContain("顛末書No.1742.pdf");
+    const text = acceptMissingConfirmText(TENMATSU, "顛末書№1742.pdf", missing);
+    expect(text).toContain("顛末書№1742.pdf");
     expect(text).toContain("見積.pdf、図面.xlsx");
     expect(text).toContain("顛末書");
-    expect(retryConfirmText(SENKETSU, "専決決裁書No.2267.pdf")).toContain("専決決裁書を取得");
+    expect(retryConfirmText(SENKETSU, "専決決裁書№2267.pdf")).toContain("専決決裁書を取得");
   });
 
   it("★確かめようがない失敗は「できなかった」と断定しない", () => {
@@ -366,7 +366,7 @@ describe("確定したあとの差し替え（捺印決裁書）", () => {
   it("★差し替えできる種類では「あとから足せない」と言わない", () => {
     const natsuin = acceptMissingConfirmText(NATSUIN, "御見積書.pdf", [miss(3, "専決本体")]);
     expect(natsuin).toContain("「差し替え」で足すこともできます");
-    const tenmatsu = acceptMissingConfirmText(TENMATSU, "顛末書No.1.pdf", [miss(2, "見積.pdf")]);
+    const tenmatsu = acceptMissingConfirmText(TENMATSU, "顛末書№1.pdf", [miss(2, "見積.pdf")]);
     expect(tenmatsu).toContain("あとから足すことはできません");
   });
 });

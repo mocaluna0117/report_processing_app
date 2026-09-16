@@ -8,7 +8,7 @@
  * ★移植元（Python）が書いた記録をそのまま読み、同じ形で書き戻す（キーの順・字下げ2・日本語はそのまま）。
  *   違うのは改行だけ（移植元は Windows で CRLF、こちらは LF）。どちらも JSON として同じに読める。
  * ★知らない項目は消さずに残す（将来の項目や、移植元が足した項目を落とさない）。
- * ※JS は数字だけのキーを先頭へ並べ替える。伝票No.は「TE00001500」のように文字で始まるので影響しない。
+ * ※JS は数字だけのキーを先頭へ並べ替える。伝票№は「TE00001500」のように文字で始まるので影響しない。
  */
 import { last4 } from "@/lib/rakuraku/parse/natsuin";
 import type { FlagKey } from "@/lib/tenmatsu/client";
@@ -75,7 +75,7 @@ export class RecordsCorruptError extends Error {
 /** その伝票が記録に無い */
 export class RecordNotFoundError extends Error {
   constructor(readonly denpyoNo: string) {
-    super(`伝票No. ${denpyoNo} は記録にありません（一覧を読み込み直してください）`);
+    super(`伝票№ ${denpyoNo} は記録にありません（一覧を読み込み直してください）`);
     this.name = "RecordNotFoundError";
   }
 }
@@ -366,7 +366,7 @@ export async function retryPending(store: FolderStore, cfg: LocalKindConfig, den
   if (cfg.keepParts) await store.remove(partsDirPath(info.dir), { recursive: true }).catch(() => undefined);
 }
 
-/** 取得の対象から外す伝票No.（保存済み＋保留中）。★保留中も含める。確定するまで取り直さないため */
+/** 取得の対象から外す伝票№（保存済み＋保留中）。★保留中も含める。確定するまで取り直さないため */
 export function doneAndPending(data: ProcessedData): string[] {
   return [...new Set([...data.done, ...Object.keys(data.pending)])];
 }

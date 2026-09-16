@@ -22,7 +22,14 @@ import {
   isFinished,
   isPending,
 } from "@/lib/tenmatsu/client";
-import { DOC_KIND_BY_ID, type DocKindId, clearListConfirmText, clearedNoticeText, flagErrorText } from "@/lib/tenmatsu/kinds";
+import {
+  DOC_KIND_BY_ID,
+  type DocKindId,
+  clearListConfirmText,
+  clearedNoticeText,
+  flagErrorText,
+  legacyFilePrefix,
+} from "@/lib/tenmatsu/kinds";
 import type { ListFilter, ListSort } from "@/lib/tenmatsu/list-view";
 import { activeRunKind, createLocalFolderClient, hasActiveRun, type LocalFolderClient } from "@/lib/tenmatsu/local/client";
 import { FolderStore } from "@/lib/tenmatsu/local/fs";
@@ -159,6 +166,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   const [recomposeNo, setRecomposeNo] = useState<string | null>(null);
   /** 「PDFを選ぶ」で選び直している伝票 */
   const [relinkNo, setRelinkNo] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
 
   // サーバーで描くときは window が無いので、ブラウザに来てから判定する
   useEffect(() => {
@@ -552,6 +560,32 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     [client],
   );
 
+  /** 以前の表記の保存名を、いまの表記（№）にまとめて直す */
+  const renameLegacyNames = async () => {
+    if (!client) return;
+    if (
+      !confirm(
+        `以前の表記で保存した${kind.label}のPDFの名前を「${kind.filePrefix}…」に直します。\n` +
+          "PDFの中身は変わりません。クラウドへ上げたファイルの名前とは違う名前になります。よろしいですか？",
+      )
+    ) {
+      return;
+    }
+    setRenaming(true);
+    try {
+      const { renamed, skipped } = await client.renameLegacyNames();
+      await refreshListRef.current();
+      setListNotice(
+        `${renamed}件の保存名を「${kind.filePrefix}…」に直しました` +
+          (skipped.length > 0 ? `（${skipped.length}件はそのままです: ${skipped[0].reason}）` : ""),
+      );
+    } catch (e) {
+      setListError(`保存名を直せませんでした (${errorText(e)})`);
+    } finally {
+      setRenaming(false);
+    }
+  };
+
   // 「PDFを選ぶ」ダイアログに渡す読み込み（ダイアログの中で何度も作り直さないよう固定する）
   const loadRelinkCandidates = useCallback(() => {
     if (!client || !relinkNo) return Promise.reject(new Error("保存先フォルダーにつないでください"));
@@ -674,6 +708,8 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   const pending = pendingNo ? (items.find((i) => i.denpyo_no === pendingNo && isPending(i)) ?? null) : null;
   const recompose = recomposeNo ? (items.find((i) => i.denpyo_no === recomposeNo && !isPending(i)) ?? null) : null;
   const relinkItem = relinkNo ? (items.find((i) => i.denpyo_no === relinkNo && !isPending(i)) ?? null) : null;
+  /** 以前の表記（顛末書No.…）のまま保存されているPDFの数 */
+  const legacyNameCount = items.filter((i) => !isPending(i) && i.exists && i.file.startsWith(legacyFilePrefix(kind))).length;
 
   return (
     <main>
@@ -983,6 +1019,19 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
             </button>
           </div>
 
+          {legacyNameCount > 0 && (
+            <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              以前の表記（{legacyFilePrefix(kind)}…）で保存したPDFが {legacyNameCount}件あります。
+              <button
+                type="button"
+                disabled={!connected || renaming || running || otherRunning}
+                onClick={() => void renameLegacyNames()}
+                className="ml-2 cursor-pointer underline hover:text-amber-950 disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
+              >
+                {renaming ? "直しています…" : `保存名を「${kind.filePrefix}…」に直す`}
+              </button>
+            </p>
+          )}
           {listNotice && <p className="mt-2 text-sm text-emerald-700">{listNotice}</p>}
           {listError && <p className={ERROR_CLASS}>{listError}</p>}
           {flagError && <p className={ERROR_CLASS}>{flagError}</p>}
@@ -1042,7 +1091,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
             if (updated) setItems((prev) => prev.map((i) => (i.denpyo_no === updated.denpyo_no ? updated : i)));
             else await refreshListRef.current();
             setRecentNos((prev) => new Set(prev).add(relinkItem.denpyo_no));
-            setListNotice(`伝票No. ${relinkItem.denpyo_no} の記録を「${name}」に結びました`);
+            setListNotice(`伝票№ ${relinkItem.denpyo_no} の記録を「${name}」に結びました`);
           }}
           onClose={() => setRelinkNo(null)}
         />
@@ -1065,7 +1114,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
         <StorageBanner
           description={
             storage.canPersist
-              ? `${kind.label}の取得済み一覧の写し (伝票No.・物件名 (施主名を含むことがあります)・申請者・支払先・金額・印)、保存先フォルダーの場所、楽楽精算のログインID、1回に取る件数、選んだ部門を、このブラウザ内にだけ保存しています (folio のサーバーには送りません)。楽楽精算のパスワードは保存しません (ログイン状態は暗号化したものをこのタブにだけ残し、タブを閉じると消えます)。記録の正本は保存先フォルダーの _記録 にあり、一覧を消してもつなぎ直せば戻ります。PDFの実体も保存先フォルダーにあり、ブラウザには保存しません。共有の端末では、使い終わったら下のボタンで消してください。`
+              ? `${kind.label}の取得済み一覧の写し (伝票№・物件名 (施主名を含むことがあります)・申請者・支払先・金額・印)、保存先フォルダーの場所、楽楽精算のログインID、1回に取る件数、選んだ部門を、このブラウザ内にだけ保存しています (folio のサーバーには送りません)。楽楽精算のパスワードは保存しません (ログイン状態は暗号化したものをこのタブにだけ残し、タブを閉じると消えます)。記録の正本は保存先フォルダーの _記録 にあり、一覧を消してもつなぎ直せば戻ります。PDFの実体も保存先フォルダーにあり、ブラウザには保存しません。共有の端末では、使い終わったら下のボタンで消してください。`
               : "このタブでは保存を停止しています (再読み込みすると復元を試み直せます)。"
           }
           detail={`取得済み ${items.length}件 (未完了 ${items.filter((i) => i.completed !== true).length}件)`}

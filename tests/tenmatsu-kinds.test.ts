@@ -75,17 +75,17 @@ describe("顛末書の設定 (いまの画面と1対1)", () => {
 
   it("★印のエラー文がいまの文言と同じ", () => {
     expect(flagErrorText(TENMATSU, "TE00001476", true, "理由")).toBe(
-      "伝票No. TE00001476 の入力済み・格納済みの印を変更できませんでした (理由)",
+      "伝票№ TE00001476 の入力済み・格納済みの印を変更できませんでした (理由)",
     );
     expect(flagErrorText(TENMATSU, "TE00001476", false, "理由")).toBe(
-      "伝票No. TE00001476 の入力済み・格納済みの印を保存できたか確認できませんでした (理由)。" +
+      "伝票№ TE00001476 の入力済み・格納済みの印を保存できたか確認できませんでした (理由)。" +
         "「一覧を再読み込み」で確かめてください",
     );
   });
 
   it("★保存の説明がいまの文言と同じ", () => {
     expect(TENMATSU.text.storageDescription).toBe(
-      "顛末書の取得済み一覧には、伝票No.・物件名 (施主名を含むことがあります)・申請者・支払先・支払金額・入力済み/格納済みの印・結合できなかった添付の名前が入ります。これらはローカルサーバーのトークン・1回に取る件数とあわせて、このブラウザ内にだけ保存され、folio のサーバーには送信されません。印の正本はPCの記録で、この一覧はその写しです (消しても再接続すれば戻ります)。PDFの実体はこのPCの保存先フォルダにあり、ブラウザには保存しません。定期点検の「保存データを消去」では消えません。共有の端末では、使い終わったら「一覧を消去」を押してください。",
+      "顛末書の取得済み一覧には、伝票№・物件名 (施主名を含むことがあります)・申請者・支払先・支払金額・入力済み/格納済みの印・結合できなかった添付の名前が入ります。これらはローカルサーバーのトークン・1回に取る件数とあわせて、このブラウザ内にだけ保存され、folio のサーバーには送信されません。印の正本はPCの記録で、この一覧はその写しです (消しても再接続すれば戻ります)。PDFの実体はこのPCの保存先フォルダにあり、ブラウザには保存しません。定期点検の「保存データを消去」では消えません。共有の端末では、使い終わったら「一覧を消去」を押してください。",
     );
     expect(TENMATSU.text.completedHint).toBe(
       "実行予算入力済みとクラウド格納済みの両方にチェックが付いた行のことです",
@@ -121,7 +121,7 @@ describe("専決決裁書の設定", () => {
 
   it("ルートとファイル名の接頭辞", () => {
     expect(SENKETSU.route).toBe("/senketsu");
-    expect(SENKETSU.filePrefix).toBe("専決決裁書No.");
+    expect(SENKETSU.filePrefix).toBe("専決決裁書№");
   });
 
   it("文言に種類の名前が入る", () => {
@@ -170,7 +170,7 @@ describe("捺印決裁書の設定", () => {
 
   it("ルートと保存名の接頭辞", () => {
     expect(NATSUIN.route).toBe("/natsuin");
-    expect(NATSUIN.filePrefix).toBe("捺印決裁書No.");
+    expect(NATSUIN.filePrefix).toBe("捺印決裁書№");
   });
 
   it("★保留の行のボタンは「書類を足す」", () => {
@@ -253,8 +253,8 @@ describe("PC側が対応しているか", () => {
 
   it("kinds にあれば対応", () => {
     const ok = health([
-      { kind: "tenmatsu", label: "顛末書", flag_keys: ["budget_entered", "cloud_stored"], file_prefix: "顛末書No.", save_dir: "a" },
-      { kind: "senketsu", label: "専決決裁書", flag_keys: ["cloud_stored"], file_prefix: "専決決裁書No.", save_dir: "b" },
+      { kind: "tenmatsu", label: "顛末書", flag_keys: ["budget_entered", "cloud_stored"], file_prefix: "顛末書№", save_dir: "a" },
+      { kind: "senketsu", label: "専決決裁書", flag_keys: ["cloud_stored"], file_prefix: "専決決裁書№", save_dir: "b" },
     ]);
     expect(supportsKind(SENKETSU, ok)).toBe(true);
     expect(findHealthKind(ok, "senketsu")?.label).toBe("専決決裁書");
@@ -263,7 +263,7 @@ describe("PC側が対応しているか", () => {
 
   it("kinds にあっても自分が無ければ未対応", () => {
     const only = health([
-      { kind: "tenmatsu", label: "顛末書", flag_keys: [], file_prefix: "顛末書No.", save_dir: "a" },
+      { kind: "tenmatsu", label: "顛末書", flag_keys: [], file_prefix: "顛末書№", save_dir: "a" },
     ]);
     expect(supportsKind(SENKETSU, only)).toBe(false);
     expect(unsupportedServerText(SENKETSU)).toContain("専決決裁書に未対応");

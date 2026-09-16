@@ -235,8 +235,8 @@ describe("保留を確定する", () => {
       { files: [newFile(1, "見積（PDF版）.pdf", await pdf(1, [400, 400]))], acceptMissing: false },
       NOW,
     );
-    expect(result).toEqual({ savedName: "顛末書No.9106.pdf", warnings: [] });
-    expect(await pageSizes(fs.get("顛末書No.9106.pdf")!)).toEqual([
+    expect(result).toEqual({ savedName: "顛末書№9106.pdf", warnings: [] });
+    expect(await pageSizes(fs.get("顛末書№9106.pdf")!)).toEqual([
       [595, 842],
       [595, 842],
       [400, 400],
@@ -247,12 +247,12 @@ describe("保留を確定する", () => {
     expect(records.done).toEqual(["TE00009106"]);
     expect(records.log[0]).toEqual({
       denpyo_no: "TE00009106",
-      file: "顛末書No.9106.pdf",
+      file: "顛末書№9106.pdf",
       at: "2026-09-13T10:00:00",
       shinsei_date: "2026/09/10 11:37:00",
       amount: "3,300 円",
       replaced_attachments: ["見積（PDF版）.pdf"],
-      pdf_size: fs.get("顛末書No.9106.pdf")!.byteLength,
+      pdf_size: fs.get("顛末書№9106.pdf")!.byteLength,
       pdf_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
     // 顛末書は部品を残さない
@@ -263,7 +263,7 @@ describe("保留を確定する", () => {
     const { fs, store } = await tenmatsuPending();
     const error = await pendingError(completePending(store, tenmatsu, "TE00009106", { files: [], acceptMissing: false }, NOW));
     expect(error.message).toContain("添付 見積.xlsx が足りません");
-    expect(fs.get("顛末書No.9106.pdf")).toBeNull();
+    expect(fs.get("顛末書№9106.pdf")).toBeNull();
   });
 
   it("欠けたまま確定すると、欠けた添付を記録に残す", async () => {
@@ -289,10 +289,10 @@ describe("保留を確定する", () => {
 
   it("★保存先の同じ名前の PDF を開いていても上書きしない（別名で保存する）", async () => {
     const { fs, store } = await tenmatsuPending();
-    fs.put("顛末書No.9106.pdf", "前からあるファイル");
+    fs.put("顛末書№9106.pdf", "前からあるファイル");
     const result = await completePending(store, tenmatsu, "TE00009106", { files: [], acceptMissing: true }, NOW);
-    expect(result.savedName).toBe("顛末書No.TE00009106.pdf");
-    expect(fs.text("顛末書No.9106.pdf")).toBe("前からあるファイル");
+    expect(result.savedName).toBe("顛末書№TE00009106.pdf");
+    expect(fs.text("顛末書№9106.pdf")).toBe("前からあるファイル");
   });
 
   it("保留になっていない伝票は確定できない", async () => {

@@ -44,7 +44,7 @@ export interface ListViewOptions {
   /** 完了した行も出すか (既定は false ＝ やることが残っている行だけ見せる) */
   showCompleted: boolean;
   /**
-   * この画面で今チェックを変えた伝票No.。
+   * この画面で今チェックを変えた伝票№。
    * 完了になっても次に一覧を読み直すまでは隠さない
    * (2つ目にチェックを入れた瞬間に行が消えると、押し間違いを戻せないため)。
    */
@@ -96,7 +96,7 @@ export function visibleListItems(items: ListItem[], options: ListViewOptions): L
 /**
  * 一覧の並べ替え。default は**サーバーが返した順**
  * (PC側の記録に足した順の逆。取得日時の並べ替えではない)。
- * 押せる見出しは「伝票No.」と「ファイル名」。
+ * 押せる見出しは「伝票№」と「ファイル名」。
  */
 export type ListSort = "default" | "file-asc" | "file-desc" | "no-asc" | "no-desc";
 
@@ -122,14 +122,14 @@ export function nextListSort(sort: ListSort, column: SortColumn = "file"): ListS
 }
 
 /**
- * ファイル名・伝票No.の比較。**数字は数値として比べる。**
- * 名前が「顛末書No.1476.pdf」の形なので、素の文字列比較だと
+ * ファイル名・伝票№の比較。**数字は数値として比べる。**
+ * 名前が「顛末書№1476.pdf」の形なので、素の文字列比較だと
  * 1476 < 9001 < 999 の順になってしまう (先頭の文字から1桁ずつ比べるため)。
  */
 const fileCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 /**
- * ファイル名か伝票No.で並べ替える。元の配列は変えない。
+ * ファイル名か伝票№で並べ替える。元の配列は変えない。
  * default はサーバーの順をそのまま返す (並べ替えない、が「元に戻せる」ことになる)。
  */
 export function sortListItems(items: ListItem[], sort: ListSort): ListItem[] {

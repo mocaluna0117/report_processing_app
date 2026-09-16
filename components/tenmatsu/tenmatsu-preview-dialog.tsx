@@ -78,7 +78,7 @@ export function TenmatsuPreviewDialog({
         <div>
           <h3 className="font-semibold">{item.file}</h3>
           <p className="mt-0.5 text-xs text-slate-500">
-            伝票No. {item.denpyo_no}
+            伝票№ {item.denpyo_no}
             <span className="ml-2">取得 {formatFetchedAt(item.at)}</span>
             {saveDir && <span className="ml-2">保存先: {saveDir}</span>}
           </p>

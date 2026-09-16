@@ -53,8 +53,8 @@ describe("コンソール出力の受け取り", () => {
   });
 
   it("空行も1行として残す (伝票ごとの区切りになる)", () => {
-    const got = appendRunLog([], status({ log: [line(1, ""), line(2, "[1/2] 伝票No. X")] }));
-    expect(got.map((l) => l.text)).toEqual(["", "[1/2] 伝票No. X"]);
+    const got = appendRunLog([], status({ log: [line(1, ""), line(2, "[1/2] 伝票№ X")] }));
+    expect(got.map((l) => l.text)).toEqual(["", "[1/2] 伝票№ X"]);
   });
 
   it("★上限を超えたら古い行から捨てる", () => {
@@ -91,10 +91,10 @@ describe("次に取りに行く位置", () => {
 
 describe("行の色分け", () => {
   it("字下げがあっても見分ける", () => {
-    expect(runLogTone("  OK 保存: C:\\Users\\x\\顛末書No.1742.pdf")).toBe("ok");
+    expect(runLogTone("  OK 保存: C:\\Users\\x\\顛末書№1742.pdf")).toBe("ok");
     expect(runLogTone("! 対象 15件のうち、今回は先頭 10件だけ処理します")).toBe("warn");
     expect(runLogTone("  ! 動画・音声のため結合しませんでした: 現場動画.mp4")).toBe("warn");
-    expect(runLogTone("[13/15] 伝票No. 00001742")).toBe("plain");
+    expect(runLogTone("[13/15] 伝票№ 00001742")).toBe("plain");
     expect(runLogTone("")).toBe("plain");
     expect(runLogTone("  本体PDFを取得")).toBe("plain");
   });

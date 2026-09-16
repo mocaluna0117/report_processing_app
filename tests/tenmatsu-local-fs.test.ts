@@ -88,12 +88,12 @@ describe("選んだフォルダーの読み書き", () => {
 
   it("★ほかのアプリで開いていて書けないときは、閉じてからと案内する", async () => {
     const { fs, store } = setup();
-    fs.put("顛末書No.9101.pdf", "1");
-    fs.lock("顛末書No.9101.pdf");
-    const error = await folderError(store.writeBytes(["顛末書No.9101.pdf"], "2"));
+    fs.put("顛末書№9101.pdf", "1");
+    fs.lock("顛末書№9101.pdf");
+    const error = await folderError(store.writeBytes(["顛末書№9101.pdf"], "2"));
     expect(error.kind).toBe("conflict");
     expect(error.message).toContain("閉じてから");
-    expect(fs.text("顛末書No.9101.pdf")).toBe("1");
+    expect(fs.text("顛末書№9101.pdf")).toBe("1");
   });
 
   it("★許可が無いときは「フォルダーにつなぐ」と案内する", async () => {

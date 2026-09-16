@@ -492,8 +492,8 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
       }
       currentNo = target.denpyoNo;
       print("");
-      print(`[${idx}/${total}] 伝票No. ${target.denpyoNo}`);
-      emit({ message: `伝票No. ${target.denpyoNo} を処理しています`, done: i, total, current: target.denpyoNo });
+      print(`[${idx}/${total}] 伝票№ ${target.denpyoNo}`);
+      emit({ message: `伝票№ ${target.denpyoNo} を処理しています`, done: i, total, current: target.denpyoNo });
       try {
         const outcome = await processOne(target);
         bodyMisses = 0;
@@ -502,7 +502,7 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
           emit({ message: `${saved.at(-1)!.file} を保存しました`, done: idx });
         } else {
           const waiting = pending.at(-1)?.awaiting === true;
-          emit({ message: `伝票No. ${target.denpyoNo} は${waiting ? "アップロード待ちで保留" : "添付を結合できず保留"}にしました`, done: idx });
+          emit({ message: `伝票№ ${target.denpyoNo} は${waiting ? "アップロード待ちで保留" : "添付を結合できず保留"}にしました`, done: idx });
         }
       } catch (e) {
         if (!(e instanceof RakurakuApiError) || e.code !== "BODY_PDF_FAILED") throw e;
@@ -511,7 +511,7 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
         skipped.push(target.denpyoNo);
         print(`  ! ${e.message}`);
         print("  ! この伝票は見送ります（次回の取得でやり直します）");
-        emit({ message: `伝票No. ${target.denpyoNo} は本体PDFを取れず見送りました`, done: idx });
+        emit({ message: `伝票№ ${target.denpyoNo} は本体PDFを取れず見送りました`, done: idx });
         // ★続けて失敗するならログイン切れ。1件ずつ延々と待つより止める
         if (bodyMisses >= 2) throw new RunStop("本体PDFの取得が続けて失敗しました（楽楽精算のログインが切れた可能性があります）");
       }
@@ -544,7 +544,7 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
         await store.writeBytes(
           errorPath,
           [
-            `処理中だった伝票No.: ${currentNo}`,
+            `処理中だった伝票№: ${currentNo}`,
             `完了済み: ${state.processed}件`,
             `見送り: ${skipped.length}件 ${skipped.join(", ")}`,
             `保留: ${pending.length}件`,

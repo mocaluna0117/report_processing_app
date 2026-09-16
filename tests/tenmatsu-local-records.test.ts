@@ -85,16 +85,17 @@ describe("記録を読む・書く", () => {
   it("★Windows で書かれた記録（CRLF・BOM付き）も読める", async () => {
     const { fs, store } = setup();
     fs.put("_記録/processed.json", `\ufeff${PYTHON_SAMPLE.replace(/\n/g, "\r\n")}`);
+    // ★移植元（Python）が書いた記録は「顛末書No.」のまま読める（表記を変えても壊さない）
     expect((await readRecords(store, tenmatsu)).log[0].file).toBe("顛末書No.9101.pdf");
   });
 
   it("★書くたびに1つ前の内容を .bak に残す（1世代だけ）", async () => {
     const { fs, store } = setup();
     fs.put("_記録/processed.json", PYTHON_SAMPLE);
-    await appendProcessed(store, tenmatsu, "TE00009104", "顛末書No.9104.pdf", null, NOW);
+    await appendProcessed(store, tenmatsu, "TE00009104", "顛末書№9104.pdf", null, NOW);
     expect(fs.text("_記録/processed.json.bak")).toBe(PYTHON_SAMPLE);
     const afterFirst = fs.text("_記録/processed.json");
-    await appendProcessed(store, tenmatsu, "TE00009105", "顛末書No.9105.pdf", null, NOW);
+    await appendProcessed(store, tenmatsu, "TE00009105", "顛末書№9105.pdf", null, NOW);
     expect(fs.text("_記録/processed.json.bak")).toBe(afterFirst);
   });
 
@@ -146,7 +147,7 @@ describe("保存できた伝票を記録する", () => {
       store,
       tenmatsu,
       "TE00009104",
-      "顛末書No.9104.pdf",
+      "顛末書№9104.pdf",
       {
         where: "注文受注物件：架空邸",
         shinsei_date: "2026/09/10 11:37:00",
@@ -193,7 +194,7 @@ describe("保存できた伝票を記録する", () => {
 
   it("種類ごとに別のファイルに書く", async () => {
     const { fs, store } = setup();
-    await appendProcessed(store, LOCAL_KINDS.senketsu, "SE1", "専決決裁書No.0001.pdf", null, NOW);
+    await appendProcessed(store, LOCAL_KINDS.senketsu, "SE1", "専決決裁書№0001.pdf", null, NOW);
     expect(fs.files()).toEqual(["_記録/processed_senketsu.json"]);
   });
 });

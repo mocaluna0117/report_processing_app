@@ -13,7 +13,7 @@ import {
 
 const item = (no: string, over: Partial<ListItem> = {}): ListItem => ({
   denpyo_no: no,
-  file: `顛末書No.${no.slice(-4)}.pdf`,
+  file: `顛末書№${no.slice(-4)}.pdf`,
   at: "2026-09-04T10:00:00",
   exists: true,
   pages: 3,
@@ -31,7 +31,7 @@ const both = (no: string, over: Partial<ListItem> = {}) =>
 /** 完了フラグに未対応のサーバー・この機能より前のキャッシュが返す形 */
 const unknownFlags = (no: string, over: Partial<ListItem> = {}): ListItem => ({
   denpyo_no: no,
-  file: `顛末書No.${no.slice(-4)}.pdf`,
+  file: `顛末書№${no.slice(-4)}.pdf`,
   at: "2026-09-04T10:00:00",
   exists: true,
   pages: 3,
@@ -398,25 +398,25 @@ describe("sortListItems", () => {
   // 桁数の違う名前。★ここが素の文字列比較との差が出る唯一の形
   // (1455/1476/9001 は桁が同じなので文字列比較でも同じ順になり、テストにならない)
   const mixed = () => [
-    item("TE00001476", { file: "顛末書No.1476.pdf" }),
-    item("TE00000999", { file: "顛末書No.999.pdf" }),
-    item("TE00001000", { file: "顛末書No.1000.pdf" }),
+    item("TE00001476", { file: "顛末書№1476.pdf" }),
+    item("TE00000999", { file: "顛末書№999.pdf" }),
+    item("TE00001000", { file: "顛末書№1000.pdf" }),
   ];
 
   it("既定はサーバーが返した順のまま", () => {
     const src = mixed();
     expect(files(sortListItems(src, "default"))).toEqual([
-      "顛末書No.1476.pdf",
-      "顛末書No.999.pdf",
-      "顛末書No.1000.pdf",
+      "顛末書№1476.pdf",
+      "顛末書№999.pdf",
+      "顛末書№1000.pdf",
     ]);
   });
 
   it("★昇順は数字を数の大きさで比べる (999 が 1000 より前)", () => {
     expect(files(sortListItems(mixed(), "file-asc"))).toEqual([
-      "顛末書No.999.pdf",
-      "顛末書No.1000.pdf",
-      "顛末書No.1476.pdf",
+      "顛末書№999.pdf",
+      "顛末書№1000.pdf",
+      "顛末書№1476.pdf",
     ]);
   });
 
@@ -436,8 +436,8 @@ describe("sortListItems", () => {
 
   it("ファイル名が同じ行は元の順のまま (並べ替えは安定)", () => {
     const src = [
-      item("TE00000002", { file: "顛末書No.1476.pdf" }),
-      item("TE00000001", { file: "顛末書No.1476.pdf" }),
+      item("TE00000002", { file: "顛末書№1476.pdf" }),
+      item("TE00000001", { file: "顛末書№1476.pdf" }),
     ];
     expect(sortListItems(src, "file-asc").map((i) => i.denpyo_no)).toEqual([
       "TE00000002",
@@ -445,10 +445,10 @@ describe("sortListItems", () => {
     ]);
   });
 
-  it("伝票No.で始まる名前・拡張子違いでも落ちない", () => {
+  it("伝票№で始まる名前・拡張子違いでも落ちない", () => {
     const src = [
-      item("TE00001476", { file: "顛末書No.TE00001476.pdf" }),
-      item("TE00001475", { file: "顛末書No.1475.pdf" }),
+      item("TE00001476", { file: "顛末書№TE00001476.pdf" }),
+      item("TE00001475", { file: "顛末書№1475.pdf" }),
     ];
     expect(files(sortListItems(src, "file-asc"))).toHaveLength(2);
   });
@@ -467,18 +467,18 @@ describe("sortListItems", () => {
     expect(nextListSort("file-desc")).toBe("default");
   });
 
-  it("伝票No.で昇順・降順に並べられる", () => {
+  it("伝票№で昇順・降順に並べられる", () => {
     const src = [item("TE00001476"), item("TE00000999"), item("TE00001000")];
     expect(nos(sortListItems(src, "no-asc"))).toEqual(["TE00000999", "TE00001000", "TE00001476"]);
     expect(nos(sortListItems(src, "no-desc"))).toEqual(["TE00001476", "TE00001000", "TE00000999"]);
   });
 
-  it("★伝票No.も数字は数の大きさで比べる (桁数が違っても 999 が 1000 より前)", () => {
+  it("★伝票№も数字は数の大きさで比べる (桁数が違っても 999 が 1000 より前)", () => {
     const src = [item("TE1000"), item("TE999")];
     expect(nos(sortListItems(src, "no-asc"))).toEqual(["TE999", "TE1000"]);
   });
 
-  it("伝票No.の見出しも 既定 → 昇順 → 降順 → 既定 と回る", () => {
+  it("伝票№の見出しも 既定 → 昇順 → 降順 → 既定 と回る", () => {
     expect(nextListSort("default", "no")).toBe("no-asc");
     expect(nextListSort("no-asc", "no")).toBe("no-desc");
     expect(nextListSort("no-desc", "no")).toBe("default");
@@ -489,7 +489,7 @@ describe("sortListItems", () => {
     expect(nextListSort("no-asc", "file")).toBe("file-asc");
   });
 
-  it("伝票No.で並べても元の配列は書き換えない", () => {
+  it("伝票№で並べても元の配列は書き換えない", () => {
     const src = [item("TE00000002"), item("TE00000001")];
     const before = nos(src);
     sortListItems(src, "no-asc");
@@ -506,7 +506,7 @@ describe("種類ごとの絞り込み (専決決裁書)", () => {
   const KEYS = ["cloud_stored"] as const;
   const senketsu = (no: string, over: Partial<ListItem> = {}): ListItem => ({
     denpyo_no: no,
-    file: `専決決裁書No.${no.slice(-4)}.pdf`,
+    file: `専決決裁書№${no.slice(-4)}.pdf`,
     at: null,
     exists: true,
     pages: 2,

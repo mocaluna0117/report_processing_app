@@ -132,7 +132,7 @@ export const KINDS: Readonly<Record<KindId, RakurakuKind>> = {
   tenmatsu: {
     id: "tenmatsu",
     label: "顛末書",
-    filePrefix: "顛末書No.",
+    filePrefix: "顛末書№",
     listPath: "sapWorkflowJibumonKensaku/initializeView?workflowId=4&refId=4",
     listUrlMarker: "sapWorkflowJibumonKensaku",
     menuText: "顛末書",
@@ -158,7 +158,7 @@ export const KINDS: Readonly<Record<KindId, RakurakuKind>> = {
   senketsu: {
     id: "senketsu",
     label: "専決決裁書",
-    filePrefix: "専決決裁書No.",
+    filePrefix: "専決決裁書№",
     listPath: "sapWorkflowJibumonKensaku/initializeView?workflowId=3&refId=3",
     listUrlMarker: "sapWorkflowJibumonKensaku",
     menuText: "専決決裁書",
@@ -186,7 +186,7 @@ export const KINDS: Readonly<Record<KindId, RakurakuKind>> = {
   natsuin: {
     id: "natsuin",
     label: "捺印決裁書",
-    filePrefix: "捺印決裁書No.",
+    filePrefix: "捺印決裁書№",
     // ★捺印決裁書は一覧も伝票画面もパスが別
     listPath: "sapWorkflowShinseiKensaku/initializeView?workflowId=8&refId=8",
     listUrlMarker: "sapWorkflowShinseiKensaku",

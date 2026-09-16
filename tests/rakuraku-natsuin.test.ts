@@ -57,8 +57,8 @@ describe("専決決裁書の添付を選んで並べる", () => {
 
 describe("確定するときの名前", () => {
   const fname = (names: string[]) =>
-    natsuinFinalName(composeNatsuinParts(names), {}, "NK00001489", "捺印決裁書No.");
-  const fallback = "捺印決裁書No.1489.pdf";
+    natsuinFinalName(composeNatsuinParts(names), {}, "NK00001489", "捺印決裁書№");
+  const fallback = "捺印決裁書№1489.pdf";
 
   const cannot: [string, string[]][] = [
     ["添付が無い", []],

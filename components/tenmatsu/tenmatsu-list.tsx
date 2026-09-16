@@ -74,7 +74,7 @@ const FRAME_BUTTON_SLOT_CLASS = "w-24";
 const SLOT_BUTTON_CLASS =
   "w-full rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
 /**
- * 左端の固定列 (伝票No. と ファイル名)。横にスクロールしても「どの伝票の行か」が分かるようにする。
+ * 左端の固定列 (伝票№ と ファイル名)。横にスクロールしても「どの伝票の行か」が分かるようにする。
  * 2列目の left は1列目の実幅 (内容依存) を測って inline style で入れる。
  * 2列目の右の境界は右端の枠と同じ濃さにして、ここまでが固定と分かるように。
  */
@@ -83,7 +83,7 @@ const LEFT_TD_CLASS = "sticky z-10 bg-white px-3 py-2 group-hover:bg-slate-50";
 const LEFT_EDGE_CLASS = "border-r-2 border-r-slate-300";
 
 /** ファイル名の見出しに出す印と説明 (押すたびに 既定 → 昇順 → 降順 と回る) */
-const SORT_LABEL: Record<SortColumn, string> = { no: "伝票No.", file: "ファイル名" };
+const SORT_LABEL: Record<SortColumn, string> = { no: "伝票№", file: "ファイル名" };
 
 /** その列の見出しに出す矢印 (この列で並べていなければ ↕) */
 const sortMark = (sort: ListSort, column: SortColumn) =>
@@ -149,7 +149,7 @@ export function TenmatsuList({
   onShowCompletedChange: (value: boolean) => void;
   /** この画面でチェックを変えた行 (完了になっても読み直すまでは隠さない) */
   recentNos: ReadonlySet<string>;
-  /** チェックの変更中の伝票No. */
+  /** チェックの変更中の伝票№ */
   savingNos: ReadonlySet<string>;
   /** チェックを触れない理由。null なら触れる */
   flagDisabledReason: string | null;
@@ -197,7 +197,7 @@ export function TenmatsuList({
   const counts = useMemo(() => listCounts(items, view), [items, view]);
 
   // 左端の固定列の幅。table-auto では列幅が内容で決まるので、描いた後に測る。
-  // 伝票No. の幅が2列目の left、2列分の幅が scroll-padding-left になる
+  // 伝票№ の幅が2列目の left、2列分の幅が scroll-padding-left になる
   const noHeadRef = useRef<HTMLTableCellElement>(null);
   const fileHeadRef = useRef<HTMLTableCellElement>(null);
   const [leftWidths, setLeftWidths] = useState({ no: 0, file: 0 });

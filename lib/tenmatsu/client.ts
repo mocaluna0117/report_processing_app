@@ -98,9 +98,9 @@ export interface StatusPayload {
   /** 進捗。processed は完了時にしか入らないので、途中経過はこの done/total を使う */
   done: number;
   total: number;
-  /** いま処理中の伝票No. */
+  /** いま処理中の伝票№ */
   current: string | null;
-  /** 人間向けの1行 (例「顛末書No.1469.pdf を保存しました」) */
+  /** 人間向けの1行 (例「顛末書№1469.pdf を保存しました」) */
   message: string;
   error: string | null;
   /** 失敗したときの、PC上のログのパス */
@@ -197,7 +197,7 @@ export interface ListItem {
   title?: string | null;
   /** 内容。捺印決裁書だけが返す */
   content?: string | null;
-  /** 紐づく専決決裁書の伝票No.。捺印決裁書だけが返す */
+  /** 紐づく専決決裁書の伝票№。捺印決裁書だけが返す */
   senketsu_no?: string | null;
   /**
    * 動画・音声のため結合しなかった添付の名前。
@@ -382,7 +382,7 @@ export function describeFailure(
   const detail = serverError?.trim() || null;
   switch (status) {
     case 400:
-      // /file の「伝票No.が指定されていません」だけでなく /run (件数) と /flags でも起きる。
+      // /file の「伝票№が指定されていません」だけでなく /run (件数) と /flags でも起きる。
       // どれもサーバーが必ず日本語の error を返すので、ここは本文が読めなかったときの保険
       return { kind: "badRequest", message: detail ?? "送った内容に問題があります" };
     case 401:

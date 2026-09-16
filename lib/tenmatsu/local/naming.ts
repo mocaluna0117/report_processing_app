@@ -49,7 +49,7 @@ async function isFree(store: FolderStore, dir: Path, name: string, reserved: Rea
 }
 
 /**
- * `{接頭辞}{下4桁}.pdf`。既にあれば上書きせずフル伝票No.の名前にし、それも埋まっていれば `_2`〜`_99`。
+ * `{接頭辞}{下4桁}.pdf`。既にあれば上書きせずフル伝票№の名前にし、それも埋まっていれば `_2`〜`_99`。
  * 戻り値はファイル名（dir の中の名前）。reserved はほかの記録が使っている名前（保存先の直下だけに効く）。
  */
 export async function decideOutputName(

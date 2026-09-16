@@ -59,7 +59,7 @@ const dx = (pj: string, over: Partial<CustomerFields> = {}) =>
 /** 顛末書の1行 (PC側の /list が返す形) */
 const item = (over: Partial<ListItem> = {}): ListItem => ({
   denpyo_no: "TE00001476",
-  file: "顛末書No.1476.pdf",
+  file: "顛末書№1476.pdf",
   at: null,
   exists: true,
   pages: 3,

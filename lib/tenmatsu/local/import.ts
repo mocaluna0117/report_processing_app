@@ -9,7 +9,7 @@
  * 合わせ方（何度取り込んでも同じ結果になる）:
  *   - done … 和集合。★取り込む記録（古い）を前に、フォルダーにあった記録（新しい）を後ろに並べる
  *            （一覧は「記録に足した順の逆」なので、新しい方式で取った分が上に来る）
- *   - log  … 同じ (伝票No., 取得日時, ファイル名) は1つにまとめる
+ *   - log  … 同じ (伝票№, 取得日時, ファイル名) は1つにまとめる
  *   - flags … 伝票ごとに updated_at の新しい方を採る（同じなら今フォルダーにある方）
  *   - pending … `_保留/<dir>/manifest.json` がフォルダーに**実在するもの**だけ。保存済みの伝票の保留は入れない
  *   - それ以外の項目 … フォルダーにある方を残し、無ければ取り込む
@@ -50,14 +50,14 @@ export function parseProcessedJson(text: string): ProcessedData {
     throw new ImportError("取得の記録の形ではありません（done と log が見つかりません）。processed.json を選んでください");
   }
   const done = raw.done.filter((no): no is string => typeof no === "string" && no !== "");
-  if (done.length !== raw.done.length) throw new ImportError("記録の done に伝票No.でない値が入っています");
+  if (done.length !== raw.done.length) throw new ImportError("記録の done に伝票№でない値が入っています");
   const log = raw.log.filter((e): e is LogEntry => isObject(e) && typeof e.denpyo_no === "string" && typeof e.file === "string");
   if (log.length !== raw.log.length) throw new ImportError("記録の log に形の違う行が入っています");
   const flags = isObject(raw.flags) ? (raw.flags as Record<string, FlagsEntry>) : {};
   const pending = isObject(raw.pending) ? (raw.pending as Record<string, PendingEntry>) : {};
   for (const [no, entry] of Object.entries(pending)) {
     if (!isObject(entry) || typeof entry.dir !== "string" || !Array.isArray(entry.missing)) {
-      throw new ImportError(`記録の保留（伝票No. ${no}）の形が違います`);
+      throw new ImportError(`記録の保留（伝票№ ${no}）の形が違います`);
     }
   }
   return { ...raw, done, log, flags, pending };
@@ -74,9 +74,9 @@ export interface ImportSummary {
   flagsTaken: number;
   /** 取り込んだ保留の数 */
   pendingTaken: number;
-  /** フォルダーにファイルが無いので取り込まなかった保留（伝票No.） */
+  /** フォルダーにファイルが無いので取り込まなかった保留（伝票№） */
   pendingWithoutFiles: string[];
-  /** 保存済みなので取り込まなかった・外した保留（伝票No.） */
+  /** 保存済みなので取り込まなかった・外した保留（伝票№） */
   pendingAlreadySaved: string[];
   /** 取り込んだあとの保存済みの伝票のうち、PDF がフォルダーに見つかった数 */
   pdfFound: number;
