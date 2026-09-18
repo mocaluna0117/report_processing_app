@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { appendixSheet } from "@/lib/report/layout/appendix-sheet";
 import { resolveGeometry, type Geometry, type Measure } from "@/lib/report/layout/grid";
-import { MAIN_SHEET } from "@/lib/report/layout/main-sheet";
+import { MAIN_ITEM_USABLE_WIDTH, MAIN_SHEET, mainSheet } from "@/lib/report/layout/main-sheet";
+import { planMainRows, wrapText } from "@/lib/report/layout/wrap";
 import { reportMeasure } from "./helpers/report-fonts";
 
 /**
@@ -247,6 +248,96 @@ describe("本紙のレイアウト", () => {
       expect(Math.abs(sorted[i].x1 - ref.x1), `下線${i} の右端`).toBeLessThan(3);
       expect(Math.abs(sorted[i].y0 - ref.top), `下線${i} の位置`).toBeLessThan(0.6);
     });
+  });
+});
+
+describe("指示内容の折り返し (本紙)", () => {
+  /** 実際に出た56文字の項目 (架空の文面) */
+  const LONG =
+    "基礎の巾木仕上げ施工時に土台水切りや通気パッキン周辺の通気スリットまで塗り込まれて隙間が閉塞・阻害されている状況";
+  const wrapItem = (text: string) => wrapText(text, MAIN_ITEM_USABLE_WIDTH, 11.04, false, measure);
+
+  /** 項目を割り付けて本紙を組み立てる */
+  function build(items: { no: string; text: string }[]) {
+    const rows = planMainRows(items, wrapItem);
+    expect(rows, "5行に入る割り付け").not.toBeNull();
+    const values: Record<string, string> = {};
+    items.forEach((item, i) => {
+      values[`no${i}`] = item.no;
+      values[`item${i}`] = item.text;
+    });
+    return { geometry: resolveGeometry(mainSheet(rows!), values, {}, measure), rows: rows! };
+  }
+
+  it("★長い項目は文字を小さくせず2行に折り返し、枠からはみ出さない", () => {
+    const { geometry, rows } = build([{ no: "①", text: LONG }]);
+    expect(rows[0].rowSpan).toBe(2);
+    const wrapped = wrapItem(LONG);
+    expect(wrapped).toHaveLength(2);
+    const lines = wrapped.map((line) => {
+      const found = geometry.texts.find((t) => t.text === line);
+      expect(found, `「${line}」の描画`).toBeDefined();
+      return found!;
+    });
+    expect(lines.map((t) => t.text).join("")).toBe(LONG);
+    for (const line of lines) {
+      // 文字の大きさは 11pt のまま (縮めない)
+      expect(line.size).toBeCloseTo(11.04, 2);
+      // C列の左端から右端 (U列) の内側に収まる
+      expect(line.x + measure(line.text, line.size, line.bold)).toBeLessThan(541.2);
+      expect(line.clip, "切り抜きは要らない").toBeUndefined();
+    }
+    // 2行目のベースラインは1行目の1行下 (17行目の既定位置)
+    expect(lines[1].baseline - lines[0].baseline).toBeCloseTo(25.67, 1);
+    expect(geometry.overflow).toEqual([]);
+  });
+
+  it("★折り返した枠の途中に横罫線を引かない (16/17の境目は無く、17/18の境目はある)", () => {
+    const { geometry } = build([{ no: "①", text: LONG }]);
+    const horizontalAt = (y: number) =>
+      geometry.lines.filter((l) => l.y0 === l.y1 && Math.abs(l.y0 - y) < 0.5 && l.x0 < 100);
+    // 16行目の下 (= 17行目の上) には線を引かない
+    expect(horizontalAt(386.76)).toHaveLength(0);
+    // 17行目の下には引く
+    expect(horizontalAt(412.44).length).toBeGreaterThan(0);
+  });
+
+  it("★作業内容の枠も同じ割り付けになる (№が指示内容と対応する)", () => {
+    const { geometry } = build([{ no: "①", text: LONG }, { no: "②", text: "短い項目" }]);
+    // ①は23〜24行、②は25行。24/25 の境目には線がある
+    const numbers = geometry.texts.filter((t) => t.text === "①");
+    expect(numbers, "指示内容と作業内容の2箇所に①").toHaveLength(2);
+    // 作業内容側の①は 23〜24 行の下端 (指示内容の①より下)
+    const [first, second] = numbers.map((t) => t.baseline).sort((a, b) => a - b);
+    expect(second - first).toBeGreaterThan(100);
+  });
+
+  it("短い項目だけなら今までどおり1行ずつ (ベースラインは見本と同じ)", () => {
+    const { geometry, rows } = build([
+      { no: "①", text: "1階洋室壁のクロスにのり汚れ" },
+      { no: "②", text: "2階廊下の建具に傷" },
+    ]);
+    expect(rows.map((r) => r.rowSpan)).toEqual([1, 1]);
+    const item = geometry.texts.find((t) => t.text === "1階洋室壁のクロスにのり汚れ");
+    expect(item).toBeDefined();
+    // 16行目の下端 (386.76) から BASELINE_FROM_BOTTOM 分だけ上
+    expect(item!.baseline).toBeCloseTo(386.76 - 5.9, 1);
+    expect(geometry.overflow).toEqual([]);
+  });
+
+  it("★別紙の長い項目は縮めても警告を出さない (丸めを小さい側にした)", () => {
+    const { spec, values } = appendixSheet({
+      title: "1年目点検是正項目",
+      propertyLine: "物件名：x",
+      ownerLine: "施主名：x様",
+      items: ["あ".repeat(50)],
+      pageLabel: "2/2",
+    });
+    const geometry = resolveGeometry(spec, values, {}, measure);
+    const item = geometry.texts.find((t) => t.text === "あ".repeat(50));
+    expect(item).toBeDefined();
+    expect(item!.size).toBeLessThan(9.36);
+    expect(geometry.overflow).toEqual([]);
   });
 });
 

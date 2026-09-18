@@ -62,7 +62,16 @@ export function appendixSheet(input: AppendixPageInput): {
     const text = input.items[k] ?? "";
     values[`item${k}`] = text;
     cells.push(
-      { ref: `A${itemRow}`, field: `item${k}`, size: 11, v: "center", border: ITEM_ROW, shrink: true },
+      {
+        ref: `A${itemRow}`,
+        field: `item${k}`,
+        size: 11,
+        v: "center",
+        border: ITEM_ROW,
+        shrink: true,
+        // 警告に出す呼び名 (別紙の行は高さが足りないので折り返さず、縮めて入れる)
+        label: `別紙の項目${text.slice(0, 1) || k + 1}`,
+      },
       {
         ref: `A${itemRow + 1}`,
         // 対応結果の見出しは項目がある行だけ (見本の別紙と同じ)

@@ -3,6 +3,7 @@
  * ここでは pdf-lib に依存せず、座標計算だけを行う (テストしやすくするため)。
  * 座標は pt・左上原点 (y は下向き)。
  */
+import { wrapText } from "@/lib/report/layout/wrap";
 import {
   BASELINE_BORDER_LIFT,
   BASELINE_CENTER_RATIO,
@@ -44,6 +45,13 @@ export interface CellSpec {
   fill?: string;
   /** 幅に収まらないとき縮小するか */
   shrink?: boolean;
+  /**
+   * 幅に収まらないとき、**文字を小さくせずに次の行へ折り返す**か (本紙の指示内容)。
+   * 結合した枠 (C16:U17 など) の1行目・2行目…に1行ずつ置く。
+   */
+  wrap?: boolean;
+  /** 警告に出す呼び名 (「指示内容①」)。無ければセル番地 */
+  label?: string;
   /**
    * はみ出した文字をセルの中で切る。
    * Excelは隣のセルが埋まっているとはみ出し分を表示しないので、それを再現する
@@ -247,7 +255,7 @@ export function resolveGeometry(
       if (r) edges.add(false, right, top, bottom, r);
     }
 
-    const raw = cell.text ?? (cell.field ? values[cell.field] : undefined);
+  const raw = cell.text ?? (cell.field ? values[cell.field] : undefined);
     if (cell.checkbox !== undefined) {
       const checked = Boolean(flags[cell.checkbox]);
       const size = CHECKBOX.size * scale;
@@ -269,24 +277,73 @@ export function resolveGeometry(
 
     const baseSize = quantizeFontSize((cell.size ?? 11) * scale);
     const usable = right - left - (PAD_LEFT + PAD_RIGHT) * scale;
+    const bold = Boolean(cell.bold);
+    const bottomBorder = rowBottomBorder.get(box.row1);
+    /** その行 (0始まり・枠の中) の下寄せベースライン。最終行だけ下罫線の太さで持ち上げる */
+    const baselineOfRow = (index: number, size: number) => {
+      const isLast = index === box.row1 - box.row0;
+      const rowBottom = rowY[box.row0 + index + 1];
+      return (
+        rowBottom -
+        (BASELINE_FROM_BOTTOM +
+          (isLast && (bottomBorder === "medium" || bottomBorder === "double") ? BASELINE_BORDER_LIFT : 0)) *
+          scale
+      );
+    };
+
+    // ★折り返す枠 (指示内容): 文字を小さくせず、枠の1行目・2行目… に1行ずつ置く。
+    //   №も同じ扱いにして、項目の1行目の横に並べる (枠の下端ではなく)
+    if (cell.wrap) {
+      const lines = wrapText(raw, usable, baseSize, bold, measure);
+      const rows = box.row1 - box.row0 + 1;
+      if (lines.length > rows) overflow.push(cell.label ?? cell.ref);
+      const wrapAlign = cell.h ?? "left";
+      lines.slice(0, rows).forEach((line, index) => {
+        const lineWidth = measure(line, baseSize, bold);
+        texts.push({
+          text: line,
+          x:
+            wrapAlign === "left"
+              ? left + PAD_LEFT * scale
+              : wrapAlign === "right"
+                ? right - PAD_RIGHT * scale - lineWidth
+                : (left + right) / 2 - lineWidth / 2,
+          baseline: baselineOfRow(index, baseSize),
+          size: baseSize,
+          bold,
+          clip: cell.clipToCell ? { x0: left, y0: top, x1: right, y1: bottom } : undefined,
+        });
+      });
+      if (cell.underline) {
+        const lastIndex = Math.min(lines.length, rows) - 1;
+        const lastWidth = lastIndex >= 0 ? measure(lines[lastIndex], baseSize, bold) : 0;
+        for (const offset of [1.18, 2.38]) {
+          underlines.push({
+            x0: left + PAD_LEFT * scale,
+            y0: baselineOfRow(Math.max(lastIndex, 0), baseSize) + offset * scale,
+            x1: left + PAD_LEFT * scale + lastWidth,
+            y1: baselineOfRow(Math.max(lastIndex, 0), baseSize) + (offset + 0.6) * scale,
+          });
+        }
+      }
+      continue;
+    }
+
     let size = baseSize;
-    let width = measure(raw, size, Boolean(cell.bold));
+    let width = measure(raw, size, bold);
     if (cell.shrink && width > usable && width > 0) {
-      size = Math.max(MIN_FONT_SIZE * scale, quantizeFontSize((size * usable) / width));
-      width = measure(raw, size, Boolean(cell.bold));
+      // ★丸めは小さい側へ。大きい側に丸めると、縮めたのに収まらず「はみ出し」になってしまう
+      size = Math.max(MIN_FONT_SIZE * scale, Math.floor(((size * usable) / width) / 0.12) * 0.12);
+      width = measure(raw, size, bold);
     }
     const clipped = width > usable + 0.5;
-    if (clipped && cell.shrink) overflow.push(cell.ref);
+    if (clipped && cell.shrink) overflow.push(cell.label ?? cell.ref);
     const clipToCell = cell.clipToCell === true || (clipped && cell.shrink === true);
 
-    const bottomBorder = rowBottomBorder.get(box.row1);
     const baseline =
       cell.v === "center"
         ? (top + bottom) / 2 + size * BASELINE_CENTER_RATIO
-        : bottom -
-          (BASELINE_FROM_BOTTOM +
-            (bottomBorder === "medium" || bottomBorder === "double" ? BASELINE_BORDER_LIFT : 0)) *
-            scale;
+        : baselineOfRow(box.row1 - box.row0, size);
 
     const align = cell.h ?? "left";
     const x =
@@ -301,7 +358,7 @@ export function resolveGeometry(
       x,
       baseline,
       size,
-      bold: Boolean(cell.bold),
+      bold,
       // はみ出した分をセルの中で切る (縮小しても収まらない場合と、Excelが切る欄)
       clip: clipToCell ? { x0: left, y0: top, x1: right, y1: bottom } : undefined,
     });

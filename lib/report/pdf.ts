@@ -21,10 +21,11 @@ import {
   appendixSheet,
   paginateAppendixItems,
 } from "@/lib/report/layout/appendix-sheet";
-import { resolveGeometry, type Geometry, type SheetSpec } from "@/lib/report/layout/grid";
-import { MAIN_SHEET } from "@/lib/report/layout/main-sheet";
-import { PAGE_HEIGHT, PAGE_WIDTH } from "@/lib/report/metrics";
-import type { ReportData } from "@/lib/report/model";
+import { resolveGeometry, type Geometry, type Measure, type SheetSpec } from "@/lib/report/layout/grid";
+import { MAIN_ITEM_USABLE_WIDTH, MAIN_SHEET, mainSheet } from "@/lib/report/layout/main-sheet";
+import { type MainRow, planMainRows, wrapText } from "@/lib/report/layout/wrap";
+import { PAGE_HEIGHT, PAGE_WIDTH, quantizeFontSize } from "@/lib/report/metrics";
+import { APPENDIX_REFERENCE_TEXT, buildAppendix, MAIN_SLOTS, type ReportData } from "@/lib/report/model";
 import { codePointsOf, subsetFont } from "@/lib/report/subset";
 
 export interface ReportFonts {
@@ -203,13 +204,16 @@ function reportTexts(data: ReportData, values: Record<string, string>): string[]
   const texts = [...Object.values(values), MISSING_GLYPH];
   for (const cell of MAIN_SHEET.cells) if (cell.text) texts.push(cell.text);
   if (MAIN_SHEET.header) texts.push(MAIN_SHEET.header.text);
-  if (data.appendix) {
-    const pages = paginateAppendixItems(data.appendix.items);
+  // 項目が長くて別紙へ回ることがあるので、そのときに出る文字も入れておく
+  const appendix = data.appendix ?? (data.items.length > 0 ? buildAppendix(data) : null);
+  if (!data.appendix) texts.push(APPENDIX_REFERENCE_TEXT);
+  if (appendix) {
+    const pages = paginateAppendixItems(appendix.items);
     pages.forEach((items, index) => {
       const { spec, values: appendixValues } = appendixSheet({
-        title: data.appendix!.title,
-        propertyLine: data.appendix!.propertyLine,
-        ownerLine: data.appendix!.ownerLine,
+        title: appendix.title,
+        propertyLine: appendix.propertyLine,
+        ownerLine: appendix.ownerLine,
         items,
         pageLabel: appendixPageLabel(index, pages.length),
       });
@@ -218,6 +222,23 @@ function reportTexts(data: ReportData, values: Record<string, string>): string[]
     });
   }
   return texts.map(sanitizeText);
+}
+
+/** 指示内容の枠の文字サイズ (11pt をExcelの刻みに丸めたもの) */
+const ITEM_FONT_SIZE = quantizeFontSize(11);
+
+/**
+ * 本紙の指示内容の割り付けを決める。長い項目は次の枠へ折り返して続ける。
+ * 5つの枠に入らなければ null (呼ぶ側が別紙に回す)。
+ */
+function planInstructions(data: ReportData, measure: Measure): MainRow[] | null {
+  const items = data.main.filter((slot) => slot.text);
+  if (items.length === 0) return [];
+  return planMainRows(
+    items,
+    (text) => wrapText(sanitizeText(text), MAIN_ITEM_USABLE_WIDTH, ITEM_FONT_SIZE, false, measure),
+    MAIN_SLOTS,
+  );
 }
 
 /** 本紙に差し込む値 */
@@ -309,23 +330,39 @@ export async function buildReportPdf(data: ReportData, fonts: ReportFonts): Prom
     for (const ref of geometry.overflow) overflow.add(ref);
   };
 
-  render(MAIN_SHEET, values, mainFlags(data));
+  // ★長い項目は本紙の次の枠へ折り返す。5つの枠に入らなければ、PDFだけ別紙に回す
+  const plan = data.useAppendix ? [] : planInstructions(data, measure);
+  const spilled = plan === null;
+  const appendix = spilled ? buildAppendix(data) : data.appendix;
+  if (spilled) {
+    const referenceValues = { ...values };
+    for (let i = 0; i < MAIN_SLOTS; i++) {
+      referenceValues[`no${i}`] = "";
+      referenceValues[`item${i}`] = i === 0 ? APPENDIX_REFERENCE_TEXT : "";
+    }
+    render(mainSheet(), referenceValues, mainFlags(data));
+    warnings.push(
+      "指示内容が長く本紙の5行に入らないため、PDFでは別紙に載せました (Excelは本紙に1行ずつ入ります)",
+    );
+  } else {
+    render(mainSheet(plan.length > 0 ? plan : undefined), values, mainFlags(data));
+  }
 
-  if (data.appendix) {
-    const pages = paginateAppendixItems(data.appendix.items);
+  if (appendix) {
+    const pages = paginateAppendixItems(appendix.items);
     pages.forEach((items, index) => {
       const { spec, values } = appendixSheet({
-        title: data.appendix!.title,
-        propertyLine: data.appendix!.propertyLine,
-        ownerLine: data.appendix!.ownerLine,
+        title: appendix.title,
+        propertyLine: appendix.propertyLine,
+        ownerLine: appendix.ownerLine,
         items,
         pageLabel: appendixPageLabel(index, pages.length),
       });
       render(spec, values, {});
     });
-    if (data.appendix.items.length > APPENDIX_ROWS_PER_PAGE) {
+    if (appendix.items.length > APPENDIX_ROWS_PER_PAGE) {
       warnings.push(
-        `指示内容が${data.appendix.items.length}件あるため、PDFの別紙を${pages.length}ページに分けました`,
+        `指示内容が${appendix.items.length}件あるため、PDFの別紙を${pages.length}ページに分けました`,
       );
     }
   }
