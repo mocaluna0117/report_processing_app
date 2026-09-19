@@ -196,16 +196,17 @@ export const KINDS: Readonly<Record<KindId, RakurakuKind>> = {
         detailUrlMarker: "workflowDetailView",
       },
       {
-        // ★「閲覧」タブが無いアカウント向け。実画面で未確認（「画面の下見」の結果で直す）
+        // ★「閲覧」タブが無いアカウント向け。2026-09-19 の「画面の下見」で実画面を確認済み
+        //   （一覧の列の見出し・伝票画面の部品は閲覧側と同じ。伝票画面のパスだけが違う）
         id: "shinsei",
         label: ROUTE_LABELS.shinsei,
         scope: "own",
         listPath: "sapWorkflowShinseiKensaku/initializeView?workflowId=4&refId=4",
         listUrlMarker: "sapWorkflowShinseiKensaku",
         menuText: "顛末書",
+        menuSteps: [{ text: "ワークフロー" }, { text: "行為の申請(稟議)" }, { text: "一覧", near: "顛末書" }],
         menuStepWaitMs: 5_000,
         detailUrlMarker: "sapWorkflowDenpyo/detailView",
-        unverified: true,
       },
     ],
     list: {
@@ -242,16 +243,16 @@ export const KINDS: Readonly<Record<KindId, RakurakuKind>> = {
         detailUrlMarker: "workflowDetailView",
       },
       {
-        // ★「閲覧」タブが無いアカウント向け。実画面で未確認（「画面の下見」の結果で直す）
+        // ★「閲覧」タブが無いアカウント向け。2026-09-19 の「画面の下見」で実画面を確認済み
         id: "shinsei",
         label: ROUTE_LABELS.shinsei,
         scope: "own",
         listPath: "sapWorkflowShinseiKensaku/initializeView?workflowId=3&refId=3",
         listUrlMarker: "sapWorkflowShinseiKensaku",
         menuText: "専決決裁書",
+        menuSteps: [{ text: "ワークフロー" }, { text: "行為の申請(稟議)" }, { text: "一覧", near: "専決決裁書" }],
         menuStepWaitMs: 5_000,
         detailUrlMarker: "sapWorkflowDenpyo/detailView",
-        unverified: true,
       },
     ],
     list: {

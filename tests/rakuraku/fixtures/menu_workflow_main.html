@@ -2,30 +2,46 @@
 <meta charset="utf-8">
 <title>ワークフロー（テスト用）</title>
 <!--
-  「閲覧」タブが無いアカウントのメニュー（架空）。
-  ★上部タブに「閲覧」が無く、「ワークフロー」の中から各書類の一覧へ行く。
-  ★部門の切り替え（select[name=bumonCd]）も無い。
-  実画面は未確認なので、文字も構造も推測。下見の結果が届いたら実物に合わせる。
+  「ワークフロー」タブから各書類の一覧へ行く画面（架空）。
+  2026-09-19 の「画面の下見」で分かった実画面の作りを写している:
+    - 上部の「ワークフロー」を押すと、隠れていた div#wf_shinsei_list が開く
+    - その中はタブ（行為の申請(稟議) / 押印の申請 / 業務 / 人事）で中身が入れ替わる
+    - 各書類の行に「一覧」があり、href は
+      sapWorkflowShinseiKensaku/initializeView?workflowId=..&refId=.. （GETリンク）
+    - タブやワークフローの見出しのリンクは javascript:（行き先を持たない）
+  ★このページは「閲覧」タブを持たないアカウントの再現なので、上部に「閲覧」は無い。
+  データ・文字はすべて架空。
 -->
 <body>
-<div class="tile" onclick="openPanel()">ワークフロー</div>
-<div class="tile" onclick="void 0">経費精算</div>
+<div class="top_menu">
+  <a href="javascript:void(0)" onclick="openPanel()">ワークフロー</a>
+  <a href="javascript:void(0)" onclick="void 0">経費精算</a>
+</div>
 
-<div id="panel" style="display:none">
-  <div class="tab" onclick="showTab('ringi')">行為の申請(稟議)</div>
-  <div class="tab" onclick="showTab('oin')">押印の申請</div>
+<div id="wf_shinsei_list" class="wf_list" style="display:none">
+  <a href="javascript:void(0)" onclick="showTab('ringi')">行為の申請(稟議)</a>
+  <a href="javascript:void(0)" onclick="showTab('oin')">押印の申請</a>
 
   <div id="tab-ringi" style="display:none">
     <table>
-      <tr><td>［行為の申請］ 稟議書</td><td><button onclick="go('ringi', 0)">一覧</button></td></tr>
-      <tr><td>［行為の申請］ 顛末書</td><td><button onclick="go('shinsei_list.html', 4)">一覧</button></td></tr>
-      <tr><td>［行為の申請］ 専決決裁書</td><td><button onclick="go('shinsei_list.html', 3)">一覧</button></td></tr>
+      <tr><td>稟議書</td><td><a href="menu_list_stub.html?wf=ringi" onclick="closeList()">一覧</a></td></tr>
+      <tr>
+        <td>顛末書</td>
+        <td><a href="shinsei_list.html?workflowId=4&amp;refId=4" onclick="closeList()">一覧</a></td>
+      </tr>
+      <tr>
+        <td>専決決裁書</td>
+        <td><a href="shinsei_list.html?workflowId=3&amp;refId=3" onclick="closeList()">一覧</a></td>
+      </tr>
     </table>
   </div>
 
   <div id="tab-oin" style="display:none">
     <table>
-      <tr><td>［押印の申請］ 捺印決裁書</td><td><button onclick="go('shinsei_list.html', 8)">一覧</button></td></tr>
+      <tr>
+        <td>［押印の申請］捺印決裁書</td>
+        <td><a href="shinsei_list.html?workflowId=8&amp;refId=8" onclick="closeList()">一覧</a></td>
+      </tr>
     </table>
   </div>
 </div>
@@ -33,15 +49,12 @@
 <script>
 window.__menuClicked = 0;
 document.addEventListener('click', function () { window.__menuClicked += 1; }, true);
-function openPanel() { document.getElementById('panel').style.display = 'block'; }
+function openPanel() { document.getElementById('wf_shinsei_list').style.display = 'block'; }
 function showTab(name) {
   document.getElementById('tab-ringi').style.display = 'none';
   document.getElementById('tab-oin').style.display = 'none';
   document.getElementById('tab-' + name).style.display = 'block';
 }
-function go(page, workflowId) {
-  if (page === 0) return;
-  window.location.href = page + '?workflowId=' + workflowId + '&refId=' + workflowId + '&clicks=' + window.__menuClicked;
-}
+function closeList() {}
 </script>
 </body>

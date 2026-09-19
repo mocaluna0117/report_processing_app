@@ -175,19 +175,30 @@ describe.skipIf(!browser)("経路の切り替え", () => {
     await page.close();
   }, 30_000);
 
-  it("ワークフローのメニューを3段たどって一覧を開ける", async () => {
+  it("★設定どおりのメニューをたどってワークフロー側の一覧を開ける（URLが効かないときの保険）", async () => {
     const page = await open("menu_workflow.html");
+    // ★メニューの手順は設定（KINDS）のものをそのまま使う。実画面の文字と合っているかを見張る
+    const shinsei = KINDS.tenmatsu.routes[1];
+    expect(shinsei.id).toBe("shinsei");
     const kind = withRoutes(KINDS.tenmatsu, [
-      {
-        listPath: "",
-        listUrlMarker: "shinsei_list.html",
-        menuSteps: [{ text: "ワークフロー" }, { text: "行為の申請(稟議)" }, { text: "一覧", near: "顛末書" }],
-      },
+      { ...shinsei, listPath: "", listUrlMarker: "shinsei_list.html" },
     ]);
     const location = await gotoList(page, kind, tenant(), { log, timing: QUICK });
+    // 「一覧」は6つ以上並ぶが、同じ行の「顛末書」で選べている（専決決裁書の一覧へ行かない）
     expect(location.frame.url()).toContain("workflowId=4");
     expect(location.foundUrl).toContain("shinsei_list.html");
-    expect(rememberedOf(location)).toEqual({ id: "jibumon", url: location.foundUrl });
+    expect(rememberedOf(location)).toEqual({ id: "shinsei", url: location.foundUrl });
+    await page.close();
+  }, 30_000);
+
+  it("専決決裁書のメニューも、同じ画面から取り違えずに開ける", async () => {
+    const page = await open("menu_workflow.html");
+    const shinsei = KINDS.senketsu.routes[1];
+    const kind = withRoutes(KINDS.senketsu, [
+      { ...shinsei, listPath: "", listUrlMarker: "shinsei_list.html" },
+    ]);
+    const location = await gotoList(page, kind, tenant(), { log, timing: QUICK });
+    expect(location.frame.url()).toContain("workflowId=3");
     await page.close();
   }, 30_000);
 });

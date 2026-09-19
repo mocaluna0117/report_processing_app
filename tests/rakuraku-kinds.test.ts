@@ -4,19 +4,22 @@ import type { KindId, RouteId } from "@/lib/rakuraku/protocol";
 
 /**
  * 実画面で観測された伝票画面の URL の形（テナントの部分は除いた相対パス。架空の伝票No.）。
- * ★ワークフロー（申請検索）側の顛末書・専決決裁書は**実画面で未確認**なので置いていない
- *   （「画面の下見」の結果が届いたら足す）。
+ * 閲覧（自部門検索）は 2026-09-01、ワークフロー（申請検索）は 2026-09-19 の「画面の下見」で確認。
+ * ★経路によって伝票画面のパスが変わる（閲覧は sapWorkflowDenpyoView/workflowDetailView、
+ *   ワークフローは sapWorkflowDenpyo/detailView）。
  */
 const DETAIL_PATHS: Record<KindId, Partial<Record<RouteId, string>>> = {
   tenmatsu: {
     jibumon:
       "sapWorkflowDenpyoView/workflowDetailView?tmpFlg=false&eDenpyoNo=TE00009001&prevDispNo=4&workflowId=4&refId=4",
+    shinsei: "sapWorkflowDenpyo/detailView?tmpFlg=false&eDenpyoNo=TE00009001&workflowId=4&refId=4",
   },
   senketsu: {
     jibumon:
       "sapWorkflowDenpyoView/workflowDetailView?tmpFlg=false&eDenpyoNo=SE00009001&prevDispNo=3&workflowId=3&refId=3",
+    shinsei: "sapWorkflowDenpyo/detailView?tmpFlg=false&eDenpyoNo=SE00009001&workflowId=3&refId=3",
   },
-  natsuin: { shinsei: "sapWorkflowDenpyo/detailView?eDenpyoNo=NK00009001&workflowId=8" },
+  natsuin: { shinsei: "sapWorkflowDenpyo/detailView?tmpFlg=false&eDenpyoNo=NK00009001&workflowId=8&refId=8" },
 };
 
 const routesOf = (kind: { id: KindId; routes: readonly ListRoute[] }) =>
@@ -75,6 +78,13 @@ describe("種類ごとの画面の設定", () => {
     expect(KINDS.senketsu.routes[0].id).toBe("jibumon");
     expect(KINDS.tenmatsu.routes.map((r) => r.id)).toEqual(["jibumon", "shinsei"]);
     expect(KINDS.natsuin.routes.map((r) => r.id)).toEqual(["shinsei"]);
+  });
+
+  it("ワークフロー（申請検索）の一覧の列は、閲覧（自部門検索）と同じ見出しで読める", () => {
+    // 2026-09-19 の下見で、どちらの経路も見出しが同じことを確認した（経路ごとの上書きは要らない）
+    for (const kind of Object.values(KINDS)) {
+      for (const route of kind.routes) expect(route.list).toBeUndefined();
+    }
   });
 
   it("★ワークフロー（申請検索）の一覧に出るのは自分の申請分だけ、と印が付いている", () => {
