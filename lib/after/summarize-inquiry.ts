@@ -15,7 +15,7 @@ import { INQUIRY_TEXT_MAX, ruleBasedInquirySummary } from "@/lib/summarize/inqui
 import { redactPii } from "@/lib/summarize/redact";
 import type { InquiryExampleInput } from "@/lib/summarize/types";
 import type { SummarizeResponse } from "@/lib/summarize/types";
-import { recordSummary } from "@/lib/summary";
+import { recordSummary, withoutSupplements } from "@/lib/summary";
 import { toHalfWidthAlnum } from "@/lib/text";
 import { ADDRESS_COL, OWNER_COL } from "@/lib/tsv";
 
@@ -92,11 +92,12 @@ export function redactedInquiryOf(row: AfterCase): string {
  * どちらも伏せ字にしてから返す。本文は利用者が手で書くところなので、
  * お客様の名前や電話番号が混ざりうる (保存も送信も伏せ字だけにする)。
  * 本文は工事区分ごとに分けている場合もあるため、記録単位にまとめたものを使う。
+ * 補足の行は外す (完了報告書のための書き足しで、要約が作るものではない)。
  */
 export function inquiryExampleOf(row: AfterCase): InquiryExampleInput {
   return {
     input: redactPii(redactedInquiryOf(row)).trim().slice(0, EXAMPLE_INPUT_MAX),
-    output: redactPii(recordSummary(row)).trim().slice(0, EXAMPLE_OUTPUT_MAX),
+    output: redactPii(withoutSupplements(recordSummary(row))).trim().slice(0, EXAMPLE_OUTPUT_MAX),
   };
 }
 

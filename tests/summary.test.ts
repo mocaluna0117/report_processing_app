@@ -5,11 +5,14 @@ import {
   categoryItemGroups,
   distributeSummary,
   isSummarySplit,
+  joinSummary,
   mergeSplitSummary,
   recordSummary,
   splitInstructionItems,
+  splitSummary,
   syncSummaryCell,
   withDistributedSummaries,
+  withoutSupplements,
 } from "@/lib/summary";
 import { COLUMNS, SUMMARY_COL } from "@/lib/tsv";
 
@@ -239,5 +242,62 @@ describe("categoryItemGroups", () => {
     expect(groups.flatMap((g) => g.parts.items)).toEqual(
       splitInstructionItems(mergeSplitSummary(categories)),
     );
+  });
+});
+
+describe("補足 (補足: の行)", () => {
+  it("項目の次の「補足: 」の行はその項目の補足になる", () => {
+    const parts = splitSummary("①壁のひび\n補足: 3階の north 側\n②床のきしみ");
+    expect(parts.items).toEqual(["壁のひび", "床のきしみ"]);
+    expect(parts.supplements).toEqual(["3階の north 側", ""]);
+  });
+
+  it("全角コロンでも読める", () => {
+    expect(splitSummary("壁のひび\n補足：写真2枚目").supplements).toEqual(["写真2枚目"]);
+  });
+
+  it("同じ項目に補足が何行もあれば1つにまとめる", () => {
+    expect(splitSummary("壁のひび\n補足: 前半\n補足: 後半").supplements).toEqual(["前半　後半"]);
+  });
+
+  it("★項目より前にある補足の行は、失わないよう普通の項目として扱う", () => {
+    const parts = splitSummary("補足: 迷子の行\n①壁のひび");
+    expect(parts.items).toEqual(["迷子の行", "壁のひび"]);
+    expect(parts.supplements).toEqual(["", ""]);
+  });
+
+  it("書き戻すと同じ本文に戻る", () => {
+    const text = "①壁のひび\n補足: 3階北側\n②床のきしみ\nメモ: 奥様が立ち会い";
+    expect(joinSummary(splitSummary(text))).toBe(text);
+  });
+
+  it("★工事区分に振り分けても補足は元の項目についていく", () => {
+    const texts = distributeSummary(
+      "①クロスに凹凸\n補足: 3か所\n②サッシの結露\n補足: 北側のみ",
+      ["クロス", "サッシ"],
+    );
+    expect(texts[0]).toBe("クロスに凹凸\n補足: 3か所");
+    expect(texts[1]).toBe("サッシの結露\n補足: 北側のみ");
+  });
+
+  it("★分けた本文をまとめ直しても補足が保たれる", () => {
+    const merged = mergeSplitSummary([
+      { summary: "クロスに凹凸\n補足: 3か所" },
+      { summary: "サッシの結露" },
+    ]);
+    expect(merged).toBe("①クロスに凹凸\n補足: 3か所\n②サッシの結露");
+  });
+
+  it("学習の手本からは補足の行を外す (要約が補足を作り出さないように)", () => {
+    expect(withoutSupplements("①壁のひび\n補足: 3か所\n②床のきしみ")).toBe(
+      "①壁のひび\n②床のきしみ",
+    );
+  });
+
+  it("指示内容の項目だけを取るときは今までどおり (補足は混ざらない)", () => {
+    expect(splitInstructionItems("①壁のひび\n補足: 3か所\n②床のきしみ")).toEqual([
+      "壁のひび",
+      "床のきしみ",
+    ]);
   });
 });

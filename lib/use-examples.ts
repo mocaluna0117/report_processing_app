@@ -15,7 +15,7 @@ import {
 import type { ResultRow } from "@/lib/process";
 import { isStorageAvailable } from "@/lib/storage";
 import { buildExample, type InquiryExample, upsertExample } from "@/lib/summarize/examples";
-import { recordSummary } from "@/lib/summary";
+import { recordSummary, withoutSupplements } from "@/lib/summary";
 
 /** 学習ボタンの見せ方 */
 export interface LearnState {
@@ -55,8 +55,11 @@ export function useExamples<R extends ResultRow>({
   const [open, setOpen] = useState(false);
   const exampleById = useMemo(() => new Map(examples.map((e) => [e.id, e])), [examples]);
 
-  /** その行を学習するときの (入力, 出力)。どちらも伏せ字にしてから保存・送信する */
-  const exampleOf = (row: R) => buildExample(inputOf(row), recordSummary(row));
+  /**
+   * その行を学習するときの (入力, 出力)。どちらも伏せ字にしてから保存・送信する。
+   * ★補足の行は外す (補足は完了報告書のための書き足しで、要約が作るものではない)。
+   */
+  const exampleOf = (row: R) => buildExample(inputOf(row), withoutSupplements(recordSummary(row)));
 
   /** 保存に失敗しても作業は止めず、画面内の状態だけは進める */
   const applyExamples = async (

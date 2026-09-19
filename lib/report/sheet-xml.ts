@@ -102,3 +102,78 @@ export function setBoolean(xml: string, ref: string, on: boolean, what = "本紙
   const s = styleAttr(cell.attrs);
   return replaceRange(xml, cell, `<c r="${ref}"${s} t="b"><v>${on ? 1 : 0}</v></c>`);
 }
+
+/**
+ * 指定した行以降の <row> をまとめて差し替える (別紙の枠を組み立て直すため)。
+ * ★行を足すのは別紙だけ。本紙・入力シートは数式やチェックボックスが載っているので触らない。
+ */
+export function replaceRowsFrom(
+  xml: string,
+  firstRow: number,
+  rows: string,
+  what = "別紙",
+): string {
+  const open = xml.indexOf("<sheetData>");
+  const close = xml.indexOf("</sheetData>");
+  if (open < 0 || close < 0) throw new ReportTemplateError(`${what}: sheetData が見つかりません`);
+  const body = xml.slice(open + "<sheetData>".length, close);
+  const kept: string[] = [];
+  const pattern = /<row r="(\d+)"[^>]*(?:\/>|>[\s\S]*?<\/row>)/g;
+  let matched = 0;
+  for (const m of body.matchAll(pattern)) {
+    matched += m[0].length;
+    if (Number(m[1]) < firstRow) kept.push(m[0]);
+  }
+  if (body.trim().length !== matched) {
+    throw new ReportTemplateError(`${what}: 行の並びを読み取れません (テンプレートの構造が変わっていませんか)`);
+  }
+  return `${xml.slice(0, open)}<sheetData>${kept.join("")}${rows}</sheetData>${xml.slice(close + "</sheetData>".length)}`;
+}
+
+/** 結合セルの一覧を差し替える */
+export function setMergeCells(xml: string, refs: readonly string[], what = "別紙"): string {
+  const pattern = /<mergeCells count="\d+">[\s\S]*?<\/mergeCells>/;
+  if (!pattern.test(xml)) throw new ReportTemplateError(`${what}: mergeCells が見つかりません`);
+  const body = refs.map((ref) => `<mergeCell ref="${ref}"/>`).join("");
+  return xml.replace(pattern, refs.length > 0 ? `<mergeCells count="${refs.length}">${body}</mergeCells>` : "");
+}
+
+/** シートの使用範囲 (dimension) を差し替える */
+export function setDimension(xml: string, ref: string, what = "別紙"): string {
+  const pattern = /<dimension ref="[^"]*"\/>/;
+  if (!pattern.test(xml)) throw new ReportTemplateError(`${what}: dimension が見つかりません`);
+  return xml.replace(pattern, `<dimension ref="${ref}"/>`);
+}
+
+/** 印刷範囲 (workbook.xml の定義名) を差し替える */
+export function setPrintArea(
+  workbookXml: string,
+  sheetName: string,
+  ref: string,
+  what = "ブック",
+): string {
+  const pattern = new RegExp(
+    `(<definedName name="_xlnm.Print_Area"[^>]*>)${sheetName}!\\$[^<]*(</definedName>)`,
+  );
+  if (!pattern.test(workbookXml)) {
+    throw new ReportTemplateError(`${what}: ${sheetName} の印刷範囲が見つかりません`);
+  }
+  // ref には $A$1 のような「$数字」が入るので、置換文字列ではなく関数で入れる
+  return workbookXml.replace(pattern, (_m, open: string, close: string) =>
+    `${open}${sheetName}!${ref}${close}`,
+  );
+}
+
+/**
+ * セル書式 (cellXfs) に1つ足して、その番号を返す。
+ * 同じ内容の書式が既にあればそれを使う (呼ぶたびに増やさない)。
+ */
+export function ensureCellXf(stylesXml: string, xf: string): { xml: string; index: number } {
+  const section = /<cellXfs count="(\d+)">([\s\S]*?)<\/cellXfs>/.exec(stylesXml);
+  if (!section) throw new ReportTemplateError("styles.xml: cellXfs が見つかりません");
+  const entries = [...section[2].matchAll(/<xf [^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g)].map((m) => m[0]);
+  const found = entries.indexOf(xf);
+  if (found >= 0) return { xml: stylesXml, index: found };
+  const replaced = `<cellXfs count="${entries.length + 1}">${section[2]}${xf}</cellXfs>`;
+  return { xml: stylesXml.replace(section[0], replaced), index: entries.length };
+}

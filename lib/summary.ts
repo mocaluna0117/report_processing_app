@@ -12,11 +12,20 @@ import { findCategoryInText } from "@/lib/work-categories";
 
 const LEADING_NUMBER = /^(?:[①-⑳]|\(\d+\)|\d+[.)、]|・)\s*/;
 const NOTE_LINE = /^メモ\s*[:：]\s*/;
+/** 「補足: 」の行 (直前の項目への書き足し)。全角コロンも受ける */
+const SUPPLEMENT_LINE = /^補足\s*[:：]\s*/;
+/** 同じ項目に補足が何行もあるときのつなぎ */
+const SUPPLEMENT_JOIN = "　";
 
 /** アフター受付内容を、指示内容の項目と点検員メモに分ける */
 export interface SummaryParts {
   /** 指示内容の項目 (先頭の番号は落とす) */
   items: string[];
+  /**
+   * 項目ごとの補足 (items と同じ長さ。無ければ空文字)。
+   * 完了報告書では項目の次の枠に「・…」として書く。
+   */
+  supplements: string[];
   /** 点検員メモ (「メモ: 」の接頭辞は落とす) */
   notes: string[];
   /** 元が「不具合の指摘なし」の定型文だったか (項目を空にしたときに戻す) */
@@ -33,19 +42,36 @@ export function splitSummary(summary: string): SummaryParts {
     .map((line) => line.trim())
     .filter(Boolean);
   const items: string[] = [];
+  const supplements: string[] = [];
   const notes: string[] = [];
   let noDefect = false;
   for (const line of lines) {
     if (NOTE_LINE.test(line)) {
       notes.push(line.replace(NOTE_LINE, "").trim());
+    } else if (SUPPLEMENT_LINE.test(line)) {
+      const text = line.replace(SUPPLEMENT_LINE, "").trim();
+      if (!text) continue;
+      if (items.length === 0) {
+        // ★どの項目にも付かない補足は、書いた文を失わないよう普通の項目として扱う
+        items.push(text);
+        supplements.push("");
+        continue;
+      }
+      const last = items.length - 1;
+      supplements[last] = supplements[last]
+        ? `${supplements[last]}${SUPPLEMENT_JOIN}${text}`
+        : text;
     } else if (line === NO_DEFECT_TEXT) {
       noDefect = true;
     } else {
       const text = line.replace(LEADING_NUMBER, "").trim();
-      if (text) items.push(text);
+      if (text) {
+        items.push(text);
+        supplements.push("");
+      }
     }
   }
-  return { items, notes, noDefect };
+  return { items, supplements, notes, noDefect };
 }
 
 /**
@@ -56,12 +82,25 @@ export function splitInstructionItems(summary: string): string[] {
   return splitSummary(summary).items;
 }
 
-/** 編集した指示内容をアフター受付内容の本文に戻す (メモ・定型文は保つ) */
+/** 編集した指示内容をアフター受付内容の本文に戻す (補足・メモ・定型文は保つ) */
 export function joinSummary(parts: SummaryParts): string {
-  const items = parts.items.map((s) => s.trim()).filter(Boolean);
-  return formatPhenomena(items, parts.notes, {
+  // 空の項目を落とすのは formatPhenomena に任せる (補足と対で落とすため)
+  return formatPhenomena(parts.items, parts.notes, {
     emptyText: parts.noDefect ? NO_DEFECT_TEXT : "",
+    supplements: parts.supplements,
   });
+}
+
+/**
+ * 補足の行を外した本文。
+ * 学習の手本 (要約の書き方) には補足を含めない。補足は完了報告書のための書き足しで、
+ * 要約が作るものではないため。
+ */
+export function withoutSupplements(summary: string): string {
+  return summary
+    .split(/\r?\n/)
+    .filter((line) => !SUPPLEMENT_LINE.test(line.trim()))
+    .join("\n");
 }
 
 /** ResultRow のうち、点検内容の読み出しに要る部分だけ (テストから最小の入力で呼べるように) */
@@ -87,24 +126,30 @@ export function isSummarySplit(row: SummarySplitSource): boolean {
  * - 同じ区分が2回あれば先頭の方へ入れる。空欄の区分はキーワード一致の対象にしない
  */
 export function distributeSummary(summary: string, categories: readonly string[]): string[] {
-  const { items, notes, noDefect } = splitSummary(summary);
-  const groups: string[][] = categories.map(() => []);
+  const { items, supplements, notes, noDefect } = splitSummary(summary);
+  // ★補足は必ず元の項目についていく (振り分けの判定は項目の本文だけで行う)
+  const groups: { text: string; supplement: string }[][] = categories.map(() => []);
   const firstIndexOf = new Map<string, number>();
   categories.forEach((c, i) => {
     if (c && !firstIndexOf.has(c)) firstIndexOf.set(c, i);
   });
   const fallback = firstIndexOf.get("その他") ?? 0;
 
-  for (const item of items) {
+  items.forEach((item, k) => {
     const hit = findCategoryInText(item, [...firstIndexOf.keys()]);
     const index = hit === null ? fallback : (firstIndexOf.get(hit) ?? fallback);
-    groups[index]?.push(item);
-  }
+    groups[index]?.push({ text: item, supplement: supplements[k] ?? "" });
+  });
 
   return groups.map((group, i) =>
-    formatPhenomena(group, i === 0 ? notes : [], {
-      emptyText: i === 0 && noDefect ? NO_DEFECT_TEXT : "",
-    }),
+    formatPhenomena(
+      group.map((g) => g.text),
+      i === 0 ? notes : [],
+      {
+        emptyText: i === 0 && noDefect ? NO_DEFECT_TEXT : "",
+        supplements: group.map((g) => g.supplement),
+      },
+    ),
   );
 }
 
@@ -115,9 +160,10 @@ export function distributeSummary(summary: string, categories: readonly string[]
 export function mergeSplitSummary(categories: readonly { summary?: string }[]): string {
   const parts = categories.map((c) => splitSummary(c.summary ?? ""));
   const items = parts.flatMap((p) => p.items);
+  const supplements = parts.flatMap((p) => p.supplements);
   const notes = [...new Set(parts.flatMap((p) => p.notes))];
   const noDefect = items.length === 0 && parts.some((p) => p.noDefect);
-  return joinSummary({ items, notes, noDefect });
+  return joinSummary({ items, supplements, notes, noDefect });
 }
 
 /**

@@ -184,7 +184,15 @@ describe("buildReportXlsx", () => {
   });
 
   it("書き換えた3シートは整形式のXMLのまま", () => {
-    const { input, main, appendix } = build(["壁のひび", "床のきしみ", "a", "b", "c", "d"]);
+    const { input, main, appendix } = build([
+      "壁のひび",
+      "補足: 3階北側",
+      "床のきしみ",
+      "a",
+      "b",
+      "c",
+      "d",
+    ]);
     for (const xml of [input, main, appendix]) {
       const errors: string[] = [];
       const doc = new DOMParser({
@@ -192,6 +200,61 @@ describe("buildReportXlsx", () => {
       } as never).parseFromString(xml, "text/xml");
       expect(errors).toEqual([]);
       expect(doc.getElementsByTagName("sheetData").length).toBe(1);
+    }
+  });
+
+  it("★1行に入らない項目は次の枠に続きが入り、続きの№は空", () => {
+    const long =
+      "基礎の巾木仕上げ施工時に土台水切りや通気パッキン周辺の通気スリットまで塗り込まれて隙間が閉塞・阻害されている状況";
+    const { input, main } = build([long]);
+    expect(cell(input, "C17")).toContain("塗り込まれて");
+    expect(cell(input, "C18")).toContain("隙間が閉塞・阻害されている状況");
+    expect(cell(input, "B17")).toContain("①");
+    // 続きの行に№は入れない (本紙・作業内容欄とも)
+    expect(cell(input, "B18")).toBe('<c r="B18" s="15"/>');
+    expect(cell(main, "C17")).toContain("<v>隙間が閉塞・阻害されている状況</v>");
+    expect(cell(main, "B17")).toContain("<v/>");
+    expect(cell(main, "B24")).toContain("<v/>");
+  });
+
+  it("★別紙は補足のある項目だけ、項目行の下に細い欄を作る", () => {
+    const { appendix, parts } = build([
+      "①壁のひび",
+      "②床のきしみ",
+      "補足: 2階のみ",
+      "③建具の調整",
+      "④外壁の汚れ",
+      "⑤雨樋の詰まり",
+      "⑥天井の凹凸",
+    ]);
+    // 1枠目 (補足なし): 項目行6・対応結果行7
+    expect(cell(appendix, "A6")).toContain("①壁のひび");
+    expect(cell(appendix, "A7")).toContain("対応結果：");
+    // 2枠目 (補足あり): 項目行8・補足の細い欄9・対応結果行10
+    expect(cell(appendix, "A8")).toContain("②床のきしみ");
+    expect(cell(appendix, "A9")).toContain("・2階のみ");
+    expect(appendix).toContain('<row r="9" spans="1:2" ht="15" customHeight="1">');
+    expect(cell(appendix, "A10")).toContain("対応結果：");
+    // 3枠目は1行ずれる
+    expect(cell(appendix, "A11")).toContain("③建具の調整");
+    // チェック欄の結合は枠の全部の行にまたがる
+    expect(appendix).toContain('<mergeCell ref="B6:B7"/>');
+    expect(appendix).toContain('<mergeCell ref="B8:B10"/>');
+    // 使う範囲・印刷範囲・書式も行数に合わせる
+    const lastRow = 28;
+    expect(appendix).toContain(`<dimension ref="A1:B${lastRow}"/>`);
+    expect(decode(parts["xl/workbook.xml"])).toContain(`別紙!$A$1:$B$${lastRow}`);
+    const styles = decode(parts["xl/styles.xml"]);
+    expect(styles).toContain('borderId="35" xfId="2" applyBorder="1" applyAlignment="1">');
+    const count = /<cellXfs count="(\d+)">/.exec(styles)?.[1];
+    expect(Number(count)).toBe(142);
+  });
+
+  it("補足が無ければ書式と印刷範囲はテンプレートのまま", () => {
+    const original = unzipSync(template);
+    const { parts } = build(["a", "b", "c", "d", "e", "f"]);
+    for (const name of ["xl/styles.xml", "xl/workbook.xml"]) {
+      expect(Buffer.from(parts[name]).equals(Buffer.from(original[name])), name).toBe(true);
     }
   });
 

@@ -6,6 +6,7 @@ import { PdfPagesPreview } from "@/components/pdf-preview";
 import { downloadBytes } from "@/lib/download";
 import type { ResultRow } from "@/lib/process";
 import { setContactPhone } from "@/lib/contacts";
+import { circledNumber } from "@/lib/summarize/format";
 import { categoryItemGroups, isSummarySplit, recordSummary, type SummaryParts } from "@/lib/summary";
 import {
   ADDRESS_COL,
@@ -67,6 +68,12 @@ interface HeaderField {
   warnWhenEmpty?: boolean;
   onChange: (value: string) => void;
   onBlur?: () => void;
+}
+
+/** 編集中の指示内容 (項目と、項目ごとの補足。並びは対応している) */
+interface GroupDraft {
+  items: string[];
+  supplements: string[];
 }
 
 /** 指示内容の編集単位。工事区分が2件以上なら区分ごと、1件以下なら全体で1つ */
@@ -209,30 +216,63 @@ export function ReportDialog({
   }, [data, signature]);
 
   /**
-   * 編集中の項目 (グループごと)。書き戻すときに空欄は落とすので、入力途中の空欄はここで保つ。
+   * 編集中の項目と補足 (グループごと)。書き戻すときに空欄は落とすので、入力途中の空欄はここで保つ。
    * 行が替わったり工事区分の数が変わったら捨てる (書き戻し先がずれるため)。
    */
-  const [draft, setDraft] = useState<string[][] | null>(null);
+  const [draft, setDraft] = useState<GroupDraft[] | null>(null);
+  /** 「補足を追加」を押しただけで、まだ何も書いていない欄 (`${グループ}-${項目}`) */
+  const [openSupplements, setOpenSupplements] = useState<Set<string>>(new Set());
   useEffect(() => {
     setDraft(null);
+    setOpenSupplements(new Set());
     setPhoneDraft(null);
   }, [row.pairId, row.categories.length]);
-  const itemsOf = (gi: number) => draft?.[gi] ?? groups[gi].parts.items;
-  const editGroupItems = (gi: number, next: string[]) => {
-    setDraft(groups.map((_, j) => (j === gi ? next : itemsOf(j))));
+  const partsOf = (gi: number): GroupDraft =>
+    draft?.[gi] ?? { items: groups[gi].parts.items, supplements: groups[gi].parts.supplements };
+  const editGroup = (gi: number, next: GroupDraft) => {
+    setDraft(groups.map((_, j) => (j === gi ? next : partsOf(j))));
     const group = groups[gi];
-    const text = joinSummary({ ...group.parts, items: next });
+    const text = joinSummary({ ...group.parts, items: next.items, supplements: next.supplements });
     if (group.catIndex === null) onSummaryChange(row.pairId, text);
     else onCategorySummaryChange(row.pairId, group.catIndex, text);
   };
-  const totalItems = groups.reduce((n, _, gi) => n + itemsOf(gi).length, 0);
-  /**
-   * 報告書の№。工事区分をまたいで通しで振る (buildReportData の並びと同じ)。
-   * 入力途中の空欄は報告書に載らないので数に入れず、その行の№は空にする
-   * (数に入れると後続の工事区分の番号まで実際の報告書とずれる)。
-   */
-  const numberLabel = (n: number | null) =>
-    n === null ? "" : data.useAppendix ? `別紙 ${n}` : n <= MAIN_SLOTS ? `本紙 ${n}` : `${n}`;
+  /** 項目1件の差し替え (i 番目を next にする。next が null なら削除) */
+  const editItem = (
+    gi: number,
+    i: number,
+    next: { text?: string; supplement?: string } | null,
+  ) => {
+    const { items, supplements } = partsOf(gi);
+    if (next === null) {
+      editGroup(gi, {
+        items: items.filter((_, j) => j !== i),
+        supplements: supplements.filter((_, j) => j !== i),
+      });
+      // 位置がずれるので、このグループの「開いただけの補足」は閉じる
+      setOpenSupplements((prev) => new Set([...prev].filter((k) => !k.startsWith(`${gi}-`))));
+      return;
+    }
+    editGroup(gi, {
+      items: items.map((v, j) => (j === i && next.text !== undefined ? next.text : v)),
+      supplements: supplements.map((v, j) =>
+        j === i && next.supplement !== undefined ? next.supplement : (v ?? ""),
+      ),
+    });
+  };
+  const addItem = (gi: number) => {
+    const { items, supplements } = partsOf(gi);
+    editGroup(gi, { items: [...items, ""], supplements: [...supplements, ""] });
+  };
+  const toggleSupplement = (gi: number, i: number, open: boolean) => {
+    setOpenSupplements((prev) => {
+      const next = new Set(prev);
+      if (open) next.add(`${gi}-${i}`);
+      else next.delete(`${gi}-${i}`);
+      return next;
+    });
+    if (!open) editItem(gi, i, { supplement: "" });
+  };
+  const totalItems = groups.reduce((n, _, gi) => n + partsOf(gi).items.length, 0);
 
   const toggle = (group: "attendance" | "categories", key: string, checked: boolean) => {
     onOptionsChange(row.pairId, {
@@ -429,7 +469,7 @@ export function ReportDialog({
             {!split && (
               <button
                 type="button"
-                onClick={() => editGroupItems(0, [...itemsOf(0), ""])}
+                onClick={() => addItem(0)}
                 className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-slate-50"
               >
                 項目を追加
@@ -442,7 +482,7 @@ export function ReportDialog({
             // 空欄は報告書に載らないので数えない
             let no = 0;
             return groups.map((group, gi) => {
-              const items = itemsOf(gi);
+              const { items, supplements } = partsOf(gi);
               const numbers = items.map((s) => (s.trim() ? ++no : null));
               return (
                 <section
@@ -457,7 +497,7 @@ export function ReportDialog({
                       </p>
                       <button
                         type="button"
-                        onClick={() => editGroupItems(gi, [...items, ""])}
+                        onClick={() => addItem(gi)}
                         className="cursor-pointer rounded-md border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium hover:bg-slate-50"
                       >
                         項目を追加
@@ -470,34 +510,69 @@ export function ReportDialog({
                       )
                     : (
                       <ul className="mt-1.5 space-y-1.5">
-                        {items.map((item, i) => (
-                          // 並べ替えはしないので、位置をそのままキーにする
-                          // biome-ignore lint/suspicious/noArrayIndexKey: 入力欄の位置と対応させるため
-                          <li key={`${gi}-${i}`} className="flex items-center gap-2">
-                            <span className="w-16 shrink-0 text-right text-xs text-slate-500">
-                              {numberLabel(numbers[i])}
-                            </span>
-                            <input
-                              value={item}
-                              onChange={(e) =>
-                                editGroupItems(
-                                  gi,
-                                  items.map((v, j) => (j === i ? e.target.value : v)),
-                                )
-                              }
-                              placeholder="1階洋室 天井クロス：クロス表面に凹凸あり"
-                              className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
-                            />
-                            <button
-                              type="button"
-                              title="この項目を削除"
-                              onClick={() => editGroupItems(gi, items.filter((_, j) => j !== i))}
-                              className="shrink-0 cursor-pointer rounded px-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                            >
-                              ✕
-                            </button>
-                          </li>
-                        ))}
+                        {items.map((item, i) => {
+                          const supplement = supplements[i] ?? "";
+                          const showSupplement =
+                            supplement !== "" || openSupplements.has(`${gi}-${i}`);
+                          return (
+                            // 並べ替えはしないので、位置をそのままキーにする
+                            // biome-ignore lint/suspicious/noArrayIndexKey: 入力欄の位置と対応させるため
+                            <li key={`${gi}-${i}`} className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="w-6 shrink-0 text-right text-sm text-slate-500">
+                                  {numbers[i] === null ? "" : circledNumber(numbers[i])}
+                                </span>
+                                <input
+                                  value={item}
+                                  onChange={(e) => editItem(gi, i, { text: e.target.value })}
+                                  placeholder="1階洋室 天井クロス：クロス表面に凹凸あり"
+                                  className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                                />
+                                {!showSupplement && (
+                                  <button
+                                    type="button"
+                                    title="この項目に補足を書く (報告書では項目の次の行に載ります)"
+                                    onClick={() => toggleSupplement(gi, i, true)}
+                                    className="shrink-0 cursor-pointer whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium hover:bg-slate-50"
+                                  >
+                                    ＋補足
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  title="この項目を削除"
+                                  onClick={() => editItem(gi, i, null)}
+                                  className="shrink-0 cursor-pointer rounded px-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                              {showSupplement && (
+                                <div className="flex items-center gap-2">
+                                  <span className="w-6 shrink-0 text-right text-sm text-slate-400">
+                                    ・
+                                  </span>
+                                  <input
+                                    value={supplement}
+                                    onChange={(e) =>
+                                      editItem(gi, i, { supplement: e.target.value })
+                                    }
+                                    placeholder="補足 (報告書では項目の次の行に「・」付きで載ります)"
+                                    className="w-full rounded border border-slate-200 bg-slate-50 px-2 py-1 text-sm"
+                                  />
+                                  <button
+                                    type="button"
+                                    title="この補足を削除"
+                                    onClick={() => toggleSupplement(gi, i, false)}
+                                    className="shrink-0 cursor-pointer rounded px-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ul>
                     )}
                   {group.parts.notes.length > 0 && (
@@ -517,7 +592,11 @@ export function ReportDialog({
           )}
           {data.useAppendix && (
             <p className="mt-2 rounded bg-blue-50 px-2 py-1.5 text-xs text-blue-900">
-              {APPENDIX_THRESHOLD}件以上あるので、本紙の指示内容は「別紙参照」にして、全{data.items.length}件を別紙に記載します
+              {data.items.length >= APPENDIX_THRESHOLD
+                ? `${APPENDIX_THRESHOLD}件以上あるので、`
+                : `折り返しや補足で本紙の${MAIN_SLOTS}行に入りきらないので、`}
+              本紙の指示内容は「別紙参照」にして、全{data.items.length}件を別紙に記載します
+              {data.supplements.some((s) => s) && "（補足は項目の下の細い欄に入ります）"}
             </p>
           )}
           {data.warnings.map((w) => (

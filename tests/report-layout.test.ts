@@ -4,6 +4,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { appendixSheet } from "@/lib/report/layout/appendix-sheet";
 import { resolveGeometry, type Geometry, type Measure } from "@/lib/report/layout/grid";
 import { MAIN_SHEET } from "@/lib/report/layout/main-sheet";
+import { PRINT_FACTOR, quantizeFontSize } from "@/lib/report/metrics";
+import { MAIN_LINE_UNITS } from "@/lib/report/model";
 import { reportMeasure } from "./helpers/report-fonts";
 
 /**
@@ -75,7 +77,7 @@ beforeAll(async () => {
     propertyLine: "物件名：x",
     ownerLine: "施主名：x様",
     // 見本の別紙は6件。「対応結果：」の行数を合わせるためダミーを6件入れる
-    items: Array.from({ length: 6 }, (_, i) => `項目${i + 1}`),
+    items: Array.from({ length: 6 }, (_, i) => ({ text: `項目${i + 1}`, supplement: "" })),
     pageLabel: "2/2",
   });
   appendix = resolveGeometry(spec, values, {}, measure);
@@ -283,5 +285,64 @@ describe("別紙のレイアウト", () => {
     const ref = fixture.pages.appendix.rects.find((r) => r.height > 10 && r.height < 20);
     expect(Math.abs(appendix.fills[0].y0 - ref!.top)).toBeLessThan(0.6);
     expect(Math.abs(appendix.fills[0].y1 - ref!.bottom)).toBeLessThan(0.6);
+  });
+});
+
+describe("指示内容の折り返し幅と、別紙の補足の欄", () => {
+  /** 本紙の指示内容の枠 (C16:U16) に描かれた文字 */
+  const itemText = (text: string) => {
+    const geometry = resolveGeometry(MAIN_SHEET, { item0: text }, {}, measure);
+    return { geometry, drawn: geometry.texts.find((t) => t.text === text) };
+  };
+
+  it("★全角41文字は本紙の枠に 11.04pt のまま入る (MAIN_LINE_UNITS の裏付け)", () => {
+    const { geometry, drawn: text } = itemText("あ".repeat(MAIN_LINE_UNITS));
+    expect(text?.size).toBeCloseTo(quantizeFontSize(11), 2);
+    expect(geometry.overflow).toEqual([]);
+  });
+
+  it("42文字だと縮む (41文字が上限であること)", () => {
+    const { drawn: text } = itemText("あ".repeat(MAIN_LINE_UNITS + 1));
+    expect(text!.size).toBeLessThan(quantizeFontSize(11));
+  });
+
+  it("★別紙の補足は項目行の下の細い欄 (高さ15) に入る", () => {
+    const { spec, values } = appendixSheet({
+      title: "1年目点検是正項目",
+      propertyLine: "物件名：x",
+      ownerLine: "施主名：x様",
+      items: [
+        { text: "①壁のひび", supplement: "・3階北側の2か所" },
+        { text: "②床のきしみ", supplement: "" },
+      ],
+      pageLabel: "2/2",
+    });
+    const geometry = resolveGeometry(spec, values, {}, measure);
+    const find = (text: string) => geometry.texts.find((t) => t.text === text);
+    const item = find("①壁のひび");
+    const supplement = find("・3階北側の2か所");
+    const next = find("②床のきしみ");
+    expect(item && supplement && next).toBeTruthy();
+    // 同じ左端に、項目行 (高さ18) と補足の欄 (高さ15) の中心の差だけ下に並ぶ
+    const pt = (rows: number) => (rows * 0.85 * PRINT_FACTOR) / 2;
+    expect(supplement!.x).toBeCloseTo(item!.x, 1);
+    expect(supplement!.baseline - item!.baseline).toBeCloseTo(pt(18 + 15), 1);
+    // 次の項目は「補足の欄15 + 対応結果39.75 + 項目行18」の分だけ下がる
+    expect(next!.baseline - supplement!.baseline).toBeCloseTo(pt(15 + 2 * 39.75 + 18), 1);
+    expect(geometry.overflow).toEqual([]);
+  });
+
+  it("長い補足は縮んで入る (縮めたのに収まらない、にはしない)", () => {
+    const { spec, values } = appendixSheet({
+      title: "1年目点検是正項目",
+      propertyLine: "物件名：x",
+      ownerLine: "施主名：x様",
+      items: [{ text: `①${"あ".repeat(50)}`, supplement: `・${"い".repeat(50)}` }],
+      pageLabel: "2/2",
+    });
+    const geometry = resolveGeometry(spec, values, {}, measure);
+    expect(geometry.overflow).toEqual([]);
+    const supplement = geometry.texts.find((t) => t.text.startsWith("・"));
+    expect(supplement!.size).toBeLessThan(quantizeFontSize(11 * 0.85));
   });
 });

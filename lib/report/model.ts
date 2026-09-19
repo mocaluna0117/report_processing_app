@@ -1,6 +1,7 @@
 // 完了報告書 (xlsx / PDF) に載せる値の組み立て。純関数のみ (ブラウザ・Nodeどちらでも動く)
 import { NO_DEFECT_TEXT, circledNumber, formatPhenomena } from "@/lib/summarize/format";
-import { recordSummary, splitInstructionItems } from "@/lib/summary";
+import { recordSummary, splitSummary } from "@/lib/summary";
+import { wrapText } from "@/lib/report/wrap";
 import { toFullWidthSpace } from "@/lib/text";
 import {
   ADDRESS_COL,
@@ -30,6 +31,14 @@ export const APPENDIX_THRESHOLD = MAIN_SLOTS + 1;
 export const APPENDIX_SLOTS = 12;
 /** 本紙の指示内容に「別紙参照」と書くときの文字列 */
 export const APPENDIX_REFERENCE_TEXT = "別紙参照";
+/**
+ * 本紙の指示内容の枠 1行に入る文字数 (全角)。
+ * C〜U の使える幅 461.05pt ÷ 11.04pt ≒ 41.7 なので41文字。
+ * tests/report-layout.test.ts が、実際の枠にこの文字数が縮まずに入ることを見張っている。
+ */
+export const MAIN_LINE_UNITS = 41;
+/** 報告書 (本紙・別紙) で補足の頭に付ける字 */
+export const SUPPLEMENT_MARK = "・";
 
 /** 立会・受付項目のチェック状態 (ダイアログで切り替える) */
 export interface ReportOptions {
@@ -101,6 +110,14 @@ export interface InstructionItem {
   text: string;
 }
 
+/** 別紙の1項目 */
+export interface AppendixItem {
+  /** 番号付きの項目本文 (「①1階洋室 …」) */
+  text: string;
+  /** 補足 (頭に「・」を付けた1行。無ければ空文字。項目行の下の細い欄に書く) */
+  supplement: string;
+}
+
 export interface ReportAppendix {
   /** 「1年目点検是正項目」など */
   title: string;
@@ -108,8 +125,7 @@ export interface ReportAppendix {
   propertyLine: string;
   /** 「施主名：…様」 (カナは付けない) */
   ownerLine: string;
-  /** 番号付きの項目本文 (「①1階洋室 …」) */
-  items: string[];
+  items: AppendixItem[];
 }
 
 export interface ReportData {
@@ -130,7 +146,9 @@ export interface ReportData {
   receptionist: string;
   /** 指示内容の全項目 (番号なしの本文) */
   items: string[];
-  /** 6件以上で別紙に回したか */
+  /** 項目ごとの補足 (items と同じ長さ。無ければ空文字) */
+  supplements: string[];
+  /** 別紙に回したか (6件以上、または本紙の5つの枠に入らないとき) */
   useAppendix: boolean;
   /** 本紙の指示内容枠 (常に MAIN_SLOTS 個。余りは空) */
   main: InstructionItem[];
@@ -175,23 +193,50 @@ export function buildOwnerLine(ownerName: string, ownerKana: string): string {
   return kana ? `${owner}（${kana}）` : owner;
 }
 
+/**
+ * 本紙の5つの枠への割り付け。
+ * - 1行 (全角41文字) に入らない項目は、次の枠に続きを書く
+ * - 補足はその項目の続きとして、頭に「・」を付けて次の枠に書く
+ * - №は項目の1行目だけに付ける (続き・補足の行は空欄。Excelの作業内容欄も同じ形になる)
+ * 5つの枠に入らなければ null (呼ぶ側が別紙に回す)。
+ */
+export function planMainSlots(
+  items: readonly string[],
+  supplements: readonly string[],
+): InstructionItem[] | null {
+  const rows: InstructionItem[] = [];
+  items.forEach((text, i) => {
+    const body = wrapText(text, MAIN_LINE_UNITS);
+    const supplement = (supplements[i] ?? "").trim();
+    const lines = [
+      ...(body.length > 0 ? body : [""]),
+      ...(supplement ? wrapText(`${SUPPLEMENT_MARK}${supplement}`, MAIN_LINE_UNITS) : []),
+    ];
+    for (const [k, line] of lines.entries()) {
+      rows.push({ no: k === 0 ? circledNumber(i + 1) : "", text: line });
+    }
+  });
+  if (rows.length > MAIN_SLOTS) return null;
+  return Array.from({ length: MAIN_SLOTS }, (_, i) => rows[i] ?? { no: "", text: "" });
+}
+
 export function buildReportData(row: ReportSource, options: ReportOptions): ReportData {
   const cell = (i: number) => (row.cells[i] ?? "").trim();
   const warnings: string[] = [];
 
   const ownerName = toFullWidthSpace(cell(OWNER_COL));
   const ownerKana = row.mail.ownerKana.trim();
-  const items = splitInstructionItems(recordSummary(row));
-  const useAppendix = items.length >= APPENDIX_THRESHOLD;
+  const { items, supplements } = splitSummary(recordSummary(row));
+  // 6件以上、または折り返し・補足で本紙の5つの枠に入らなければ別紙に回す
+  const plan = items.length >= APPENDIX_THRESHOLD ? null : planMainSlots(items, supplements);
+  const useAppendix = plan === null;
 
-  const main: InstructionItem[] = Array.from({ length: MAIN_SLOTS }, (_, i) => {
-    if (useAppendix) {
-      // 別紙に全項目を書き、本紙は「別紙参照」の1行だけ (№は付けない)
-      return i === 0 ? { no: "", text: APPENDIX_REFERENCE_TEXT } : { no: "", text: "" };
-    }
-    const text = items[i];
-    return text ? { no: circledNumber(i + 1), text } : { no: "", text: "" };
-  });
+  const main: InstructionItem[] =
+    plan ??
+    // 別紙に全項目を書き、本紙は「別紙参照」の1行だけ (№は付けない)
+    Array.from({ length: MAIN_SLOTS }, (_, i) =>
+      i === 0 ? { no: "", text: APPENDIX_REFERENCE_TEXT } : { no: "", text: "" },
+    );
 
   if (items.length === 0) {
     // 呼び名は画面に合わせる (定期点検は「点検内容」、アフターメンテナンスは「アフター受付内容」)
@@ -206,7 +251,11 @@ export function buildReportData(row: ReportSource, options: ReportOptions): Repo
         propertyLine: `物件名：${cell(PROPERTY_COL)}`,
         // 別紙は漢字のみ・姓名間は半角スペース・「様」を直結 (見本と同じ)
         ownerLine: ownerName ? `施主名：${ownerName.replace(/　/g, " ")}様` : "施主名：",
-        items: items.map((text, i) => `${circledNumber(i + 1)}${text}`),
+        items: items.map((text, i) => ({
+          text: `${circledNumber(i + 1)}${text}`,
+          // 補足のある項目だけ、別紙では項目行の下の細い欄に書く
+          supplement: supplements[i]?.trim() ? `${SUPPLEMENT_MARK}${supplements[i].trim()}` : "",
+        })),
       }
     : null;
 
@@ -231,6 +280,7 @@ export function buildReportData(row: ReportSource, options: ReportOptions): Repo
     phone2: row.mail.contacts[1]?.phone ?? "",
     receptionist: options.receptionist?.trim() || RECEPTIONIST,
     items,
+    supplements,
     useAppendix,
     main,
     appendix,

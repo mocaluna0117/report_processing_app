@@ -10,6 +10,7 @@ import {
   CHECKBOX,
   COL_CHAR_UNIT,
   DOUBLE_GAP,
+  FONT_SIZE_STEP,
   LINE_WIDTH,
   MIN_FONT_SIZE,
   PAD_LEFT,
@@ -272,7 +273,9 @@ export function resolveGeometry(
     let size = baseSize;
     let width = measure(raw, size, Boolean(cell.bold));
     if (cell.shrink && width > usable && width > 0) {
-      size = Math.max(MIN_FONT_SIZE * scale, quantizeFontSize((size * usable) / width));
+      // ★丸めは必ず小さい側へ (四捨五入だと大きい側に転んで、縮めたのに収まらないことがある)
+      const fitted = (size * usable) / width;
+      size = Math.max(MIN_FONT_SIZE * scale, Math.floor(fitted / FONT_SIZE_STEP) * FONT_SIZE_STEP);
       width = measure(raw, size, Boolean(cell.bold));
     }
     const clipped = width > usable + 0.5;

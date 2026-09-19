@@ -163,7 +163,7 @@ describe("buildReportData", () => {
       propertyLine: "物件名：653.架空町7-21-12A号棟",
       // 別紙は漢字のみ・半角スペース・様を直結
       ownerLine: "施主名：山田 太郎様",
-      items: items.map((s, i) => `${"①②③④⑤⑥"[i]}${s}`),
+      items: items.map((s, i) => ({ text: `${"①②③④⑤⑥"[i]}${s}`, supplement: "" })),
     });
   });
 
@@ -343,5 +343,58 @@ describe("工事区分ごとに分けた点検内容からの指示内容", () =
       DEFAULT_REPORT_OPTIONS,
     );
     expect(data.items).toEqual(["セルの本文"]);
+  });
+});
+
+describe("本紙の割り付け (折り返しと補足)", () => {
+  /** 実際に出た56文字の項目 */
+  const LONG =
+    "基礎の巾木仕上げ施工時に土台水切りや通気パッキン周辺の通気スリットまで塗り込まれて隙間が閉塞・阻害されている状況";
+  const build = (summary: string) =>
+    buildReportData(source({ [SUMMARY_COL]: summary }), DEFAULT_REPORT_OPTIONS);
+
+  it("★1行に入らない項目は次の枠に続きが入り、続きの№は空", () => {
+    const d = build(`①${LONG}\n②建具の調整`);
+    expect(d.useAppendix).toBe(false);
+    expect(d.main.slice(0, 3)).toEqual([
+      { no: "①", text: "基礎の巾木仕上げ施工時に土台水切りや通気パッキン周辺の通気スリットまで塗り込まれて" },
+      { no: "", text: "隙間が閉塞・阻害されている状況" },
+      { no: "②", text: "建具の調整" },
+    ]);
+    expect(d.main.slice(3)).toEqual(Array(2).fill({ no: "", text: "" }));
+  });
+
+  it("★補足はその項目の次の枠に「・」付きで入る", () => {
+    const d = build("①壁のひび\n補足: 3階北側の2か所\n②床のきしみ");
+    expect(d.supplements).toEqual(["3階北側の2か所", ""]);
+    expect(d.main.slice(0, 3)).toEqual([
+      { no: "①", text: "壁のひび" },
+      { no: "", text: "・3階北側の2か所" },
+      { no: "②", text: "床のきしみ" },
+    ]);
+  });
+
+  it("★折り返しと補足で5つの枠を超えたら別紙に回す (件数は5件以下でも)", () => {
+    const d = build(`①${LONG}\n補足: 通気スリットの清掃も必要\n②建具の調整\n補足: 玄関のみ\n③外壁の汚れ`);
+    expect(d.items).toHaveLength(3);
+    expect(d.useAppendix).toBe(true);
+    expect(d.main[0]).toEqual({ no: "", text: APPENDIX_REFERENCE_TEXT });
+  });
+
+  it("★別紙の項目にも補足が付く (項目の下の細い欄に書く)", () => {
+    const items = ["壁のひび", "床のきしみ", "建具の調整", "外壁の汚れ", "雨樋の詰まり", "天井の凹凸"];
+    const summary = items
+      .map((s, i) => `${"①②③④⑤⑥"[i]}${s}${i === 1 ? "\n補足: 2階のみ" : ""}`)
+      .join("\n");
+    const d = build(summary);
+    expect(d.useAppendix).toBe(true);
+    expect(d.appendix?.items[0]).toEqual({ text: "①壁のひび", supplement: "" });
+    expect(d.appendix?.items[1]).toEqual({ text: "②床のきしみ", supplement: "・2階のみ" });
+  });
+
+  it("ちょうど5行なら本紙のまま (41文字は1行)", () => {
+    const d = build(`①${"あ".repeat(41)}\n補足: 補足1件\n②短い項目\n③短い項目\n④短い項目`);
+    expect(d.useAppendix).toBe(false);
+    expect(d.main.map((m) => m.no)).toEqual(["①", "", "②", "③", "④"]);
   });
 });

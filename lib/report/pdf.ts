@@ -16,11 +16,7 @@ import {
   type PDFFont,
   type PDFPage,
 } from "pdf-lib";
-import {
-  APPENDIX_ROWS_PER_PAGE,
-  appendixSheet,
-  paginateAppendixItems,
-} from "@/lib/report/layout/appendix-sheet";
+import { appendixSheet, paginateAppendixItems } from "@/lib/report/layout/appendix-sheet";
 import { resolveGeometry, type Geometry, type SheetSpec } from "@/lib/report/layout/grid";
 import { MAIN_SHEET } from "@/lib/report/layout/main-sheet";
 import { PAGE_HEIGHT, PAGE_WIDTH } from "@/lib/report/metrics";
@@ -323,7 +319,8 @@ export async function buildReportPdf(data: ReportData, fonts: ReportFonts): Prom
       });
       render(spec, values, {});
     });
-    if (data.appendix.items.length > APPENDIX_ROWS_PER_PAGE) {
+    // 補足があると1ページに入る枠が減るので、件数ではなく実際のページ数で知らせる
+    if (pages.length > 1) {
       warnings.push(
         `指示内容が${data.appendix.items.length}件あるため、PDFの別紙を${pages.length}ページに分けました`,
       );

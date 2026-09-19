@@ -46,13 +46,16 @@ export const CHECKBOX = {
 /** 文字を縮小する下限 (これ以下にはせず、はみ出す分はセルで切る) */
 export const MIN_FONT_SIZE = 7;
 
+/** 文字サイズの刻み (1/600 インチ) */
+export const FONT_SIZE_STEP = 0.12;
+
 /**
  * Excelは文字サイズを 1/600 インチ (0.12pt) 刻みに丸めて印刷する。
  * 見本PDFの実測 (11pt→11.04 / 14pt→14.04 / 10pt→9.96 / 別紙の11pt×85%→9.36) と一致する。
  * 行の高さと違い、文字サイズには印刷倍率 (PRINT_FACTOR) がかからない。
  */
 export function quantizeFontSize(pt: number): number {
-  return Math.round(pt / 0.12) * 0.12;
+  return Math.round(pt / FONT_SIZE_STEP) * FONT_SIZE_STEP;
 }
 
 /** 本紙 (作業報告書　兼　完了報告書) */

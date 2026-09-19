@@ -131,6 +131,37 @@ describe.skipIf(!fonts)("完了報告書PDF", () => {
     expect(compact[0]).not.toContain("太郎（");
   }, 30_000);
 
+  it("★長い項目と補足は本紙の次の枠に入る (縮めない・注意も出ない)", async () => {
+    const long =
+      "基礎の巾木仕上げ施工時に土台水切りや通気パッキン周辺の通気スリットまで塗り込まれて隙間が閉塞・阻害されている状況";
+    const { pageCount, compact, warnings, data } = await render([long, "補足: 通気スリットの清掃も必要"]);
+    expect(pageCount).toBe(1);
+    expect(warnings.some((w) => w.includes("枠に収まらない"))).toBe(false);
+    expect(compact[0]).toContain(long);
+    expect(compact[0]).toContain("・通気スリットの清掃も必要");
+    expect(data.useAppendix).toBe(false);
+    expect(compact[0]).not.toContain("別紙参照");
+  }, 30_000);
+
+  it("★補足で本紙の5つの枠を超えると別紙に回り、補足は項目の下に入る", async () => {
+    const items = [
+      "①壁のひび",
+      "補足: 3階北側の2か所",
+      "②床のきしみ",
+      "補足: 玄関のみ",
+      "③建具の調整",
+      "補足: 2階の洋室",
+    ];
+    const { pageCount, compact, data } = await render(items);
+    expect(data.useAppendix).toBe(true);
+    expect(pageCount).toBe(2);
+    expect(compact[0]).toContain("別紙参照");
+    expect(compact[1]).toContain("①壁のひび");
+    expect(compact[1]).toContain("・3階北側の2か所");
+    expect(compact[1]).toContain("・2階の洋室");
+    expect(compact[1]).toContain("対応結果：");
+  }, 30_000);
+
   it("必要な文字だけに絞ったフォントを埋め込み、PDFは小さくなる", async () => {
     const { bytes } = await render(["壁のひび"]);
     expect(Buffer.from(bytes.slice(0, 5)).toString("latin1")).toBe("%PDF-");
