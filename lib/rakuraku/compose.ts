@@ -4,10 +4,11 @@ import { defaultDownloadTiming, fetchAttachment, fetchBodyPdf, locateAttachments
 import { RakurakuError } from "./errors";
 import { sendFile } from "./file-frames";
 import type { FetchRun } from "./fetch-one";
-import { KINDS, type RakurakuKind } from "./kinds";
+import { KINDS, type RakurakuKind, resolveKind } from "./kinds";
 import { defaultTiming, scanListForNo } from "./list";
-import { applyDepartment, gotoList, openHome } from "./navigation";
+import { applyDepartment, gotoList, openHome, rememberedOf } from "./navigation";
 import { normalizeDenpyoDigits } from "./parse/fields";
+import type { RememberedRoute } from "./protocol";
 import { composeNatsuinParts, natsuinFinalName } from "./parse/natsuin";
 import { extOf } from "./parse/sniff";
 
@@ -24,10 +25,13 @@ import { extOf } from "./parse/sniff";
  */
 const errorText = (e: unknown) => (e instanceof Error ? e.message.split("\n")[0].slice(0, 200) : "失敗しました");
 
-export async function fetchComposedParts(run: FetchRun, fields: Record<string, string>): Promise<void> {
+export async function fetchComposedParts(
+  run: FetchRun,
+  fields: Record<string, string>,
+): Promise<RememberedRoute | null> {
   const { page, kind, tenant, log, send } = run;
   const compose = kind.compose;
-  if (!compose) return;
+  if (!compose) return null;
   const linkedKind: RakurakuKind = run.linkedKind ?? KINDS[compose.linkedKind];
   const llabel = linkedKind.label;
   const lno = normalizeDenpyoDigits(fields[compose.linkKey] ?? run.request.linkedNo ?? null);
@@ -53,22 +57,33 @@ export async function fetchComposedParts(run: FetchRun, fields: Record<string, s
   if (!lno) {
     linkReason = `${llabel}№を読めませんでした`;
     await finish();
-    return;
+    return null;
   }
 
   // --- 紐づく伝票を一覧から探す（★部門は一覧を開く直前に毎回確かめる）
   run.progress("navigate", `紐づく${llabel}を探しています`);
   log(`  紐づく${llabel} No.${lno} を探します`);
   let row: { denpyoNo: string; href: string | null; status: string } | null = null;
+  let linkedRoute = linkedKind.routes[0];
+  let remembered: RememberedRoute | null = null;
   try {
     await openHome(page, tenant, run.home);
     if (run.request.deptCode !== null) {
       await applyDepartment(page, run.request.deptCode, { log, reopenUrl: run.home, ...run.timing?.department });
     }
-    const location = await gotoList(page, linkedKind, tenant, { log, timing: run.timing?.navigation });
+    // ★紐づく種類には画面の固定を持ち込まない（別の種類なので、開ける経路は自動で選ぶ）
+    const location = await gotoList(page, linkedKind, tenant, {
+      log,
+      remembered: run.linkedRemembered ?? null,
+      home: run.home,
+      timing: run.timing?.navigation,
+      onRoute: (r, how) => run.onRoute?.(linkedKind.id, r, how),
+    });
+    linkedRoute = location.route;
+    remembered = rememberedOf(location);
     row = location.empty
       ? null
-      : await scanListForNo(page, linkedKind, lno, {
+      : await scanListForNo(page, resolveKind(linkedKind, linkedRoute), lno, {
           maxPages: compose.maxLinkPages,
           timing: run.timing?.list ?? defaultTiming(linkedKind),
           log,
@@ -77,18 +92,21 @@ export async function fetchComposedParts(run: FetchRun, fields: Record<string, s
     if (e instanceof RakurakuError && e.sessionLost) throw e;
     linkReason = `${llabel}の一覧を開けませんでした（${errorText(e)}）`;
     await finish();
-    return;
+    return null;
   }
   if (!row) {
-    linkReason = `${llabel} No.${lno} が${llabel}の一覧に見つかりませんでした`;
+    // ★申請検索の一覧は自分が申請した伝票しか出ない。ほかの人が申請した伝票は見つからないので、理由に添える
+    const scopeNote = linkedRoute.scope === "own" ? "（申請検索の一覧は自分が申請した伝票だけが対象です）" : "";
+    linkReason = `${llabel} No.${lno} が${llabel}の一覧に見つかりませんでした${scopeNote}`;
     await finish();
-    return;
+    return remembered;
   }
   await send({ type: "linked.found", denpyoNo: row.denpyoNo, href: row.href });
 
   // --- 紐づく伝票の画面: 項目 → 本体 → 添付
   const detailOptions = { log, timing: run.timing?.detail };
-  let frame = await openDetail(page, linkedKind, tenant, row.denpyoNo, row.href, detailOptions);
+  const resolvedLinked = resolveKind(linkedKind, linkedRoute);
+  let frame = await openDetail(page, resolvedLinked, tenant, row.denpyoNo, row.href, detailOptions);
   const href = row.href ?? frame.url();
 
   try {
@@ -118,7 +136,7 @@ export async function fetchComposedParts(run: FetchRun, fields: Record<string, s
       }
       log(`    ! 取れなかったので開き直してもう一度試します（${errorText(e)}）`);
     }
-    frame = await openDetail(page, linkedKind, tenant, row.denpyoNo, href, detailOptions);
+    frame = await openDetail(page, resolvedLinked, tenant, row.denpyoNo, href, detailOptions);
   }
 
   // --- 添付の選別
@@ -176,4 +194,5 @@ export async function fetchComposedParts(run: FetchRun, fields: Record<string, s
     if (intervalMs > 0) await page.waitForTimeout(intervalMs);
   }
   await finish();
+  return remembered;
 }

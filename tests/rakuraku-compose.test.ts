@@ -7,6 +7,7 @@ import { type FetchRun, fetchOne } from "@/lib/rakuraku/fetch-one";
 import { KINDS, type RakurakuKind } from "@/lib/rakuraku/kinds";
 import { type ComposeEvent, FileAssembler, type RakurakuEvent, type ReceivedFile } from "@/lib/rakuraku/protocol";
 import { tryLaunch } from "./rakuraku/helpers/browser";
+import { oneRoute } from "./rakuraku/helpers/kinds";
 import { SAMPLE_PDF, startFixtureServer, type FixtureServer } from "./rakuraku/helpers/fixture-server";
 
 // 期待値は移植元 tenmatsu.py の _process_composed と smoke_test.py「捺印決裁書」から写した。すべて架空の画面
@@ -25,13 +26,12 @@ const QUICK: DownloadTiming = { printButtonWaitMs: 5_000, printClickWaitMs: 5_00
 const tenant = (): TenantConfig => ({ loginUrl: `${server!.url}/` });
 const url = (path: string) => `${server!.url}/${path}`;
 
-const natsuin: RakurakuKind = { ...KINDS.natsuin, list: { ...KINDS.natsuin.list, detailUrlMarker: "natsuin_download.html" } };
-const senketsu: RakurakuKind = {
-  ...KINDS.senketsu,
+const natsuin: RakurakuKind = oneRoute(KINDS.natsuin, { detailUrlMarker: "natsuin_download.html" });
+const senketsu: RakurakuKind = oneRoute(KINDS.senketsu, {
   listPath: "linked_list.html",
   listUrlMarker: "linked_list.html",
-  list: { ...KINDS.senketsu.list, detailUrlMarker: "linked_download.html" },
-};
+  detailUrlMarker: "linked_download.html",
+});
 
 let lines: string[] = [];
 beforeEach(() => {
@@ -53,7 +53,7 @@ async function run(detail: string, patch: Partial<FetchRun> = {}) {
       kind: natsuin,
       linkedKind: senketsu,
       request: { denpyoNo: "NA00001001", href: url(detail), deptCode: "1900" },
-      listUrlFound: null,
+      remembered: null,
       log: (line) => lines.push(line),
       progress: () => undefined,
       send: async (event) => {

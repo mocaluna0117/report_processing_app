@@ -2,6 +2,7 @@ import { RakurakuError } from "@/lib/rakuraku/errors";
 import { fetchOneAttachment } from "@/lib/rakuraku/fetch-one";
 import { assertEnabled, assertSameOrigin } from "@/lib/rakuraku/guard";
 import { KINDS } from "@/lib/rakuraku/kinds";
+import { pinnedRoute } from "@/lib/rakuraku/navigation";
 import { parseAttachmentRequest } from "@/lib/rakuraku/protocol";
 import { unseal } from "@/lib/rakuraku/session";
 import { withSessionPage } from "@/lib/rakuraku/session-browser";
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
       const body = parsed.value;
       const session = unseal(body.sessionToken);
       const kind = KINDS[body.kind];
+      const pin = body.route ? pinnedRoute(kind, body.route).id : null;
 
       await withSessionPage(sink, session, async ({ page }) => {
         const result = await fetchOneAttachment(
@@ -41,15 +43,18 @@ export async function POST(request: Request) {
             home: session.home,
             kind,
             request: body,
-            listUrlFound: session.lists?.[kind.id] ?? null,
+            remembered: session.routes?.[kind.id] ?? null,
+            pin,
             log: sink.log,
             progress: sink.progress,
             send: sink.send,
+            onRoute: (id, route, how) =>
+              void sink.send({ type: "route", kind: id, route: route.id, label: route.label, scope: route.scope, how }),
           },
           body.index,
           body.expectedName,
         );
-        return result.foundUrl ? { lists: { [kind.id]: result.foundUrl } } : undefined;
+        return { routes: result.routes };
       });
     },
     { stage: "download", startedAt: started },

@@ -15,6 +15,7 @@ import { type FetchRun, fetchOne, fetchOneAttachment } from "@/lib/rakuraku/fetc
 import { KINDS, type RakurakuKind } from "@/lib/rakuraku/kinds";
 import { FileAssembler, type RakurakuEvent, type ReceivedFile } from "@/lib/rakuraku/protocol";
 import { tryLaunch } from "./rakuraku/helpers/browser";
+import { oneRoute } from "./rakuraku/helpers/kinds";
 import { SAMPLE_PDF, SAMPLE_PNG, startFixtureServer, type FixtureServer } from "./rakuraku/helpers/fixture-server";
 
 // 期待値は移植元の検証 (tenmatsu-dl/smoke_test.py「実構造」「印刷ボタン」「印刷の別ウィンドウ」「印刷が押せないとき」「本体PDF」) から写した。
@@ -206,7 +207,7 @@ describe.skipIf(!browser)("添付を受け取る", () => {
 });
 
 describe.skipIf(!browser)("伝票1件を取得する（通し）", () => {
-  const kind: RakurakuKind = { ...KINDS.tenmatsu, list: { ...KINDS.tenmatsu.list, detailUrlMarker: "detail_download.html" } };
+  const kind: RakurakuKind = oneRoute(KINDS.tenmatsu, { detailUrlMarker: "detail_download.html" });
 
   async function runFetch(
     href: string,
@@ -224,7 +225,7 @@ describe.skipIf(!browser)("伝票1件を取得する（通し）", () => {
       home: url("top_frameset.html"),
       kind,
       request: { denpyoNo: "TE00009005", href: url(href), deptCode: null },
-      listUrlFound: null,
+      remembered: null,
       log,
       progress: () => undefined,
       send: async (event) => {

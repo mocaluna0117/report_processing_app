@@ -9,7 +9,10 @@ import { TenmatsuPreviewDialog } from "@/components/tenmatsu/tenmatsu-preview-di
 import { TenmatsuRelinkDialog } from "@/components/tenmatsu/tenmatsu-relink-dialog";
 import { TenmatsuRunLog } from "@/components/tenmatsu/tenmatsu-run-log";
 import { TenmatsuStaffSync } from "@/components/tenmatsu/tenmatsu-staff-sync";
-import type { DepartmentOption } from "@/lib/rakuraku/protocol";
+import { TenmatsuSurvey } from "@/components/tenmatsu/tenmatsu-survey";
+import { ROUTE_LABELS } from "@/lib/rakuraku/kinds";
+import { routeNoticeText, routeOptionLabel, routeOptions } from "@/lib/rakuraku/parse/route";
+import { type DepartmentOption, type RouteId, isRouteId } from "@/lib/rakuraku/protocol";
 import { isStorageAvailable } from "@/lib/storage";
 import {
   type FlagKey,
@@ -68,11 +71,13 @@ import {
   loadFolderHandle,
   loadFolderList,
   loadMaxPerRun,
+  loadRoutePin,
   loadUserId,
   saveDept,
   saveFolderHandle,
   saveFolderList,
   saveMaxPerRun,
+  saveRoutePin,
   saveUserId,
 } from "@/lib/tenmatsu/store";
 import { usePersistence } from "@/lib/use-persistence";
@@ -113,6 +118,8 @@ const SHOW_IMPORT: boolean = false;
 export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; header?: ReactNode }) {
   const kind = DOC_KIND_BY_ID[kindId];
   const kept = getFolderSession(kind.id);
+  /** この種類で選べる一覧の経路（1つしか無ければ選択は出さない） */
+  const ROUTES = routeOptions(kind.id);
 
   const [supported, setSupported] = useState(true);
   const [handle, setHandle] = useState<BrowserDirHandle | null>(kept.handle);
@@ -156,8 +163,12 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   const [loginError, setLoginError] = useState<string | null>(null);
   const [departments, setDepartments] = useState<DepartmentOption[] | null>(kept.departments);
   const [deptCode, setDeptCode] = useState<string | null>(kept.deptCode);
+  /** 一覧の経路の固定（null なら自動で順に試す） */
+  const [routePin, setRoutePin] = useState<RouteId | null>(kept.routePin);
   const deptCodeRef = useRef(deptCode);
   deptCodeRef.current = deptCode;
+  const routePinRef = useRef(routePin);
+  routePinRef.current = routePin;
   const userIdRef = useRef(userId);
   userIdRef.current = userId;
 
@@ -233,6 +244,11 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
       } catch (e) {
         partialErrors.push(`ログインID: ${errorText(e)}`);
       }
+      try {
+        setRoutePin(await loadRoutePin(kind.id));
+      } catch (e) {
+        partialErrors.push(`一覧の経路: ${errorText(e)}`);
+      }
       return { partialErrors };
     },
     hasSaved: () => hasFolderData(kind.id),
@@ -296,6 +312,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
           setToken: (token) => setLogin({ sessionToken: token }),
         },
         deptCode: () => deptCodeRef.current,
+        routePin: () => routePinRef.current,
         statsCache: idbStatsCache(kind.id),
       }),
     [kind.id],
@@ -414,6 +431,13 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     if (!found) return;
     setDeptCode(code);
     storage.persist(() => saveDept(kind.id, found));
+  };
+
+  /** 一覧の経路。空文字は「自動」（閲覧 → ワークフローの順に試す） */
+  const chooseRoute = (value: string) => {
+    const next = isRouteId(value) ? value : null;
+    setRoutePin(next);
+    storage.persist(() => saveRoutePin(kind.id, next));
   };
 
   // --- 取得 --------------------------------------------------------------------
@@ -668,6 +692,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
       maxInput,
       departments,
       deptCode,
+      routePin,
     });
   });
 
@@ -883,6 +908,16 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
             </p>
           )}
           {loginError && <p className={ERROR_CLASS}>{loginError}</p>}
+          {loggedIn && (
+            <TenmatsuSurvey
+              api={api}
+              sessionToken={getSessionToken()}
+              deptCode={deptCode}
+              onSession={(token) => setLogin({ sessionToken: token })}
+              disabled={running || otherRunning}
+              disabledReason={running || otherRunning ? "取得が終わってから実行してください" : undefined}
+            />
+          )}
         </section>
 
         {/* ---------- 取得 ---------- */}
@@ -917,6 +952,26 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
                     {departments.map((d) => (
                       <option key={d.code} value={d.code}>
                         {d.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {loggedIn && ROUTES.length > 1 && (
+                <label className="flex items-center gap-1.5 text-sm text-slate-600">
+                  一覧の経路
+                  <select
+                    value={routePin ?? ""}
+                    onChange={(e) => chooseRoute(e.target.value)}
+                    disabled={running}
+                    className={INPUT_CLASS}
+                  >
+                    <option value="">
+                      自動（{ROUTE_LABELS.jibumon} → {ROUTE_LABELS.shinsei}）
+                    </option>
+                    {ROUTES.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {routeOptionLabel(r)}
                       </option>
                     ))}
                   </select>
@@ -985,6 +1040,12 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
           </p>
 
           {running && deptLabel && <p className="mt-2 text-xs text-slate-500">部門: {deptLabel}</p>}
+          {/* ★どの経路で取ったかは取得中も完了後も出す（経路によって一覧に出る伝票の範囲が違う） */}
+          {status?.route && (
+            <p className={status.route.scope === "own" ? WARN_CLASS : "mt-2 text-xs text-slate-500"}>
+              {routeNoticeText(kind.label, status.route)}
+            </p>
+          )}
           {completion &&
             (completion.tone === "error" ? (
               <p className={ERROR_CLASS}>

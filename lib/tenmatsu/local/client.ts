@@ -10,6 +10,7 @@
  * ★同じページの中で取得は1本だけ（別の種類が走っていても断る）。
  */
 import type { KindId } from "@/lib/rakuraku/kinds";
+import type { RouteId } from "@/lib/rakuraku/protocol";
 import {
   type FlagUpdate,
   type HealthPayload,
@@ -75,6 +76,8 @@ export interface LocalFolderClientOptions {
   auth: RunAuth;
   /** 部門の値。取得のたびに読む（画面で選び直せるように） */
   deptCode(): string | null;
+  /** 一覧の経路の固定。取得のたびに読む（画面で選び直せるように）。null なら自動 */
+  routePin?(): RouteId | null;
   statsCache?: StatsCache;
   now?: () => Date;
   requestIntervalMs?: number;
@@ -263,6 +266,7 @@ export function createLocalFolderClient(options: LocalFolderClientOptions): Loca
           api: options.api,
           auth: options.auth,
           deptCode: options.deptCode(),
+          routePin: options.routePin?.() ?? null,
           now: options.now,
           sleep: options.sleep,
           requestIntervalMs: options.requestIntervalMs,

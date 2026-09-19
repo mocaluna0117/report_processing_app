@@ -2,7 +2,7 @@ import "server-only";
 import type { BrowserContext, BrowserContextOptions, Page } from "playwright-core";
 import { type LaunchedBrowser, launchBrowser } from "./browser";
 import { RakurakuError } from "./errors";
-import type { KindId } from "./protocol";
+import type { KindId, RememberedRoute } from "./protocol";
 import { type SessionPayload, seal } from "./session";
 import type { EventSink } from "./stream";
 
@@ -20,8 +20,8 @@ export interface SessionPageRun {
 }
 
 export interface SessionPageOutcome {
-  /** メニューで見つけた一覧の URL が増えたときだけ返す */
-  lists?: Partial<Record<KindId, string>>;
+  /** 一覧を開けた経路（種類ごと）。★次の呼び出しでその経路を先に試すために覚える */
+  routes?: Partial<Record<KindId, RememberedRoute>>;
 }
 
 export async function withSessionPage(
@@ -44,14 +44,14 @@ export async function withSessionPage(
   sink.onAbort(() => void launched.close());
 
   let context: BrowserContext | null = null;
-  const sendSession = async (lists = session.lists) => {
+  const sendSession = async (routes = session.routes) => {
     if (!context) return;
     await sink.send({
       type: "session",
       sessionToken: seal({
         state: JSON.stringify(await context.storageState()),
         home: session.home,
-        lists,
+        routes,
         exp: session.exp,
       }),
     });
@@ -65,7 +65,7 @@ export async function withSessionPage(
     const page = await context.newPage();
     page.setDefaultTimeout(30_000);
     const outcome = await run({ page, session });
-    await sendSession(outcome?.lists ? { ...session.lists, ...outcome.lists } : session.lists);
+    await sendSession(outcome?.routes ? { ...session.routes, ...outcome.routes } : session.routes);
   } catch (e) {
     if (!(e instanceof RakurakuError && e.sessionLost)) await sendSession().catch(() => null);
     throw e;

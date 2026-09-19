@@ -6,6 +6,7 @@ import {
   parseEventLine,
   parseFetchRequest,
   parseScanRequest,
+  parseSurveyRequest,
   readNdjson,
 } from "@/lib/rakuraku/protocol";
 
@@ -69,6 +70,50 @@ async function readAll(stream: ReadableStream<Uint8Array>): Promise<RakurakuEven
   for await (const event of readNdjson(stream)) out.push(event);
   return out;
 }
+
+describe("一覧の経路の指定", () => {
+  it("経路を固定して送れる（scan / fetch / attachment）", () => {
+    const scan = parseScanRequest({ ...VALID, route: "shinsei" });
+    expect(scan.ok && scan.value.route).toBe("shinsei");
+    const fetch = parseFetchRequest({ sessionToken: "a.b.c", kind: "tenmatsu", denpyoNo: "TE00009001", href: null, deptCode: null, route: "jibumon" });
+    expect(fetch.ok && fetch.value.route).toBe("jibumon");
+  });
+
+  it("経路を指定しなければ入らない（自動で順に試す）", () => {
+    const scan = parseScanRequest(VALID);
+    expect(scan.ok && "route" in scan.value).toBe(false);
+  });
+
+  it("★知らない経路は断る（黙って自動に落とさない）", () => {
+    for (const route of ["keihi", "", 1, null]) {
+      const parsed = parseScanRequest({ ...VALID, route });
+      expect(parsed.ok).toBe(false);
+    }
+  });
+
+  it("経路のイベントが読める", () => {
+    const event = parseEventLine(
+      JSON.stringify({ type: "route", kind: "tenmatsu", route: "shinsei", label: "ワークフロー（申請検索）", scope: "own", how: "fallback" }),
+    );
+    expect(event.type).toBe("route");
+  });
+});
+
+describe("/survey の本文を確かめる", () => {
+  it("正しい本文はそのまま通す（部門は未選択でもよい）", () => {
+    expect(parseSurveyRequest({ sessionToken: "a.b.c", deptCode: null })).toEqual({
+      ok: true,
+      value: { sessionToken: "a.b.c", deptCode: null },
+    });
+    const noDept = parseSurveyRequest({ sessionToken: "a.b.c" });
+    expect(noDept.ok && noDept.value.deptCode).toBeNull();
+  });
+
+  it("sessionToken が無ければ断る・部門の値の形も見る", () => {
+    expect(parseSurveyRequest({ deptCode: null }).ok).toBe(false);
+    expect(parseSurveyRequest({ sessionToken: "a.b.c", deptCode: "1900; drop" }).ok).toBe(false);
+  });
+});
 
 describe("流れてきた行を読む", () => {
   it("行の途中で区切られても、1行ずつ読める", async () => {

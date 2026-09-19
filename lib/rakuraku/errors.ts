@@ -78,6 +78,24 @@ export function menuNotFoundText(label: string, item?: string): string {
   return item ? `${base}。見つからなかった項目: ${item}` : base;
 }
 
+/**
+ * どの経路でも一覧を開けなかったときの文。
+ * ★試した経路とその理由を並べる（アカウントの権限で使える画面が違うので、
+ *   「閲覧が無い」のか「画面が変わった」のかを利用者と開発者が見分けられるようにする）。
+ */
+export function listRoutesFailedText(
+  label: string,
+  tried: readonly { route: { label: string }; message: string }[],
+): string {
+  const lines = tried.map((t) => `${t.route.label} → ${t.message}`).join(" ／ ");
+  return `このアカウントでは${label}の一覧をどの経路でも開けませんでした。試した経路: ${lines}`;
+}
+
+/** 固定された経路がその種類に無いときの文 */
+export function routeNotAvailableText(label: string, routes: readonly { label: string }[]): string {
+  return `${label}にはその一覧の経路がありません（選べるのは ${routes.map((r) => r.label).join(" / ")} です）`;
+}
+
 /** 部門のプルダウンそのものが無いときの文 */
 export const DEPT_SELECT_MISSING_TEXT =
   "このアカウントには部門の切り替えがありません（部門内検索の権限が無い可能性があります）";

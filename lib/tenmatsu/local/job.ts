@@ -12,7 +12,7 @@
  * ★本体PDFが取れなかった伝票は記録せず見送る（次回やり直す）。続けて2件なら止める（ログイン切れの可能性）。
  */
 import { KINDS } from "@/lib/rakuraku/kinds";
-import type { ReceivedFile, ScanTarget } from "@/lib/rakuraku/protocol";
+import type { ReceivedFile, RouteId, ScanTarget } from "@/lib/rakuraku/protocol";
 import { scanSummary } from "@/lib/rakuraku/parse/list";
 import type { RunLogLine, SavedItem, StatusPayload } from "@/lib/tenmatsu/client";
 import { RUN_LOG_MAX_LINES } from "@/lib/tenmatsu/run-log";
@@ -51,6 +51,8 @@ export interface RunDeps {
   auth: RunAuth;
   /** 部門の値。部門の切り替えが無いアカウントは null */
   deptCode: string | null;
+  /** 一覧の経路の固定（画面の「一覧の経路」）。null なら自動で順に試す */
+  routePin?: RouteId | null;
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
   /** 伝票1件ごとにあける間隔。移植元 1.5 秒 */
@@ -144,6 +146,9 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
     notify();
   };
 
+  /** 経路の固定（指定が無ければ何も足さない＝自動で順に試す） */
+  const routePin = (): { route?: RouteId } => (deps.routePin ? { route: deps.routePin } : {});
+
   const emit = (patch: Partial<typeof state>) => {
     Object.assign(state, patch);
     notify();
@@ -153,6 +158,13 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
     log: print,
     progress: (_stage, message) => emit({ message }),
     session: (token) => auth.setToken(token),
+    // ★どの経路で一覧を開いたかは必ず見せる（経路によって一覧に出る伝票の範囲が違う）
+    route: (event) => {
+      const linked = event.kind === cfg.id ? "" : `（紐づく${LOCAL_KINDS[event.kind].label}）`;
+      const how = event.how === "fallback" ? "（切り替え）" : "";
+      print(`  一覧の経路: ${event.label}${how}${linked}`);
+      if (event.kind === cfg.id) emit({ route: { label: event.label, scope: event.scope, how: event.how } });
+    },
   };
 
   /**
@@ -337,7 +349,15 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
     const linkedNo = linkKey ? (target.meta[linkKey] ?? null) : null;
     const result = await withSession((token) =>
       api.fetch(
-        { sessionToken: token, kind: cfg.id, denpyoNo, href: target.href, deptCode: deps.deptCode, ...(linkedNo ? { linkedNo } : {}) },
+        {
+          sessionToken: token,
+          kind: cfg.id,
+          denpyoNo,
+          href: target.href,
+          deptCode: deps.deptCode,
+          ...(linkedNo ? { linkedNo } : {}),
+          ...routePin(),
+        },
         handlers,
       ),
     );
@@ -355,7 +375,16 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
         print(`    ${failure.index}件目の添付を取り直します`);
         const file = await withSession((token) =>
           api.attachment(
-            { sessionToken: token, kind: cfg.id, denpyoNo, href: target.href, deptCode: deps.deptCode, index: failure.index, expectedName: failure.name },
+            {
+              sessionToken: token,
+              kind: cfg.id,
+              denpyoNo,
+              href: target.href,
+              deptCode: deps.deptCode,
+              index: failure.index,
+              expectedName: failure.name,
+              ...routePin(),
+            },
             handlers,
           ),
         );
@@ -457,7 +486,17 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
     emit({ message: `${cfg.label}一覧を読んでいます` });
     // 保留中の伝票は取り直さない（確定するまで待つ）
     const scan = await withSession((token) =>
-      api.scan({ sessionToken: token, kind: cfg.id, deptCode: deps.deptCode, done: doneAndPending(records), limit: input.limit }, handlers),
+      api.scan(
+        {
+          sessionToken: token,
+          kind: cfg.id,
+          deptCode: deps.deptCode,
+          done: doneAndPending(records),
+          limit: input.limit,
+          ...routePin(),
+        },
+        handlers,
+      ),
     );
     let targets = scan.items;
     const found = targets.length;

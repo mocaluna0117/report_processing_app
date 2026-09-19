@@ -1,5 +1,5 @@
 import { DEFAULT_COMPOSE, type ComposeRules } from "./parse/natsuin";
-import { type KindId, isKindId } from "./protocol";
+import { type KindId, type RouteId, type RouteScope, isKindId } from "./protocol";
 
 export { type KindId, isKindId } from "./protocol";
 
@@ -13,6 +13,9 @@ export { type KindId, isKindId } from "./protocol";
  *   平らにしたもの同士を混ぜると、列の指定や捺印決裁書の合成の設定が**別の種類へ漏れる**
  *   不具合があった（tenmatsu.py:219-223）。ここでは種類ごとの値がそのまま見える形にする。
  * ★テナントの URL は書かない。一覧のパスは**相対**で持ち、`resolveTenantPath` で組む。
+ * ★一覧への行き方は**経路 (routes)** として持つ。アカウントの権限で使える画面が違い、
+ *   「閲覧」タブ (自部門検索) が無い人は「ワークフロー」タブ (申請検索) から取るため。
+ *   先頭から順に試し、開けた経路で一覧の行と伝票画面を読む (lib/rakuraku/navigation.ts の gotoList)。
  * ★ブラウザ側（記録に残す項目の決定）からも読むので、Playwright にも server-only にも依存しない。
  *   秘密の値は置かないこと。
  */
@@ -33,12 +36,37 @@ export interface ListSettings {
   columns: Readonly<Record<string, string>>;
   /** ★部分一致で判定する。実画面は「承認済み」 */
   approvedValues: readonly string[];
-  /** ★伝票画面の URL に含まれる文字。一覧の目印とは必ず別の文字にする */
-  detailUrlMarker: string;
   /** 最後の手段。★これに頼らない（ページごとに描き直されるため） */
   nextPageJs: string;
   nextPageWaitMs: number;
   maxPages: number;
+}
+
+/** 画面とログに出す経路の名前。ブラウザ側の選択肢にも使う */
+export const ROUTE_LABELS: Readonly<Record<RouteId, string>> = {
+  jibumon: "閲覧（自部門検索）",
+  shinsei: "ワークフロー（申請検索）",
+};
+
+/** 一覧への行き方 (経路)。1つの種類がいくつか持ち、先頭から順に試す */
+export interface ListRoute {
+  id: RouteId;
+  label: string;
+  /** 一覧に出る伝票の範囲。own（自分が申請した伝票だけ）は画面で必ず伝える */
+  scope: RouteScope;
+  /** 一覧のパス（テナントの場所からの相対）。空ならメニューをたどる */
+  listPath: string;
+  /** ★一覧に着いたかの目印。この経路の伝票画面の URL に含まれない文字にすること */
+  listUrlMarker: string;
+  menuText: string;
+  menuSteps?: readonly MenuStep[];
+  menuStepWaitMs: number;
+  /** ★この経路で開く伝票画面の URL に含まれる文字（経路で伝票画面が変わる） */
+  detailUrlMarker: string;
+  /** 一覧の列の見出しがこの経路だけ違うときの上書き */
+  list?: Partial<Pick<ListSettings, "colDenpyoNo" | "colStatus" | "columns" | "approvedValues">>;
+  /** 実画面で未確認（「画面の下見」の結果で値を直す）。ログにその旨を出す */
+  unverified?: boolean;
 }
 
 export interface DetailSettings {
@@ -82,17 +110,41 @@ export interface RakurakuKind {
   id: KindId;
   label: string;
   filePrefix: string;
-  /** 一覧のパス（テナントの場所からの相対） */
-  listPath: string;
-  /** ★一覧に着いたかの目印。伝票画面の URL に含まれない文字にすること */
-  listUrlMarker: string;
-  menuText: string;
-  menuSteps?: readonly MenuStep[];
-  menuStepWaitMs: number;
+  /** 一覧への経路。★先頭から順に試す（閲覧 → ワークフロー） */
+  routes: readonly ListRoute[];
   list: ListSettings;
   detail: DetailSettings;
   keepParts: boolean;
   compose?: ComposeSettings;
+}
+
+/** 経路を1つに決めた種類。一覧の行・伝票画面を読む関数はこれを受け取る */
+export interface ResolvedKind extends RakurakuKind {
+  route: ListRoute;
+}
+
+/** 経路を1つに決める（経路ごとの列の上書きをここで重ねる） */
+export function resolveKind(kind: RakurakuKind, route: ListRoute): ResolvedKind {
+  return { ...kind, route, list: route.list ? { ...kind.list, ...route.list } : kind.list };
+}
+
+/** その種類にその経路があれば返す。無ければ null */
+export function findRoute(kind: RakurakuKind, id: RouteId | null | undefined): ListRoute | null {
+  if (!id) return null;
+  return kind.routes.find((r) => r.id === id) ?? null;
+}
+
+/**
+ * 伝票画面に着いたかを見る目印。
+ * ★一覧から読んだ URL がどれか1つの経路の目印を含むなら、それを使う
+ *   （経路の推測が外れていても、URL が分かっている伝票は開ける）。
+ */
+export function detailMarkerFor(kind: ResolvedKind, href: string | null): string {
+  if (href) {
+    const hit = kind.routes.filter((r) => r.detailUrlMarker !== "" && href.includes(r.detailUrlMarker));
+    if (hit.length === 1) return hit[0].detailUrlMarker;
+  }
+  return kind.route.detailUrlMarker;
 }
 
 /** 一覧の設定のうち、3種類で共通のもの */
@@ -101,7 +153,6 @@ const LIST_BASE = {
   colDenpyoNo: "伝票No.",
   colStatus: "状態",
   approvedValues: ["承認済"],
-  detailUrlMarker: "workflowDetailView",
   nextPageJs: "() => DenpyoKensaku.pageFeed(1)",
   nextPageWaitMs: 15_000,
   maxPages: 20,
@@ -133,10 +184,30 @@ export const KINDS: Readonly<Record<KindId, RakurakuKind>> = {
     id: "tenmatsu",
     label: "顛末書",
     filePrefix: "顛末書№",
-    listPath: "sapWorkflowJibumonKensaku/initializeView?workflowId=4&refId=4",
-    listUrlMarker: "sapWorkflowJibumonKensaku",
-    menuText: "顛末書",
-    menuStepWaitMs: 5_000,
+    routes: [
+      {
+        id: "jibumon",
+        label: ROUTE_LABELS.jibumon,
+        scope: "department",
+        listPath: "sapWorkflowJibumonKensaku/initializeView?workflowId=4&refId=4",
+        listUrlMarker: "sapWorkflowJibumonKensaku",
+        menuText: "顛末書",
+        menuStepWaitMs: 5_000,
+        detailUrlMarker: "workflowDetailView",
+      },
+      {
+        // ★「閲覧」タブが無いアカウント向け。実画面で未確認（「画面の下見」の結果で直す）
+        id: "shinsei",
+        label: ROUTE_LABELS.shinsei,
+        scope: "own",
+        listPath: "sapWorkflowShinseiKensaku/initializeView?workflowId=4&refId=4",
+        listUrlMarker: "sapWorkflowShinseiKensaku",
+        menuText: "顛末書",
+        menuStepWaitMs: 5_000,
+        detailUrlMarker: "sapWorkflowDenpyo/detailView",
+        unverified: true,
+      },
+    ],
     list: {
       ...LIST_BASE,
       columns: {
@@ -159,10 +230,30 @@ export const KINDS: Readonly<Record<KindId, RakurakuKind>> = {
     id: "senketsu",
     label: "専決決裁書",
     filePrefix: "専決決裁書№",
-    listPath: "sapWorkflowJibumonKensaku/initializeView?workflowId=3&refId=3",
-    listUrlMarker: "sapWorkflowJibumonKensaku",
-    menuText: "専決決裁書",
-    menuStepWaitMs: 5_000,
+    routes: [
+      {
+        id: "jibumon",
+        label: ROUTE_LABELS.jibumon,
+        scope: "department",
+        listPath: "sapWorkflowJibumonKensaku/initializeView?workflowId=3&refId=3",
+        listUrlMarker: "sapWorkflowJibumonKensaku",
+        menuText: "専決決裁書",
+        menuStepWaitMs: 5_000,
+        detailUrlMarker: "workflowDetailView",
+      },
+      {
+        // ★「閲覧」タブが無いアカウント向け。実画面で未確認（「画面の下見」の結果で直す）
+        id: "shinsei",
+        label: ROUTE_LABELS.shinsei,
+        scope: "own",
+        listPath: "sapWorkflowShinseiKensaku/initializeView?workflowId=3&refId=3",
+        listUrlMarker: "sapWorkflowShinseiKensaku",
+        menuText: "専決決裁書",
+        menuStepWaitMs: 5_000,
+        detailUrlMarker: "sapWorkflowDenpyo/detailView",
+        unverified: true,
+      },
+    ],
     list: {
       ...LIST_BASE,
       columns: { shinsei_date: "申請日", shinseisha: "申請者" },
@@ -187,16 +278,23 @@ export const KINDS: Readonly<Record<KindId, RakurakuKind>> = {
     id: "natsuin",
     label: "捺印決裁書",
     filePrefix: "捺印決裁書№",
-    // ★捺印決裁書は一覧も伝票画面もパスが別
-    listPath: "sapWorkflowShinseiKensaku/initializeView?workflowId=8&refId=8",
-    listUrlMarker: "sapWorkflowShinseiKensaku",
-    menuText: "捺印決裁書",
-    menuSteps: [{ text: "ワークフロー" }, { text: "押印の申請" }, { text: "一覧", near: "捺印決裁書" }],
-    menuStepWaitMs: 5_000,
+    // ★捺印決裁書はもともと「ワークフロー」側だけ。一覧も伝票画面もパスが別
+    routes: [
+      {
+        id: "shinsei",
+        label: ROUTE_LABELS.shinsei,
+        scope: "own",
+        listPath: "sapWorkflowShinseiKensaku/initializeView?workflowId=8&refId=8",
+        listUrlMarker: "sapWorkflowShinseiKensaku",
+        menuText: "捺印決裁書",
+        menuSteps: [{ text: "ワークフロー" }, { text: "押印の申請" }, { text: "一覧", near: "捺印決裁書" }],
+        menuStepWaitMs: 5_000,
+        detailUrlMarker: "sapWorkflowDenpyo/detailView",
+      },
+    ],
     list: {
       ...LIST_BASE,
       columns: { shinsei_date: "申請日", shinseisha: "申請者", content: "内容", senketsu_no: "専決決裁書№" },
-      detailUrlMarker: "sapWorkflowDenpyo/detailView",
     },
     detail: {
       ...DETAIL_BASE,

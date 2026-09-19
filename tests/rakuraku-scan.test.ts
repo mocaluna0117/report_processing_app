@@ -6,6 +6,7 @@ import type { ProgressStage } from "@/lib/rakuraku/protocol";
 import { type ScanRun, runScan } from "@/lib/rakuraku/scan";
 import { scanSummary } from "@/lib/rakuraku/parse/list";
 import { tryLaunch } from "./rakuraku/helpers/browser";
+import { oneRoute } from "./rakuraku/helpers/kinds";
 import { startFixtureServer, type FixtureServer } from "./rakuraku/helpers/fixture-server";
 
 // 一覧から対象を見つけるまでを通しで確かめる（/api/rakuraku/scan の中身）。すべて架空の画面
@@ -22,7 +23,7 @@ afterAll(async () => {
 
 /** 部門ごとに中身が変わる一覧を直接開く種類 */
 function listKind(path: string): RakurakuKind {
-  return { ...KINDS.tenmatsu, listPath: path, listUrlMarker: path.split("?")[0] };
+  return oneRoute(KINDS.tenmatsu, { listPath: path, listUrlMarker: path.split("?")[0] });
 }
 
 interface Recorded {
@@ -45,7 +46,7 @@ async function prepare(
     home: `${server!.url}/top_frameset.html`,
     kind: listKind("list_dept.html"),
     request: { deptCode: "1900", done: [], limit: 10, ...request },
-    listUrlFound: null,
+    remembered: null,
     log: (line) => lines.push(line),
     progress: (stage) => stages.push(stage),
     deadlineAt: Date.now() + 60_000,
@@ -79,7 +80,8 @@ describe.skipIf(!browser)("一覧から対象を見つける（通し）", () =>
     expect(result.collect.targets[0].meta.shinsei_date).toBe("2026/09/01");
     expect(result.collect.stoppedEarly).toBe(false);
     expect(result.collect.total).toBe(3);
-    expect(result.foundUrl).toBeNull();
+    expect(result.remembered).toEqual({ id: "jibumon" });
+    expect(result.route.id).toBe("jibumon");
     expect(stages).toEqual(["open", "department", "navigate", "collect"]);
     expect(lines).toContain("  所属部門を切り替えました: アフターメンテナンス課(1800)");
     expect(lines).toContain("顛末書一覧へ移動します");

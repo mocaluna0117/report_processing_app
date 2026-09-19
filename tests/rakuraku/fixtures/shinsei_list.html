@@ -1,0 +1,38 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>申請検索（テスト用）</title>
+<!--
+  「ワークフロー」側の一覧（申請検索）の作り物。★実画面は未確認。
+  表の構造は自部門検索の一覧（list_structure.html）と同じにしてある。
+  データはすべて架空。下見の報告に**表の値が混ざらない**ことを確かめるため、
+  セルにはわざと目印の文字（SECRET_CELL_マル秘）を入れてある。
+-->
+<body>
+<div id="pagerText">表示件数 100件　（2件中 1件～2件目）</div>
+
+<table id="listTable">
+  <tr>
+    <th></th><th>伝票No.</th><th>申請日 ▼</th><th>申請者</th><th>支払金額(税込)</th>
+    <th>支払先</th><th>どこで</th><th>状態</th>
+  </tr>
+  <tr>
+    <td><span class="icon"></span></td>
+    <td><a class="w_denpyo szb-text-link" href="shinsei_detail.html?eDenpyoNo=TE00077001&amp;workflowId=4">TE00077001</a></td>
+    <td>2026/09/10</td><td>架空 一郎</td><td>SECRET_CELL_マル秘 110,000</td>
+    <td>架空建材（株）</td><td>新築受注物件：架空ハイツ 施主名：架空 次郎</td><td>承認済み</td>
+  </tr>
+  <tr>
+    <td><span class="icon"></span></td>
+    <td><a class="w_denpyo szb-text-link" href="shinsei_detail.html?eDenpyoNo=TE00077002&amp;workflowId=4">TE00077002</a></td>
+    <td>2026/09/11</td><td>架空 一郎</td><td>SECRET_CELL_マル秘 55,000</td>
+    <td>架空設備（株）</td><td>新築受注物件：架空コーポ 施主名：架空 三郎</td><td>承認依頼中 0/3</td>
+  </tr>
+</table>
+
+<div class="pager">
+  <span onclick="DenpyoKensaku.pageFeed(1)" class="material-icons">chevron_right</span>
+</div>
+<script>
+var DenpyoKensaku = { pageFeed: function () {} };
+</script>
+</body>

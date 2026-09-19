@@ -6,12 +6,13 @@ import { type DetailTiming, openDetail, readDetailFields, waitForDetailReady } f
 import { RakurakuError } from "@/lib/rakuraku/errors";
 import { readDetailRecord } from "@/lib/rakuraku/fetch-one";
 import { contentFrame } from "@/lib/rakuraku/frames";
-import { KINDS, type RakurakuKind } from "@/lib/rakuraku/kinds";
+import { KINDS, type RakurakuKind, type ResolvedKind } from "@/lib/rakuraku/kinds";
 import { hasTimePart } from "@/lib/rakuraku/parse/datetime";
 import { parseLabeledField, parseStaffNames } from "@/lib/rakuraku/parse/fields";
 import { pickLabeledValue } from "@/lib/rakuraku/parse/tables";
 import { readFrameTables } from "@/lib/rakuraku/tables";
 import { tryLaunch } from "./rakuraku/helpers/browser";
+import { oneRoute, resolved } from "./rakuraku/helpers/kinds";
 import { startFixtureServer, type FixtureServer } from "./rakuraku/helpers/fixture-server";
 
 // 期待値は移植元の検証 (tenmatsu-dl/smoke_test.py「実構造」「開き直し」「専決決裁書」「捺印決裁書」) から写した。
@@ -38,9 +39,14 @@ beforeEach(() => {
   lines = [];
 });
 
-/** 伝票画面の目印をテスト用の画面に向けた種類 */
-function withMarker(base: RakurakuKind, marker = "detail_structure.html", detail: Partial<RakurakuKind["detail"]> = {}): RakurakuKind {
-  return { ...base, list: { ...base.list, detailUrlMarker: marker }, detail: { ...base.detail, ...detail } };
+/** 伝票画面の目印をテスト用の画面に向けた種類（経路は1つに決めておく） */
+function withMarker(
+  base: RakurakuKind,
+  marker = "detail_structure.html",
+  detail: Partial<RakurakuKind["detail"]> = {},
+): ResolvedKind {
+  const kind = resolved(base, { detailUrlMarker: marker });
+  return { ...kind, detail: { ...kind.detail, ...detail } };
 }
 
 async function open(path: string): Promise<Page> {
@@ -370,12 +376,13 @@ describe.skipIf(!browser)("伝票画面を開く", () => {
 });
 
 describe.skipIf(!browser)("伝票1件の項目を読む（通し）", () => {
-  const listKind = (): RakurakuKind => ({
+  const listKind = (): RakurakuKind =>
     // 伝票画面の目印は2つの見本（detail_structure / detail_no_where）に共通の文字。一覧の名前には含まれない
-    ...withMarker(KINDS.tenmatsu, "detail_"),
-    listPath: "list_with_detail.html",
-    listUrlMarker: "list_with_detail.html",
-  });
+    oneRoute(KINDS.tenmatsu, {
+      detailUrlMarker: "detail_",
+      listPath: "list_with_detail.html",
+      listUrlMarker: "list_with_detail.html",
+    });
 
   const run = (page: Page, request: { denpyoNo: string; href: string | null; deptCode: string | null }, stages: string[]) => ({
     page,
@@ -383,7 +390,7 @@ describe.skipIf(!browser)("伝票1件の項目を読む（通し）", () => {
     home: url("top_frameset.html"),
     kind: listKind(),
     request,
-    listUrlFound: null,
+    remembered: null,
     log,
     progress: (stage: string) => stages.push(stage),
     send: async () => undefined,

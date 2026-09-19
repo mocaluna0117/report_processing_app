@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>申請検索の伝票画面（テスト用）</title>
+<!--
+  「ワークフロー」側の伝票画面の作り物。★実画面は未確認。
+  部品（印刷・承認履歴・添付）の並びは detail_structure.html に合わせてある。
+  値の欄にはわざと目印の文字（SECRET_VALUE_極秘）を入れ、下見の報告に**値が混ざらない**ことを確かめる。
+-->
+<body>
+<table class="d_table_contents">
+  <tr><th>申請日</th><td>SECRET_VALUE_極秘 2026/09/10 09:12:34</td></tr>
+  <tr><th>どこで</th><td>SECRET_VALUE_極秘 新築受注物件：架空ハイツ</td></tr>
+  <tr><th>支払先</th><td>SECRET_VALUE_極秘 架空建材（株）</td></tr>
+</table>
+
+<button type="button" class="common-btn accesskeyPrint">印刷</button>
+<span onclick="shoninLogKensaku()">承認履歴</span>
+
+<div class="files">
+  <span class="fileName1" onclick="downloadFileData(1)">見積書.pdf</span>
+  <span class="fileName2" onclick="downloadFileData(2)">写真.png</span>
+  <span class="fileName3" onclick="downloadFileData(3)" style="display:none">（空き枠）</span>
+  <span class="fileName4" onclick="downloadFileData(4)" style="display:none">（空き枠）</span>
+  <span class="fileName5" onclick="downloadFileData(5)" style="display:none">（空き枠）</span>
+</div>
+<script>
+function shoninLogKensaku() {}
+function downloadFileData() {}
+</script>
+</body>

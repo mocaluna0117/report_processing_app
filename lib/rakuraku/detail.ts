@@ -3,7 +3,7 @@ import type { Frame, Page } from "playwright-core";
 import { type TenantConfig, assertTenantUrl } from "./config";
 import { RakurakuError } from "./errors";
 import { contentFrame, stampDocument, waitForDetailFrame, waitForFrameUrl } from "./frames";
-import type { RakurakuKind } from "./kinds";
+import { type RakurakuKind, type ResolvedKind, detailMarkerFor } from "./kinds";
 import type { Log } from "./list";
 import { assertLoggedIn, loginWatcher } from "./navigation";
 import { normalizeDatetimeText } from "./parse/datetime";
@@ -107,10 +107,10 @@ async function openUrlInMain(
   page: Page,
   url: string,
   kind: RakurakuKind,
+  marker: string,
   timing: DetailTiming,
   log: Log,
 ): Promise<Frame | null> {
-  const marker = kind.list.detailUrlMarker;
   const onPoll = loginWatcher(page);
   const frame = await contentFrame(page);
   const stamped = await stampDocument(frame);
@@ -154,7 +154,7 @@ export interface OpenDetailOptions {
  */
 export async function openDetail(
   page: Page,
-  kind: RakurakuKind,
+  kind: ResolvedKind,
   tenant: TenantConfig,
   denpyoNo: string,
   href: string | null,
@@ -162,7 +162,9 @@ export async function openDetail(
 ): Promise<Frame> {
   const { log } = options;
   const timing = options.timing ?? DEFAULT_DETAIL_TIMING;
-  const marker = kind.list.detailUrlMarker;
+  // ★一覧から読んだ URL がどれかの経路の伝票画面のものなら、その目印で待つ
+  //   （経路の推測が外れていても、URL が分かっている伝票は開けるようにする）
+  const marker = detailMarkerFor(kind, href);
   const onPoll = loginWatcher(page);
   const pagesBefore = new Set(page.context().pages());
 
@@ -182,7 +184,7 @@ export async function openDetail(
     const popped = await takePopupUrl(page, pagesBefore, marker, timing.popupWaitMs);
     if (popped) {
       log("  （伝票画面が別ウィンドウで開いたので、元の画面で開き直します）");
-      const got = await openUrlInMain(page, assertTenantUrl(popped, tenant).toString(), kind, timing, log);
+      const got = await openUrlInMain(page, assertTenantUrl(popped, tenant).toString(), kind, marker, timing, log);
       if (got) return got;
     }
     await assertLoggedIn(page);
@@ -216,7 +218,7 @@ export async function openDetail(
   const popped = await takePopupUrl(page, pagesBefore, marker, timing.popupWaitMs);
   if (popped) {
     log("  （伝票画面が別ウィンドウで開いたので、元の画面で開き直します）");
-    const got = await openUrlInMain(page, assertTenantUrl(popped, tenant).toString(), kind, timing, log);
+    const got = await openUrlInMain(page, assertTenantUrl(popped, tenant).toString(), kind, marker, timing, log);
     if (got) return got;
   }
   await assertLoggedIn(page);

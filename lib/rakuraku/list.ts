@@ -1,7 +1,7 @@
 import "server-only";
 import type { Frame, Page } from "playwright-core";
 import { contentFrame, evaluateFunctionString } from "./frames";
-import type { RakurakuKind } from "./kinds";
+import type { RakurakuKind, ResolvedKind } from "./kinds";
 import { isApproved } from "./parse/list";
 import { normalizeDenpyoDigits } from "./parse/fields";
 import {
@@ -61,12 +61,12 @@ interface ReadArgs {
  * ★表示が省略された列は title 属性に全文が入っているので、**長い方を採る**。
  *   「どこで」が途中で切れると監督・営業が読めないため。
  */
-export async function readTableRows(frame: Frame, kind: RakurakuKind): Promise<ListRow[]> {
+export async function readTableRows(frame: Frame, kind: ResolvedKind): Promise<ListRow[]> {
   const args: ReadArgs = {
     selector: kind.list.tableSelector,
     colNo: kind.list.colDenpyoNo,
     colStatus: kind.list.colStatus,
-    detailMarker: kind.list.detailUrlMarker,
+    detailMarker: kind.route.detailUrlMarker,
     extra: Object.entries(kind.list.columns).filter(([, header]) => header.trim() !== ""),
   };
   return await frame.evaluate((a: ReadArgs) => {
@@ -142,7 +142,7 @@ export async function readPager(frame: Frame): Promise<Pager | null> {
   return parsePagerText(text);
 }
 
-async function firstRowId(frame: Frame, kind: RakurakuKind): Promise<string | null> {
+async function firstRowId(frame: Frame, kind: ResolvedKind): Promise<string | null> {
   const rows = await readTableRows(frame, kind).catch(() => []);
   return rows[0]?.denpyo_no ?? null;
 }
@@ -168,7 +168,7 @@ export interface AdvanceResult {
 export async function advancePage(
   page: Page,
   frame: Frame,
-  kind: RakurakuKind,
+  kind: ResolvedKind,
   pager: Pager | null,
   memo: { how?: NextHow },
   timing: ListTiming,
@@ -292,7 +292,7 @@ export interface CollectOptions {
  * ★「対象が0件」と「最後まで読めていない」を**必ず区別して返す**。混ぜると、ページ送りが
  *   効かないだけなのに「新規対象はありません」と言ってしまう（実際に起きた）。
  */
-export async function collectTargets(page: Page, kind: RakurakuKind, options: CollectOptions): Promise<CollectResult> {
+export async function collectTargets(page: Page, kind: ResolvedKind, options: CollectOptions): Promise<CollectResult> {
   const log = options.log ?? (() => {});
   const doneSet = new Set(options.done);
   const targets: Target[] = [];
@@ -403,7 +403,7 @@ export async function collectTargets(page: Page, kind: RakurakuKind, options: Co
  */
 export async function scanListForNo(
   page: Page,
-  kind: RakurakuKind,
+  kind: ResolvedKind,
   wantNo: string,
   options: { maxPages?: number; timing: ListTiming; log?: Log },
 ): Promise<{ denpyoNo: string; href: string | null; status: string } | null> {

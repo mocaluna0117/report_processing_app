@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { TenantConfig } from "@/lib/rakuraku/config";
 import { RakurakuError } from "@/lib/rakuraku/errors";
 import { contentFrame } from "@/lib/rakuraku/frames";
-import { KINDS, type RakurakuKind } from "@/lib/rakuraku/kinds";
+import { KINDS, type ListRoute, type RakurakuKind } from "@/lib/rakuraku/kinds";
 import {
   type NavigationTiming,
   applyDepartment,
@@ -12,6 +12,7 @@ import {
   openHome,
 } from "@/lib/rakuraku/navigation";
 import { tryLaunch } from "./rakuraku/helpers/browser";
+import { oneRoute } from "./rakuraku/helpers/kinds";
 import { startFixtureServer, type FixtureServer } from "./rakuraku/helpers/fixture-server";
 
 // 期待値は移植元の検証 (tenmatsu-dl/smoke_test.py「メニュー」「メニュー多段」) から写した。すべて架空の画面
@@ -65,13 +66,13 @@ async function clicks(page: Page): Promise<number> {
 }
 
 /** 一覧のパスが分からない種類（メニューを押して開く）。一覧の目印はテスト用の一覧に向ける */
-function menuKind(base: RakurakuKind, overrides: Partial<RakurakuKind> = {}): RakurakuKind {
-  return { ...base, listPath: "", listUrlMarker: "menu_list_stub.html", ...overrides };
+function menuKind(base: RakurakuKind, overrides: Partial<ListRoute> = {}): RakurakuKind {
+  return oneRoute(base, { listPath: "", listUrlMarker: "menu_list_stub.html", ...overrides });
 }
 
 /** 一覧のパスが分かっている種類（直接開く） */
 function directKind(path: string, marker: string): RakurakuKind {
-  return { ...KINDS.tenmatsu, listPath: path, listUrlMarker: marker };
+  return oneRoute(KINDS.tenmatsu, { listPath: path, listUrlMarker: marker });
 }
 
 describe.skipIf(!browser)("メニュー: 一覧のURLが分からない種類は、メニューの文字を押して開く", () => {
@@ -95,7 +96,11 @@ describe.skipIf(!browser)("メニュー: 一覧のURLが分からない種類は
     await first.close();
 
     const page = await open("menu_structure.html");
-    const again = await gotoList(page, kind, tenant(), { log, listUrlFound: found.foundUrl, timing: QUICK });
+    const again = await gotoList(page, kind, tenant(), {
+      log,
+      remembered: { id: kind.routes[0].id, url: found.foundUrl ?? undefined },
+      timing: QUICK,
+    });
     expect(await clicks(page)).toBe(0);
     expect(again.frame.url()).toContain("menu_list_stub.html?workflowId=7");
     expect(again.foundUrl).toBeNull(); // 直接開いたときは覚え直さない
@@ -104,7 +109,7 @@ describe.skipIf(!browser)("メニュー: 一覧のURLが分からない種類は
 
   it("★候補が複数なら押さずに止まる", async () => {
     const page = await open("menu_structure.html");
-    const error = await failure(gotoList(page, { ...kind, menuText: "決裁" }, tenant(), { log, timing: QUICK }));
+    const error = await failure(gotoList(page, menuKind(kind, { menuText: "決裁" }), tenant(), { log, timing: QUICK }));
     expect(error.code).toBe("MENU_AMBIGUOUS");
     expect(error.message).toContain("1つに絞れませんでした");
     expect(await clicks(page)).toBe(0);
@@ -146,7 +151,7 @@ describe.skipIf(!browser)("メニュー: 一覧のURLが分からない種類は
   it("★メニューが無ければ、権限が無い可能性を理由に出す（設定の誤りだけを疑わせない）", async () => {
     const page = await open("menu_structure.html");
     const error = await failure(
-      gotoList(page, { ...kind, menuText: "存在しないメニュー" }, tenant(), { log, timing: QUICK }),
+      gotoList(page, menuKind(kind, { menuText: "存在しないメニュー" }), tenant(), { log, timing: QUICK }),
     );
     expect(error.code).toBe("MENU_NOT_FOUND");
     expect(error.message).toContain("閲覧権限が無いか");
@@ -185,7 +190,11 @@ describe.skipIf(!browser)("メニュー多段: ワークフロー → 押印の�
     await first.close();
 
     const page = await open("menu_steps.html");
-    await gotoList(page, kind, tenant(), { log, listUrlFound: found.foundUrl, timing: QUICK });
+    await gotoList(page, kind, tenant(), {
+      log,
+      remembered: { id: kind.routes[0].id, url: found.foundUrl ?? undefined },
+      timing: QUICK,
+    });
     expect(await clicks(page)).toBe(0);
     expect((await contentFrame(page)).url()).toContain("wf=natsuin");
     await page.close();
@@ -211,7 +220,7 @@ describe.skipIf(!browser)("メニュー多段: ワークフロー → 押印の�
 
   it("★同じ文字が並ぶとき near が無ければ押さずに止まる", async () => {
     const page = await open("menu_steps.html");
-    const loose = { ...kind, menuSteps: [{ text: "ワークフロー" }, { text: "押印の申請" }, { text: "一覧" }] };
+    const loose = menuKind(kind, { menuSteps: [{ text: "ワークフロー" }, { text: "押印の申請" }, { text: "一覧" }] });
     const error = await failure(gotoList(page, loose, tenant(), { log, timing: QUICK }));
     expect(error.code).toBe("MENU_AMBIGUOUS");
     expect(await clicks(page)).toBe(2);
@@ -282,7 +291,11 @@ describe.skipIf(!browser)("一覧へ直接移動し、本当に一覧かを確�
   it("★テナントの外を指す URL は開かない（覚えていた URL でも）", async () => {
     const page = await open("top_frameset.html");
     const error = await failure(
-      gotoList(page, menuKind(KINDS.senketsu), tenant(), { log, listUrlFound: "https://example.invalid/list", timing: QUICK }),
+      gotoList(page, menuKind(KINDS.senketsu), tenant(), {
+        log,
+        remembered: { id: "jibumon", url: "https://example.invalid/list" },
+        timing: QUICK,
+      }),
     );
     expect(error.code).toBe("BAD_REQUEST");
     expect(page.url()).toContain("top_frameset.html");

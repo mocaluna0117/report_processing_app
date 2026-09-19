@@ -1,6 +1,7 @@
 import { RakurakuError } from "@/lib/rakuraku/errors";
 import { assertEnabled, assertSameOrigin } from "@/lib/rakuraku/guard";
 import { KINDS } from "@/lib/rakuraku/kinds";
+import { pinnedRoute } from "@/lib/rakuraku/navigation";
 import { log } from "@/lib/rakuraku/log";
 import { parseScanRequest } from "@/lib/rakuraku/protocol";
 import { runScan } from "@/lib/rakuraku/scan";
@@ -42,6 +43,8 @@ export async function POST(request: Request) {
       const body = parsed.value;
       const session = unseal(body.sessionToken);
       const kind = KINDS[body.kind];
+      // ★画面から来るのは経路の id だけ（URL は受けない）。その種類に無い id は断る
+      const pin = body.route ? pinnedRoute(kind, body.route).id : null;
 
       await withSessionPage(sink, session, async ({ page }) => {
         const result = await runScan({
@@ -50,9 +53,12 @@ export async function POST(request: Request) {
           home: session.home,
           kind,
           request: body,
-          listUrlFound: session.lists?.[kind.id] ?? null,
+          remembered: session.routes?.[kind.id] ?? null,
+          pin,
           log: sink.log,
           progress: sink.progress,
+          onRoute: (id, route, how) =>
+            void sink.send({ type: "route", kind: id, route: route.id, label: route.label, scope: route.scope, how }),
           deadlineAt: started + BUDGET_MS - PAGE_RESERVE_MS,
         });
         const { collect } = result;
@@ -68,7 +74,7 @@ export async function POST(request: Request) {
           department: result.department,
         });
         log("list", { ok: true, n_targets: collect.targets.length, n_pages: collect.pages, n_scanned: collect.scanned });
-        return result.foundUrl ? { lists: { [kind.id]: result.foundUrl } } : undefined;
+        return { routes: { [kind.id]: result.remembered } };
       });
     },
     { stage: "list", startedAt: started },

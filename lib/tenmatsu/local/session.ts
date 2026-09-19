@@ -8,7 +8,7 @@
  * ★取得そのものは lib/tenmatsu/local/client.ts が持っているので、画面を離れても止まらない
  *   （ブラウザのタブを閉じると止まる）。
  */
-import type { DepartmentOption } from "@/lib/rakuraku/protocol";
+import type { DepartmentOption, RouteId } from "@/lib/rakuraku/protocol";
 import type { ListItem, RunLogLine, StatusPayload } from "@/lib/tenmatsu/client";
 import type { DocKindId } from "@/lib/tenmatsu/kinds";
 import type { ListFilter, ListSort } from "@/lib/tenmatsu/list-view";
@@ -211,6 +211,8 @@ export interface FolderSession {
   /** 楽楽精算から読んだ部門の選択肢。null はまだ読んでいない、[] は部門の切り替えが無いアカウント */
   departments: DepartmentOption[] | null;
   deptCode: string | null;
+  /** 一覧の経路の固定（null なら自動で順に試す） */
+  routePin: RouteId | null;
 }
 
 const initial = (): FolderSession => ({
@@ -232,6 +234,7 @@ const initial = (): FolderSession => ({
   maxInput: "",
   departments: null,
   deptCode: null,
+  routePin: null,
 });
 
 const sessions = new Map<DocKindId, FolderSession>();

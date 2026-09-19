@@ -184,6 +184,42 @@ describe("取得して保存する", () => {
   });
 });
 
+describe("一覧の経路", () => {
+  it("★どの経路で開いたかを記録の行と状態に出す（一覧に出る伝票の範囲が違うため）", async () => {
+    const s = setup();
+    const { status, log } = await run(s, {
+      scan: scanOf([]),
+      route: { kind: "tenmatsu", route: "shinsei", label: "ワークフロー（申請検索）", scope: "own", how: "fallback" },
+    });
+    expect(log.some((l) => l.includes("一覧の経路: ワークフロー（申請検索）（切り替え）"))).toBe(true);
+    expect(status.route).toEqual({ label: "ワークフロー（申請検索）", scope: "own", how: "fallback" });
+  });
+
+  it("紐づく専決決裁書の経路は、自分の種類の表示に混ぜない", async () => {
+    const s = setup();
+    const { status, log } = await run(s, {
+      scan: scanOf([]),
+      route: { kind: "senketsu", route: "shinsei", label: "ワークフロー（申請検索）", scope: "own", how: "default" },
+    });
+    expect(log.some((l) => l.includes("紐づく専決決裁書"))).toBe(true);
+    expect(status.route).toBeUndefined();
+  });
+
+  it("★経路を固定したら、その指定を毎回の呼び出しに乗せる", async () => {
+    const s = setup();
+    const { api } = await run(s, { scan: scanOf([]) }, 10, { routePin: "shinsei" });
+    const scan = api.calls.find((c) => c.method === "scan")!;
+    expect((scan.request as { route?: string }).route).toBe("shinsei");
+  });
+
+  it("固定していなければ経路を指定しない（自動で順に試す）", async () => {
+    const s = setup();
+    const { api } = await run(s, { scan: scanOf([]) });
+    const scan = api.calls.find((c) => c.method === "scan")!;
+    expect("route" in (scan.request as object)).toBe(false);
+  });
+});
+
 describe("保留にする", () => {
   it("★取れなかった添付・結合できない添付があれば、部品と途中の PDF を _保留 へ置いてから記録する", async () => {
     const s = setup();

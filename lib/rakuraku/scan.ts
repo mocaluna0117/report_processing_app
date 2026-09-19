@@ -2,10 +2,10 @@ import "server-only";
 import type { Page } from "playwright-core";
 import type { TenantConfig } from "./config";
 import type { Department, EnsureDepartmentOptions } from "./department";
-import type { RakurakuKind } from "./kinds";
+import { type ListRoute, type RakurakuKind, resolveKind } from "./kinds";
 import { type CollectResult, type ListTiming, type Log, collectTargets, defaultTiming } from "./list";
-import { type NavigationTiming, applyDepartment, gotoList, openHome } from "./navigation";
-import type { ProgressStage, ScanRequest } from "./protocol";
+import { type NavigationTiming, applyDepartment, gotoList, openHome, rememberedOf } from "./navigation";
+import type { KindId, ProgressStage, RememberedRoute, RouteHow, RouteId, ScanRequest } from "./protocol";
 
 /**
  * 一覧から、取得する伝票を見つける（`/api/rakuraku/scan` の中身）。
@@ -22,10 +22,14 @@ export interface ScanRun {
   home: string;
   kind: RakurakuKind;
   request: Pick<ScanRequest, "deptCode" | "done" | "limit" | "maxPages">;
-  /** 前にメニューをたどって見つけた一覧の URL */
-  listUrlFound: string | null;
+  /** 前に一覧を開けた経路（封じたセッションから取り出したもの） */
+  remembered: RememberedRoute | null;
+  /** 利用者が画面で固定した経路。省略すると自動で順に試す */
+  pin?: RouteId | null;
   log: Log;
   progress: (stage: ProgressStage, message: string) => void;
+  /** どの経路で一覧を開いたかを知らせる（画面に出す） */
+  onRoute?: (kind: KindId, route: ListRoute, how: RouteHow) => void;
   /** これを過ぎたら次のページへ進まない（関数の実行時間の上限に備える） */
   deadlineAt: number;
   /** 検証で待ち時間を縮めるためのもの。本番では渡さない */
@@ -36,8 +40,10 @@ export interface ScanResult {
   collect: CollectResult;
   /** 一覧を開いたときの部門。部門の切り替えが無いアカウントは null */
   department: Department | null;
-  /** メニューをたどって見つけた一覧の URL（次から直接開くために覚える） */
-  foundUrl: string | null;
+  /** 一覧を開けた経路（次からこれを先に試すために覚える） */
+  remembered: RememberedRoute;
+  /** 一覧を開けた経路（画面に出す） */
+  route: ListRoute;
 }
 
 export async function runScan(run: ScanRun): Promise<ScanResult> {
@@ -58,15 +64,19 @@ export async function runScan(run: ScanRun): Promise<ScanResult> {
   progress("navigate", `${kind.label}一覧へ移動しています`);
   const location = await gotoList(page, kind, run.tenant, {
     log,
-    listUrlFound: run.listUrlFound,
+    remembered: run.remembered,
+    pin: run.pin,
+    home: run.home,
     timing: run.timing?.navigation,
+    onRoute: (route, how) => run.onRoute?.(kind.id, route, how),
   });
+  const resolved = resolveKind(kind, location.route);
 
   log("対象を抽出します");
   progress("collect", "対象を抽出しています");
   const collect: CollectResult = location.empty
     ? { targets: [], scanned: 0, pages: 1, total: 0, last: 0, stoppedEarly: false, reason: null }
-    : await collectTargets(page, kind, {
+    : await collectTargets(page, resolved, {
         done: run.request.done,
         limit: run.request.limit,
         maxPages: run.request.maxPages,
@@ -75,5 +85,5 @@ export async function runScan(run: ScanRun): Promise<ScanResult> {
         deadlineAt: run.deadlineAt,
       });
 
-  return { collect, department, foundUrl: location.foundUrl };
+  return { collect, department, remembered: rememberedOf(location), route: location.route };
 }

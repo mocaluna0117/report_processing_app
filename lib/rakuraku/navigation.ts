@@ -9,14 +9,17 @@ import {
   departmentSwitchFailedText,
   listNotFoundText,
   listNotPermittedText,
+  listRoutesFailedText,
   menuNotFoundText,
+  routeNotAvailableText,
   sessionExpiredError,
 } from "./errors";
-import { contentFrame } from "./frames";
-import type { RakurakuKind } from "./kinds";
+import { contentFrame, stampDocument, waitForDetailFrame } from "./frames";
+import { type ListRoute, type RakurakuKind, type ResolvedKind, findRoute, resolveKind } from "./kinds";
 import type { Log } from "./list";
 import { isLoginScreen } from "./login";
 import { parsePagerText } from "./parse/pager";
+import type { RakurakuCode, RememberedRoute, RouteHow, RouteId } from "./protocol";
 
 /**
  * ログイン状態の確認・部門の切り替え・一覧への移動。
@@ -314,11 +317,39 @@ export interface ListLocation {
    * 直接開いたときは null
    */
   foundUrl: string | null;
+  /** 実際に一覧を開けた経路。★以降の伝票画面はこの経路で開く */
+  route: ListRoute;
+  /** 先に試して駄目だった経路（どれも開けなかったときの文に使う） */
+  tried: TriedRoute[];
+}
+
+/** 1つの経路で一覧を開いた結果（経路を決める前の形） */
+export type RouteLocation = Omit<ListLocation, "route" | "tried">;
+
+/** 開けなかった経路とその理由 */
+export interface TriedRoute {
+  route: ListRoute;
+  code: RakurakuCode;
+  message: string;
 }
 
 export interface GotoListOptions {
   log: Log;
-  /** 前にメニューをたどって見つけた URL（封じたセッションから取り出したもの） */
+  /** 前に一覧を開けた経路（封じたセッションから取り出したもの） */
+  remembered?: RememberedRoute | null;
+  /** 利用者が画面で固定した経路。★あるときは他の経路へ落とさない */
+  pin?: RouteId | null;
+  /** 経路を切り替える前に開き直すトップ。エラーの画面から frameset へ戻すために渡す */
+  home?: string;
+  timing?: NavigationTiming;
+  /** 一覧を開けた経路を知らせる（画面に出す）。★開けたときだけ呼ぶ */
+  onRoute?: (route: ListRoute, how: RouteHow) => void;
+}
+
+/** 1つの経路で一覧を開くときの指定 */
+interface RouteGotoOptions {
+  log: Log;
+  /** その経路で前にメニューをたどって見つけた URL */
   listUrlFound?: string | null;
   timing?: NavigationTiming;
 }
@@ -361,7 +392,7 @@ const EMPTY_LIST_RE = /該当する[^\n。]{0,20}(?:ありません|存在しま
 async function confirmListScreen(
   page: Page,
   frame: Frame,
-  kind: RakurakuKind,
+  kind: ResolvedKind,
   timing: NavigationTiming,
   log: Log,
 ): Promise<{ frame: Frame; empty: boolean }> {
@@ -391,23 +422,28 @@ async function confirmListScreen(
  */
 async function openListUrl(
   page: Page,
-  kind: RakurakuKind,
+  kind: ResolvedKind,
   tenant: TenantConfig,
   url: string,
   timing: NavigationTiming,
   log: Log,
 ): Promise<{ frame: Frame; empty: boolean }> {
   const target = assertTenantUrl(url, tenant).toString();
-  const marker = kind.listUrlMarker;
+  const marker = kind.route.listUrlMarker;
+  const onPoll = loginWatcher(page);
 
   const frame = await contentFrame(page);
+  // ★移動の前に印を付け、印が消えた（文書が入れ替わった）ことまで確かめる。
+  //   URL の一致だけで判断すると、同じ目印を持つ別の一覧（申請検索の専決決裁書と捺印決裁書）から
+  //   移るときに、**移動前のフレームを「着いた」と誤判定**する
+  const stamped = await stampDocument(frame);
   // 移動が始まると評価の途中で文書が捨てられて例外になることがある。移動は始まっているので無視する
   await frame
     .evaluate((u: string) => {
       window.location.href = u;
     }, target)
     .catch(() => null);
-  let found = await waitForListFrame(page, marker, timing.frameWaitMs);
+  let found = await waitForDetailFrame(page, marker, stamped, { timeoutMs: timing.frameWaitMs, onPoll });
   if (!found) {
     log("  （フレーム内での移動が効かなかったので、直接開きます）");
     try {
@@ -470,13 +506,13 @@ async function waitForMenuResult(
 /** メニューを押し終えたあとの共通の後始末 */
 async function finishMenu(
   page: Page,
-  kind: RakurakuKind,
+  kind: ResolvedKind,
   tenant: TenantConfig,
   before: Set<Page>,
   timing: NavigationTiming,
   log: Log,
-): Promise<ListLocation> {
-  const opened = await waitForMenuResult(page, kind.listUrlMarker, before, timing.frameWaitMs);
+): Promise<RouteLocation> {
+  const opened = await waitForMenuResult(page, kind.route.listUrlMarker, before, timing.frameWaitMs);
   // ★開いた窓は必ず閉じる（窓を増やし続けない＆以降の処理を1つの画面で進める）
   for (const extra of page.context().pages().filter((p) => !before.has(p))) {
     await extra.close().catch(() => null);
@@ -511,19 +547,19 @@ async function finishMenu(
  */
 export async function gotoListBySteps(
   page: Page,
-  kind: RakurakuKind,
+  kind: ResolvedKind,
   tenant: TenantConfig,
-  options: GotoListOptions,
-): Promise<ListLocation> {
+  options: RouteGotoOptions,
+): Promise<RouteLocation> {
   const timing = options.timing ?? DEFAULT_NAVIGATION_TIMING;
-  const steps = kind.menuSteps ?? [];
+  const steps = kind.route.menuSteps ?? [];
   const before = new Set(page.context().pages());
 
   for (let i = 0; i < steps.length; i++) {
     await clickMenuOnce(page, kind, steps[i].text, steps[i].near, options.log);
     const next = steps[i + 1];
     if (!next) break;
-    const deadline = Date.now() + kind.menuStepWaitMs;
+    const deadline = Date.now() + kind.route.menuStepWaitMs;
     for (;;) {
       const ready = (await findMenuCandidates(page, next.text, next.near)).filter((c) => c.visible);
       if (ready.length > 0 || Date.now() >= deadline) break;
@@ -542,21 +578,84 @@ export async function gotoListBySteps(
  */
 export async function gotoListByMenu(
   page: Page,
-  kind: RakurakuKind,
+  kind: ResolvedKind,
   tenant: TenantConfig,
-  options: GotoListOptions,
-): Promise<ListLocation> {
+  options: RouteGotoOptions,
+): Promise<RouteLocation> {
   const timing = options.timing ?? DEFAULT_NAVIGATION_TIMING;
   const before = new Set(page.context().pages());
-  await clickMenuOnce(page, kind, kind.menuText || kind.label, undefined, options.log);
+  await clickMenuOnce(page, kind, kind.route.menuText || kind.label, undefined, options.log);
   return await finishMenu(page, kind, tenant, before, timing, options.log);
 }
 
 /**
- * 一覧へ移動する。移植元: tenmatsu.py 2230-2262
+ * 1つの経路で一覧へ移動する。移植元: tenmatsu.py 2230-2262
  *
- * 一覧のパスが分かっている種類は直接開く（メニューを手でたどる必要をなくす）。
- * 分からない種類は、前にメニューで見つけた URL → それも無ければメニューを押して開く。
+ * 一覧のパスが分かっている経路は直接開く（メニューを手でたどる必要をなくす）。
+ * 分からない経路は、前にメニューで見つけた URL → それも無ければメニューを押して開く。
+ */
+export async function gotoListByRoute(
+  page: Page,
+  kind: ResolvedKind,
+  tenant: TenantConfig,
+  options: RouteGotoOptions,
+): Promise<RouteLocation> {
+  const timing = options.timing ?? DEFAULT_NAVIGATION_TIMING;
+  const url = kind.route.listPath
+    ? resolveTenantPath(kind.route.listPath, tenant)
+    : (options.listUrlFound ?? null);
+  if (url) {
+    const location = await openListUrl(page, kind, tenant, url, timing, options.log);
+    return { ...location, foundUrl: null };
+  }
+  return kind.route.menuSteps && kind.route.menuSteps.length > 0
+    ? await gotoListBySteps(page, kind, tenant, options)
+    : await gotoListByMenu(page, kind, tenant, options);
+}
+
+/**
+ * 画面から来た経路の指定を確かめる。
+ * ★その種類に無い経路は断る（黙って自動に落とさない。利用者が固定したつもりの経路と違う伝票を取らないため）。
+ */
+export function pinnedRoute(kind: RakurakuKind, id: RouteId): ListRoute {
+  const route = findRoute(kind, id);
+  if (!route) {
+    throw new RakurakuError("BAD_REQUEST", routeNotAvailableText(kind.label, kind.routes));
+  }
+  return route;
+}
+
+/**
+ * 試す順番を決める。
+ * 固定されていればそれだけ、前に使えた経路があればそれを先頭に、あとは種類の並び（閲覧 → ワークフロー）。
+ */
+export function orderRoutes(kind: RakurakuKind, options: Pick<GotoListOptions, "pin" | "remembered">): ListRoute[] {
+  if (options.pin) return [pinnedRoute(kind, options.pin)];
+  const first = findRoute(kind, options.remembered?.id);
+  if (!first) return [...kind.routes];
+  return [first, ...kind.routes.filter((r) => r.id !== first.id)];
+}
+
+/** 開けた経路を、封じたログイン状態に覚える形にする */
+export function rememberedOf(location: ListLocation): RememberedRoute {
+  return { id: location.route.id, ...(location.foundUrl ? { url: location.foundUrl } : {}) };
+}
+
+/** この失敗なら次の経路を試す。★権限や画面の違いで開けなかったときだけ */
+const FALLTHROUGH_CODES: ReadonlySet<RakurakuCode> = new Set<RakurakuCode>([
+  "LIST_NOT_PERMITTED",
+  "LIST_NOT_FOUND",
+  "MENU_NOT_FOUND",
+]);
+
+/**
+ * 一覧へ移動する。経路を順に試し、開けた経路を返す。
+ *
+ * ★アカウントによって使える画面が違う（「閲覧」タブが無い人は「ワークフロー」から取る）ので、
+ *   開けなかったら次の経路へ切り替える。どの経路で取ったかは必ず画面に出す（出る伝票の範囲が違うため）。
+ * ★切り替えるのは「権限・画面の違いで開けなかった」失敗だけ。ログイン切れ・接続不可はそのまま返す。
+ *   メニューを1つに絞れなかったとき（MENU_AMBIGUOUS）も切り替えない。画面が変わった疑いを
+ *   別の経路の成功で隠さないため。
  */
 export async function gotoList(
   page: Page,
@@ -564,13 +663,47 @@ export async function gotoList(
   tenant: TenantConfig,
   options: GotoListOptions,
 ): Promise<ListLocation> {
-  const timing = options.timing ?? DEFAULT_NAVIGATION_TIMING;
-  const url = kind.listPath ? resolveTenantPath(kind.listPath, tenant) : (options.listUrlFound ?? null);
-  if (url) {
-    const location = await openListUrl(page, kind, tenant, url, timing, options.log);
-    return { ...location, foundUrl: null };
+  const { log } = options;
+  const order = orderRoutes(kind, options);
+  const tried: TriedRoute[] = [];
+
+  for (const [i, route] of order.entries()) {
+    const how: RouteHow = options.pin
+      ? "pinned"
+      : options.remembered?.id === route.id
+        ? "remembered"
+        : i === 0
+          ? "default"
+          : "fallback";
+    if (i > 0) {
+      log(`  ! ${tried[i - 1].route.label}の一覧を開けなかったので、${route.label}へ切り替えます`);
+      // エラーの画面のままだと frameset が無く次の移動が効かないので、トップへ戻る
+      if (options.home) await openHome(page, tenant, options.home);
+    }
+    if (route.unverified) {
+      log(`  （${route.label}は実画面で未確認です。開けないときは「画面の下見」の結果を開発者へ送ってください）`);
+    }
+    try {
+      const location = await gotoListByRoute(page, resolveKind(kind, route), tenant, {
+        log,
+        listUrlFound: options.remembered?.id === route.id ? (options.remembered.url ?? null) : null,
+        timing: options.timing,
+      });
+      options.onRoute?.(route, how);
+      return { ...location, route, tried };
+    } catch (e) {
+      if (!(e instanceof RakurakuError) || !FALLTHROUGH_CODES.has(e.code)) throw e;
+      tried.push({ route, code: e.code, message: e.message });
+      // ★経路が1つしか無い（固定を含む）ときは、今までと同じ失敗をそのまま返す
+      if (i === order.length - 1) {
+        if (tried.length === 1) throw e;
+        throw new RakurakuError(
+          tried.some((t) => t.code === "LIST_NOT_PERMITTED") ? "LIST_NOT_PERMITTED" : e.code,
+          listRoutesFailedText(kind.label, tried),
+        );
+      }
+    }
   }
-  return kind.menuSteps && kind.menuSteps.length > 0
-    ? await gotoListBySteps(page, kind, tenant, options)
-    : await gotoListByMenu(page, kind, tenant, options);
+  // order は必ず1つ以上（orderRoutes が空を返さない）ので、ここには来ない
+  throw new RakurakuError("LIST_NOT_FOUND", listNotFoundText(kind.label));
 }

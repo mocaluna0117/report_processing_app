@@ -25,6 +25,7 @@ import {
   saveMeta,
   withStore,
 } from "@/lib/storage";
+import { type RouteId, isRouteId } from "@/lib/rakuraku/protocol";
 import { isListItemLike, type ListItem } from "@/lib/tenmatsu/client";
 import type { DocKindId } from "@/lib/tenmatsu/kinds";
 
@@ -38,7 +39,7 @@ export type TenmatsuSource = "local-server" | "folder";
  */
 const KEYS: Record<
   DocKindId,
-  { list: string; maxPerRun: string; source: string; folder: string; folderList: string; dept: string; pdfStats: string }
+  { list: string; maxPerRun: string; source: string; folder: string; folderList: string; dept: string; pdfStats: string; route: string }
 > = {
   tenmatsu: {
     list: META_TENMATSU_LIST,
@@ -48,6 +49,7 @@ const KEYS: Record<
     folderList: "tenmatsu:folderList",
     dept: "tenmatsu:dept",
     pdfStats: "tenmatsu:pdfStats",
+    route: "tenmatsu:route",
   },
   senketsu: {
     list: META_SENKETSU_LIST,
@@ -57,6 +59,7 @@ const KEYS: Record<
     folderList: "senketsu:folderList",
     dept: "senketsu:dept",
     pdfStats: "senketsu:pdfStats",
+    route: "senketsu:route",
   },
   natsuin: {
     list: META_NATSUIN_LIST,
@@ -66,6 +69,7 @@ const KEYS: Record<
     folderList: "natsuin:folderList",
     dept: "natsuin:dept",
     pdfStats: "natsuin:pdfStats",
+    route: "natsuin:route",
   },
 };
 
@@ -199,6 +203,21 @@ export async function loadDept(kind: DocKindId): Promise<SavedDepartment | null>
 
 export async function saveDept(kind: DocKindId, dept: SavedDepartment): Promise<void> {
   await saveMeta(KEYS[kind].dept, { code: dept.code, label: dept.label });
+}
+
+/**
+ * 一覧の経路の固定（画面の「一覧の経路」）。保存していなければ null＝自動で順に試す。
+ * ★知らない値は無視する（古い保存データで、無い経路を固定したことにしない）。
+ */
+export async function loadRoutePin(kind: DocKindId): Promise<RouteId | null> {
+  const raw = await loadMeta<unknown>(KEYS[kind].route);
+  return isRouteId(raw) ? raw : null;
+}
+
+/** 経路の固定を保存する。null なら「自動」に戻す */
+export async function saveRoutePin(kind: DocKindId, route: RouteId | null): Promise<void> {
+  if (route === null) await deleteMeta(KEYS[kind].route);
+  else await saveMeta(KEYS[kind].route, route);
 }
 
 /** 楽楽精算のログインID（種類で分けない。★パスワードは保存しない） */

@@ -1,6 +1,6 @@
 import type { Browser, Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { KINDS, type RakurakuKind } from "@/lib/rakuraku/kinds";
+import { KINDS, type ResolvedKind, resolveKind } from "@/lib/rakuraku/kinds";
 import { advancePage, collectTargets, readPager, readTableRows, scanListForNo } from "@/lib/rakuraku/list";
 import { contentFrame } from "@/lib/rakuraku/frames";
 import { isApproved } from "@/lib/rakuraku/parse/list";
@@ -20,7 +20,8 @@ afterAll(async () => {
   await server?.close();
 });
 
-const kind = KINDS.tenmatsu;
+// 経路を1つに決めた種類（一覧の行を読む関数はこれを受け取る）
+const kind: ResolvedKind = resolveKind(KINDS.tenmatsu, KINDS.tenmatsu.routes[0]);
 /** 検証用に待ち時間を縮める（本番は 1.5秒・15秒） */
 const QUICK = { requestIntervalMs: 0, nextPageWaitMs: 4_000 };
 
@@ -101,7 +102,7 @@ describe.skipIf(!browser)("一覧の表を読む（実画面と同じ13列の構
 
   it("見つからない列は null になり、見出しを空にした列はキーごと出さない", async () => {
     const page = await openList();
-    const altered: RakurakuKind = {
+    const altered: ResolvedKind = {
       ...kind,
       list: { ...kind.list, columns: { ...kind.list.columns, amount: "存在しない列名", where: "" } },
     };

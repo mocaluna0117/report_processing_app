@@ -1,0 +1,47 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ワークフロー（テスト用）</title>
+<!--
+  「閲覧」タブが無いアカウントのメニュー（架空）。
+  ★上部タブに「閲覧」が無く、「ワークフロー」の中から各書類の一覧へ行く。
+  ★部門の切り替え（select[name=bumonCd]）も無い。
+  実画面は未確認なので、文字も構造も推測。下見の結果が届いたら実物に合わせる。
+-->
+<body>
+<div class="tile" onclick="openPanel()">ワークフロー</div>
+<div class="tile" onclick="void 0">経費精算</div>
+
+<div id="panel" style="display:none">
+  <div class="tab" onclick="showTab('ringi')">行為の申請(稟議)</div>
+  <div class="tab" onclick="showTab('oin')">押印の申請</div>
+
+  <div id="tab-ringi" style="display:none">
+    <table>
+      <tr><td>［行為の申請］ 稟議書</td><td><button onclick="go('ringi', 0)">一覧</button></td></tr>
+      <tr><td>［行為の申請］ 顛末書</td><td><button onclick="go('shinsei_list.html', 4)">一覧</button></td></tr>
+      <tr><td>［行為の申請］ 専決決裁書</td><td><button onclick="go('shinsei_list.html', 3)">一覧</button></td></tr>
+    </table>
+  </div>
+
+  <div id="tab-oin" style="display:none">
+    <table>
+      <tr><td>［押印の申請］ 捺印決裁書</td><td><button onclick="go('shinsei_list.html', 8)">一覧</button></td></tr>
+    </table>
+  </div>
+</div>
+
+<script>
+window.__menuClicked = 0;
+document.addEventListener('click', function () { window.__menuClicked += 1; }, true);
+function openPanel() { document.getElementById('panel').style.display = 'block'; }
+function showTab(name) {
+  document.getElementById('tab-ringi').style.display = 'none';
+  document.getElementById('tab-oin').style.display = 'none';
+  document.getElementById('tab-' + name).style.display = 'block';
+}
+function go(page, workflowId) {
+  if (page === 0) return;
+  window.location.href = page + '?workflowId=' + workflowId + '&refId=' + workflowId + '&clicks=' + window.__menuClicked;
+}
+</script>
+</body>

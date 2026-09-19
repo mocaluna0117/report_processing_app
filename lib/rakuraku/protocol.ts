@@ -6,10 +6,49 @@
  *   （`done` か `error`）で表す。どちらも届かずに終わったら、途中で接続が切れたということ。
  */
 
+import type { SurveyReport } from "@/lib/rakuraku/parse/survey";
+
+export type { SurveyReport } from "@/lib/rakuraku/parse/survey";
+
 export type KindId = "tenmatsu" | "senketsu" | "natsuin";
 
 export function isKindId(value: unknown): value is KindId {
   return value === "tenmatsu" || value === "senketsu" || value === "natsuin";
+}
+
+/**
+ * 一覧を開く経路。アカウントの権限で使える画面が違うので、種類ごとに順に試す。
+ * - jibumon … 「閲覧」タブの自部門検索（部門の伝票が出る）
+ * - shinsei … 「ワークフロー」タブの申請検索（★自分が申請した伝票だけが出る）
+ */
+export type RouteId = "jibumon" | "shinsei";
+
+export function isRouteId(value: unknown): value is RouteId {
+  return value === "jibumon" || value === "shinsei";
+}
+
+/** その経路の一覧に出る伝票の範囲。own は画面で必ず利用者に伝える */
+export type RouteScope = "department" | "own";
+
+/** その経路をどうやって選んだか（画面とログの言い方を変える） */
+export type RouteHow =
+  /** 種類の既定（先頭の経路） */
+  | "default"
+  /** 前に使えた経路（封じたログイン状態が覚えていた） */
+  | "remembered"
+  /** 利用者が画面で固定した */
+  | "pinned"
+  /** 前の経路を開けなかったので切り替えた */
+  | "fallback";
+
+/**
+ * 前に一覧を開けた経路。★封じたログイン状態の中だけで持ち回る。
+ * ブラウザから URL を受け取らない（別の場所へ行かせないため。経路は id だけ受ける）。
+ */
+export interface RememberedRoute {
+  id: RouteId;
+  /** メニューをたどって見つけた一覧の URL（直接開ける種類では入らない） */
+  url?: string;
 }
 
 /**
@@ -125,6 +164,11 @@ export type RakurakuEvent =
   | { type: "log"; line: string }
   /** 新しいログイン状態。★これ以降は必ずこちらを使う（クッキーが入れ替わることがある） */
   | { type: "session"; sessionToken: string }
+  /**
+   * どの経路で一覧を開いたか。★一覧を開けたときだけ流す。
+   * 捺印決裁書が紐づく専決決裁書の一覧を開いたときは kind が専決決裁書になる。
+   */
+  | { type: "route"; kind: KindId; route: RouteId; label: string; scope: RouteScope; how: RouteHow }
   | {
       type: "targets";
       items: ScanTarget[];
@@ -177,6 +221,8 @@ export type RakurakuEvent =
   /** 紐づく専決決裁書の添付の表示名ぜんぶ（★名前の決め方を後から直せるように全部残す） */
   | { type: "linked.attachments"; names: string[] }
   | ComposeEvent
+  /** 「画面の下見」の結果（最後に1回だけ流す）。★画面の作りだけで、伝票の中身は入らない */
+  | { type: "survey"; report: SurveyReport }
   | { type: "done" }
   | ErrorEvent;
 
@@ -195,6 +241,8 @@ export interface ScanRequest {
   /** 何件見つけたらページ送りをやめるか */
   limit: number;
   maxPages?: number;
+  /** 一覧の経路を固定する（画面の「一覧の経路」）。省略すると自動で順に試す */
+  route?: RouteId;
 }
 
 export interface FetchRequest {
@@ -207,6 +255,8 @@ export interface FetchRequest {
   deptCode: string | null;
   /** 一覧で読んだ、紐づく伝票の番号（捺印決裁書の「専決決裁書№」）。伝票画面で読めなかったときに使う */
   linkedNo?: string | null;
+  /** 一覧の経路を固定する（画面の「一覧の経路」）。省略すると自動で順に試す */
+  route?: RouteId;
 }
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; message: string };
@@ -223,7 +273,7 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
 /** `/scan` の本文を確かめる。★直さずに断る（件数やページ数を黙って丸めない） */
 export function parseScanRequest(raw: unknown): Parsed<ScanRequest> {
   if (!isObject(raw)) return { ok: false, message: "本文を読めませんでした" };
-  const { sessionToken, kind, deptCode, done, limit, maxPages } = raw;
+  const { sessionToken, kind, deptCode, done, limit, maxPages, route } = raw;
   if (typeof sessionToken !== "string" || sessionToken === "" || sessionToken.length > MAX_TOKEN_CHARS) {
     return { ok: false, message: "sessionToken が要ります" };
   }
@@ -247,6 +297,7 @@ export function parseScanRequest(raw: unknown): Parsed<ScanRequest> {
   ) {
     return { ok: false, message: `ページ数は 1〜${SCAN_MAX_PAGES} の整数にしてください` };
   }
+  if (route !== undefined && !isRouteId(route)) return { ok: false, message: "一覧の経路の指定が不正です" };
   return {
     ok: true,
     value: {
@@ -256,6 +307,7 @@ export function parseScanRequest(raw: unknown): Parsed<ScanRequest> {
       done: done as string[],
       limit,
       ...(maxPages !== undefined ? { maxPages } : {}),
+      ...(route !== undefined ? { route } : {}),
     },
   };
 }
@@ -277,7 +329,8 @@ export function parseFetchRequest(raw: unknown): Parsed<FetchRequest> {
   if (deptCode !== null && (typeof deptCode !== "string" || !DEPT_CODE_RE.test(deptCode))) {
     return { ok: false, message: "部門の値が不正です" };
   }
-  const { linkedNo } = raw;
+  const { linkedNo, route } = raw;
+  if (route !== undefined && !isRouteId(route)) return { ok: false, message: "一覧の経路の指定が不正です" };
   if (linkedNo !== undefined && linkedNo !== null && (typeof linkedNo !== "string" || linkedNo.length > MAX_DENPYO_CHARS)) {
     return { ok: false, message: "紐づく伝票の番号が不正です" };
   }
@@ -290,6 +343,7 @@ export function parseFetchRequest(raw: unknown): Parsed<FetchRequest> {
       href: href as string | null,
       deptCode: deptCode as string | null,
       ...(typeof linkedNo === "string" && linkedNo.trim() !== "" ? { linkedNo: linkedNo.trim() } : {}),
+      ...(route !== undefined ? { route } : {}),
     },
   };
 }
@@ -304,6 +358,8 @@ export interface AttachmentRequest {
   index: number;
   /** `/fetch` で受け取った表示名。★違っていたら取らない（伝票の添付が差し替わっている） */
   expectedName: string;
+  /** 一覧の経路を固定する（画面の「一覧の経路」）。省略すると自動で順に試す */
+  route?: RouteId;
 }
 
 /** 1つの伝票に置ける添付の数の上限（楽楽精算の枠は5つ。余裕を持たせる） */
@@ -322,6 +378,25 @@ export function parseAttachmentRequest(raw: unknown): Parsed<AttachmentRequest> 
     return { ok: false, message: "添付の名前が不正です" };
   }
   return { ok: true, value: { ...base.value, index, expectedName } };
+}
+
+export interface SurveyRequest {
+  sessionToken: string;
+  /** 部門の値。部門の切り替えが無いアカウント・まだ選んでいないときは null */
+  deptCode: string | null;
+}
+
+/** `/survey` の本文を確かめる */
+export function parseSurveyRequest(raw: unknown): Parsed<SurveyRequest> {
+  if (!isObject(raw)) return { ok: false, message: "本文を読めませんでした" };
+  const { sessionToken, deptCode } = raw;
+  if (typeof sessionToken !== "string" || sessionToken === "" || sessionToken.length > MAX_TOKEN_CHARS) {
+    return { ok: false, message: "sessionToken が要ります" };
+  }
+  if (deptCode !== null && deptCode !== undefined && (typeof deptCode !== "string" || !DEPT_CODE_RE.test(deptCode))) {
+    return { ok: false, message: "部門の値が不正です" };
+  }
+  return { ok: true, value: { sessionToken, deptCode: (deptCode as string | undefined) ?? null } };
 }
 
 /** 流れてきた1行を読む。★知らない形は読み飛ばさずに失敗させる（取り違えたまま進まない） */

@@ -82,19 +82,33 @@ describe("ログイン状態の封印", () => {
   });
 });
 
-describe("メニューで見つけた一覧の URL も封じて持ち回る", () => {
-  it("種類ごとの URL が戻る", () => {
-    const lists = { natsuin: "https://example.test/abcd/list?wf=8" };
-    expect(unseal(seal({ ...INPUT, lists })).lists).toEqual(lists);
+describe("前に一覧を開けた経路も封じて持ち回る", () => {
+  it("種類ごとの経路が戻る（メニューで見つけた URL も一緒に）", () => {
+    const routes = { natsuin: { id: "shinsei" as const, url: "https://example.test/abcd/list?wf=8" } };
+    expect(unseal(seal({ ...INPUT, routes })).routes).toEqual(routes);
+  });
+
+  it("URL が無い経路も持ち回れる", () => {
+    const routes = { tenmatsu: { id: "shinsei" as const } };
+    expect(unseal(seal({ ...INPUT, routes })).routes).toEqual(routes);
   });
 
   it("無ければ入れない", () => {
-    expect(unseal(seal({ ...INPUT, lists: {} })).lists).toBeUndefined();
+    expect(unseal(seal({ ...INPUT, routes: {} })).routes).toBeUndefined();
   });
 
-  it("★知らない種類の URL が入っていたら開かない", () => {
-    const token = seal({ ...INPUT, lists: { keihi: "https://example.test/x" } as never });
-    expect(() => unseal(token)).toThrow("中身が不正");
+  it("★知らない種類・知らない経路が入っていたら開かない", () => {
+    expect(() => unseal(seal({ ...INPUT, routes: { keihi: { id: "shinsei" } } as never }))).toThrow("中身が不正");
+    expect(() => unseal(seal({ ...INPUT, routes: { tenmatsu: { id: "keihi" } } as never }))).toThrow("中身が不正");
+    expect(() => unseal(seal({ ...INPUT, routes: { tenmatsu: "https://example.test/x" } as never }))).toThrow("中身が不正");
+  });
+
+  it("★古い札（一覧のURLを持っていたもの）は読めて、覚えた経路は空になる", () => {
+    // 旧形式: { state, home, lists: { natsuin: "…" }, exp }
+    const legacy = seal({ ...INPUT, lists: { natsuin: "https://example.test/abcd/list" } } as never);
+    const opened = unseal(legacy);
+    expect(opened.routes).toBeUndefined();
+    expect(opened.home).toBe(HOME);
   });
 
   it("★封じ直しても期限は延ばさない（使い続けるだけで永久に使える札にしない）", () => {
@@ -105,13 +119,13 @@ describe("メニューで見つけた一覧の URL も封じて持ち回る", ()
 });
 
 describe("封じ直し (部門を読んだとき)", () => {
-  it("★期限を延ばさず、覚えた一覧のURLも落とさない", () => {
+  it("★期限を延ばさず、覚えた経路も落とさない", () => {
     const exp = Date.now() + 60_000;
-    const lists = { tenmatsu: "https://example.test/abcd/list" };
-    const first = unseal(seal({ ...INPUT, lists, exp }));
+    const routes = { tenmatsu: { id: "jibumon" as const, url: "https://example.test/abcd/list" } };
+    const first = unseal(seal({ ...INPUT, routes, exp }));
     const again = unseal(reseal(first, JSON.stringify({ cookies: [], origins: [] })));
     expect(again.exp).toBe(exp);
-    expect(again.lists).toEqual(lists);
+    expect(again.routes).toEqual(routes);
     expect(again.home).toBe(HOME);
     expect(again.state).toBe(JSON.stringify({ cookies: [], origins: [] }));
   });

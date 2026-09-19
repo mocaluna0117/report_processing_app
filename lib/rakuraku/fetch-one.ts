@@ -14,12 +14,12 @@ import {
 import { fetchComposedParts } from "./compose";
 import { RakurakuError } from "./errors";
 import { sendFile } from "./file-frames";
-import type { RakurakuKind } from "./kinds";
+import { type ListRoute, type RakurakuKind, findRoute, resolveKind } from "./kinds";
 import { type ListTiming, type Log, defaultTiming, scanListForNo } from "./list";
-import { type NavigationTiming, applyDepartment, gotoList, openHome } from "./navigation";
+import { type NavigationTiming, applyDepartment, gotoList, openHome, pinnedRoute, rememberedOf } from "./navigation";
 import { parseStaffNames } from "./parse/fields";
 import { extOf } from "./parse/sniff";
-import type { FetchRequest, ProgressStage, RakurakuEvent } from "./protocol";
+import type { FetchRequest, KindId, ProgressStage, RakurakuEvent, RememberedRoute, RouteHow, RouteId } from "./protocol";
 
 /**
  * 伝票1件を取得する（`/api/rakuraku/fetch` と `/api/rakuraku/attachment` の中身）。
@@ -34,10 +34,16 @@ export interface FetchRun {
   home: string;
   kind: RakurakuKind;
   request: Pick<FetchRequest, "denpyoNo" | "href" | "deptCode" | "linkedNo">;
-  /** 前にメニューをたどって見つけた一覧の URL */
-  listUrlFound: string | null;
+  /** 前に一覧を開けた経路（封じたセッションから取り出したもの） */
+  remembered: RememberedRoute | null;
+  /** 紐づく種類（捺印決裁書 → 専決決裁書）で前に一覧を開けた経路 */
+  linkedRemembered?: RememberedRoute | null;
+  /** 利用者が画面で固定した経路。★紐づく種類には使わない（自動で落とす） */
+  pin?: RouteId | null;
   log: Log;
   progress: (stage: ProgressStage, message: string) => void;
+  /** どの経路で一覧を開いたかを知らせる（画面に出す） */
+  onRoute?: (kind: KindId, route: ListRoute, how: RouteHow) => void;
   /** 行を送る（ファイルは大きいので、送り終わるのを待つ） */
   send: (event: RakurakuEvent) => Promise<void>;
   /** これを過ぎたら、残りの添付は取りに行かず TIME_BUDGET_EXCEEDED にする（関数の実行時間の上限に備える） */
@@ -64,8 +70,10 @@ export interface OpenedDetail {
   frame: Frame;
   /** 伝票画面の URL。開き直しに使う */
   href: string;
-  /** メニューで見つけた一覧の URL（一覧を開いたときだけ） */
-  foundUrl: string | null;
+  /** 一覧を開けた経路（一覧を開いたときだけ。次からこれを先に試す） */
+  remembered: RememberedRoute | null;
+  /** 伝票画面を開くのに使った経路 */
+  route: ListRoute;
 }
 
 export interface DetailRecord extends OpenedDetail {
@@ -84,7 +92,10 @@ export async function openRequestedDetail(run: FetchRun): Promise<OpenedDetail> 
   await openHome(page, tenant, run.home);
 
   let href = run.request.href;
-  let foundUrl: string | null = null;
+  let remembered: RememberedRoute | null = null;
+  // URL が分かっている伝票は一覧を開かないので、経路は「固定 → 前に通った経路 → 種類の既定」で決める
+  let route: ListRoute =
+    (run.pin ? pinnedRoute(kind, run.pin) : findRoute(kind, run.remembered?.id)) ?? kind.routes[0];
   if (!href) {
     log(`  伝票画面のURLが分からないので、${kind.label}一覧から探します`);
     progress("department", "所属部門を確かめています");
@@ -92,13 +103,20 @@ export async function openRequestedDetail(run: FetchRun): Promise<OpenedDetail> 
     progress("navigate", `${kind.label}一覧へ移動しています`);
     const location = await gotoList(page, kind, tenant, {
       log,
-      listUrlFound: run.listUrlFound,
+      remembered: run.remembered,
+      pin: run.pin,
+      home: run.home,
       timing: run.timing?.navigation,
+      onRoute: (r, how) => run.onRoute?.(kind.id, r, how),
     });
-    foundUrl = location.foundUrl;
+    remembered = rememberedOf(location);
+    route = location.route;
     const row = location.empty
       ? null
-      : await scanListForNo(page, kind, denpyoNo, { timing: run.timing?.list ?? defaultTiming(kind), log });
+      : await scanListForNo(page, resolveKind(kind, route), denpyoNo, {
+          timing: run.timing?.list ?? defaultTiming(kind),
+          log,
+        });
     if (!row) {
       throw new RakurakuError("DETAIL_NOT_FOUND", `伝票 ${denpyoNo} が${kind.label}の一覧に見つかりませんでした`);
     }
@@ -106,10 +124,13 @@ export async function openRequestedDetail(run: FetchRun): Promise<OpenedDetail> 
   }
 
   progress("detail", `伝票No. ${denpyoNo} を開いています`);
-  const frame = await openDetail(page, kind, tenant, denpyoNo, href, { log, timing: run.timing?.detail });
+  const frame = await openDetail(page, resolveKind(kind, route), tenant, denpyoNo, href, {
+    log,
+    timing: run.timing?.detail,
+  });
   // ★開き直しには、実際に開けた伝票画面の URL を使う。移植元は URL が無い伝票を
   //   もう一度「一覧のリンクを押して」開き直そうとしており、伝票画面には一覧が無いので必ず失敗していた
-  return { frame, href: href ?? frame.url(), foundUrl };
+  return { frame, href: href ?? frame.url(), remembered, route };
 }
 
 /**
@@ -142,12 +163,25 @@ export async function readDetailRecord(run: FetchRun): Promise<DetailRecord> {
   );
 
   if (approval.opened) {
-    frame = await openDetail(page, kind, tenant, run.request.denpyoNo, opened.href, { log, timing: run.timing?.detail });
+    frame = await openDetail(page, resolveKind(kind, opened.route), tenant, run.request.denpyoNo, opened.href, {
+      log,
+      timing: run.timing?.detail,
+    });
   }
   return { ...opened, frame, fields };
 }
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message.split("\n")[0].slice(0, 200) : "失敗しました");
+
+/** 一覧を開けた経路（自分の種類と、捺印決裁書なら紐づく専決決裁書の分）。封じたログイン状態に覚える */
+export type FetchRoutes = { routes: Partial<Record<KindId, RememberedRoute>> };
+
+function routesOf(run: FetchRun, own: RememberedRoute | null, linked: RememberedRoute | null): FetchRoutes {
+  const routes: Partial<Record<KindId, RememberedRoute>> = {};
+  if (own) routes[run.kind.id] = own;
+  if (linked && run.kind.compose) routes[run.kind.compose.linkedKind] = linked;
+  return { routes };
+}
 
 /**
  * 伝票1件を取得する: 項目 → 本体PDF → 添付。
@@ -160,7 +194,7 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message.split("\n")[0]
  *   ただし**続けて2回失敗したらセッション切れとみなして止める**（1件ごとに60秒待って全部落とすより早い）。
  * ★添付1件ごとに間隔をあける（成否に関わらず）。
  */
-export async function fetchOne(run: FetchRun): Promise<{ foundUrl: string | null }> {
+export async function fetchOne(run: FetchRun): Promise<FetchRoutes> {
   const { page, kind, tenant, log, progress, send } = run;
   const record = await readDetailRecord(run);
   await send({ type: "fields", fields: record.fields });
@@ -181,7 +215,10 @@ export async function fetchOne(run: FetchRun): Promise<{ foundUrl: string | null
         throw new RakurakuError("BODY_PDF_FAILED", `本体PDFを取れませんでした（${errorText(e)}）`, { retryable: true });
       }
       log(`    ! 取れなかったので開き直してもう一度試します（${errorText(e)}）`);
-      frame = await openDetail(page, kind, tenant, run.request.denpyoNo, record.href, { log, timing: run.timing?.detail });
+      frame = await openDetail(page, resolveKind(kind, record.route), tenant, run.request.denpyoNo, record.href, {
+        log,
+        timing: run.timing?.detail,
+      });
     }
   }
   if (!body) throw new RakurakuError("BODY_PDF_FAILED", "本体PDFを取れませんでした", { retryable: true });
@@ -189,8 +226,8 @@ export async function fetchOne(run: FetchRun): Promise<{ foundUrl: string | null
 
   if (kind.compose) {
     // 捺印決裁書は自身の添付を結合しない。紐づく専決決裁書の本体と、要件に合う添付を取る
-    await fetchComposedParts(run, record.fields);
-    return { foundUrl: record.foundUrl };
+    const linked = await fetchComposedParts(run, record.fields);
+    return routesOf(run, record.remembered, linked);
   }
 
   // --- 添付（表示順に1件ずつ。楽楽精算は一括ダウンロードができない）
@@ -237,7 +274,7 @@ export async function fetchOne(run: FetchRun): Promise<{ foundUrl: string | null
     }
     if (intervalMs > 0) await page.waitForTimeout(intervalMs);
   }
-  return { foundUrl: record.foundUrl };
+  return routesOf(run, record.remembered, null);
 }
 
 /**
@@ -250,7 +287,7 @@ export async function fetchOneAttachment(
   run: FetchRun,
   index: number,
   expectedName: string,
-): Promise<{ foundUrl: string | null }> {
+): Promise<FetchRoutes> {
   const opened = await openRequestedDetail(run);
   run.progress("attachments", "添付を取得しています");
   const attachments = await locateAttachments(opened.frame, run.kind);
@@ -270,5 +307,5 @@ export async function fetchOneAttachment(
   }
   await run.send({ type: "attachments", names: attachments.map((a) => a.name) });
   await sendFile(run.send, { role: "attachment", index: item.index, name: item.name, ext: file.ext, bytes: file.bytes });
-  return { foundUrl: opened.foundUrl };
+  return routesOf(run, opened.remembered, null);
 }

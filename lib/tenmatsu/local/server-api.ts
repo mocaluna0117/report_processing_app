@@ -18,8 +18,13 @@ import {
   type RakurakuCode,
   type RakurakuEvent,
   type ReceivedFile,
+  type RouteHow,
+  type RouteId,
+  type RouteScope,
   type ScanRequest,
   type ScanTarget,
+  type SurveyReport,
+  type SurveyRequest,
   readNdjson,
 } from "@/lib/rakuraku/protocol";
 
@@ -48,6 +53,11 @@ export interface StreamHandlers {
   progress?: (stage: ProgressStage, message: string) => void;
   /** 新しいログイン状態。★これ以降は必ずこちらを使う */
   session?: (sessionToken: string) => void;
+  /**
+   * どの経路で一覧を開いたか。★経路によって一覧に出る伝票の範囲が違うので、画面に必ず出す。
+   * kind は、捺印決裁書が紐づく専決決裁書の一覧を開いたときだけ別の種類になる。
+   */
+  route?: (event: { kind: KindId; route: RouteId; label: string; scope: RouteScope; how: RouteHow }) => void;
 }
 
 export interface ScanResult {
@@ -104,6 +114,8 @@ export interface RakurakuApi {
   scan(request: ScanRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<ScanResult>;
   fetch(request: FetchRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<FetchResult>;
   attachment(request: AttachmentRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<ReceivedFile>;
+  /** 画面の下見（楽楽精算の画面の作りだけを集める） */
+  survey(request: SurveyRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<SurveyReport>;
 }
 
 export type { KindId };
@@ -176,6 +188,9 @@ export function createRakurakuApi(options: { fetchImpl?: typeof fetch; baseUrl?:
           case "session":
             handlers.session?.(event.sessionToken);
             break;
+          case "route":
+            handlers.route?.(event);
+            break;
           case "error":
             finished = true;
             throw RakurakuApiError.fromEvent(event);
@@ -225,6 +240,22 @@ export function createRakurakuApi(options: { fetchImpl?: typeof fetch; baseUrl?:
       }, () => undefined);
       if (!result) throw new RakurakuApiError("STREAM_CUT", "一覧の読み取り結果を受け取れませんでした", true);
       return result;
+    },
+
+    survey: async (request, handlers = {}, signal) => {
+      let report: SurveyReport | null = null;
+      await stream(
+        "survey",
+        request,
+        handlers,
+        signal,
+        (event) => {
+          if (event.type === "survey") report = event.report;
+        },
+        () => undefined,
+      );
+      if (!report) throw new RakurakuApiError("STREAM_CUT", "下見の結果を受け取れませんでした", true);
+      return report;
     },
 
     fetch: async (request, handlers = {}, signal) => {

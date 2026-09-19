@@ -6,6 +6,7 @@
 // "potentially trustworthy" 扱いだから (混在コンテンツにはならない)。
 //
 // fetch は引数で受け取れるようにしてある (テストがグローバルに触らずに済むように)。
+import type { RouteHow, RouteScope } from "@/lib/rakuraku/protocol";
 
 /** ローカルサーバーの状態。done は次の実行かサーバー再起動まで done のまま残る */
 export type JobState = "idle" | "running" | "done" | "error";
@@ -131,6 +132,11 @@ export interface StatusPayload {
    * （一覧には出ない）。無い＝この機能に未対応の古いサーバー。
    */
   skipped?: string[];
+  /**
+   * どの経路で一覧を開いたか（新しい方式だけ）。★経路によって一覧に出る伝票の範囲が違うので画面に出す。
+   * 無い＝まだ一覧を開いていないか、この項目に未対応。
+   */
+  route?: { label: string; scope: RouteScope; how: RouteHow } | null;
 }
 
 /**

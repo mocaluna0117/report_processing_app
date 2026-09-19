@@ -1,6 +1,6 @@
 import "server-only";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { type KindId, isKindId } from "./protocol";
+import { type KindId, type RememberedRoute, isKindId, isRouteId } from "./protocol";
 
 /**
  * 楽楽精算のログイン状態（クッキー）を、ブラウザに預けられる形に封じる。
@@ -20,11 +20,12 @@ export interface SessionPayload {
   /** ログイン後に着いた画面。次回はここを開いて状態を確かめる */
   home: string;
   /**
-   * メニューをたどって見つけた一覧の URL（種類ごと）。
-   * ★2件目以降はメニューを押さずに直接開くために覚える（移植元の `_list_url_found`）。
-   *   ブラウザから渡させず封じた中に入れるので、書き換えて別の場所へ行かせることはできない。
+   * 前に一覧を開けた経路（種類ごと）。メニューをたどって見つけた URL も一緒に覚える。
+   * ★アカウントによって使える経路が違うので、2回目からは前に通った経路を先に試す。
+   *   ブラウザから渡させず封じた中に入れるので、書き換えて別の場所へ行かせることはできない
+   *   （画面から受けるのは経路の id だけ）。
    */
-  lists?: Partial<Record<KindId, string>>;
+  routes?: Partial<Record<KindId, RememberedRoute>>;
   /** 期限 (epoch ミリ秒) */
   exp: number;
 }
@@ -60,7 +61,7 @@ function key(): Buffer {
  *   使い続けるだけで永久に使える札にしないため。
  */
 export function seal(
-  input: { state: string; home: string; lists?: Partial<Record<KindId, string>>; exp?: number },
+  input: { state: string; home: string; routes?: Partial<Record<KindId, RememberedRoute>>; exp?: number },
   ttlMs = DEFAULT_TTL_MS,
 ): string {
   const iv = randomBytes(12);
@@ -68,7 +69,7 @@ export function seal(
   const payload: SessionPayload = {
     state: input.state,
     home: input.home,
-    ...(input.lists && Object.keys(input.lists).length > 0 ? { lists: input.lists } : {}),
+    ...(input.routes && Object.keys(input.routes).length > 0 ? { routes: input.routes } : {}),
     exp: input.exp ?? Date.now() + ttlMs,
   };
   const body = Buffer.concat([
@@ -80,11 +81,11 @@ export function seal(
 }
 
 /**
- * クッキーだけ新しくして封じ直す。★期限（exp）と一覧のURL（lists）は前のまま引き継ぐ。
- * 部門を読むだけの呼び出しで期限を延ばしたり、覚えた一覧のURLを落としたりしないため。
+ * クッキーだけ新しくして封じ直す。★期限（exp）と覚えた経路（routes）は前のまま引き継ぐ。
+ * 部門を読むだけの呼び出しで期限を延ばしたり、覚えた経路を落としたりしないため。
  */
 export function reseal(session: SessionPayload, state: string): string {
-  return seal({ state, home: session.home, lists: session.lists, exp: session.exp });
+  return seal({ state, home: session.home, routes: session.routes, exp: session.exp });
 }
 
 export function unseal(token: string): SessionPayload {
@@ -106,7 +107,7 @@ export function unseal(token: string): SessionPayload {
     typeof payload.state !== "string" ||
     typeof payload.home !== "string" ||
     typeof payload.exp !== "number" ||
-    (payload.lists !== undefined && !isListMap(payload.lists))
+    (payload.routes !== undefined && !isRouteMap(payload.routes))
   ) {
     throw new SessionError("セッションの中身が不正です");
   }
@@ -116,7 +117,16 @@ export function unseal(token: string): SessionPayload {
   return payload;
 }
 
-function isListMap(value: unknown): value is Partial<Record<KindId, string>> {
+/**
+ * 覚えた経路の形か。
+ * ※古い札は一覧の URL を `lists` に持っていたが、いまは読まずに捨てる（8時間で消える。
+ *   どの種類も一覧のパスが分かっているので、覚えていなくても開ける）。
+ */
+function isRouteMap(value: unknown): value is Partial<Record<KindId, RememberedRoute>> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  return Object.entries(value).every(([k, v]) => isKindId(k) && typeof v === "string");
+  return Object.entries(value).every(([k, v]) => {
+    if (!isKindId(k) || typeof v !== "object" || v === null || Array.isArray(v)) return false;
+    const route = v as { id?: unknown; url?: unknown };
+    return isRouteId(route.id) && (route.url === undefined || typeof route.url === "string");
+  });
 }

@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { deleteMeta, loadMeta } from "@/lib/storage";
+import { deleteMeta, loadMeta, saveMeta } from "@/lib/storage";
 import { FOLDER_ATTACHMENTS, LOCAL_SERVER_ATTACHMENTS } from "@/lib/tenmatsu/pending";
 import { UPLOADABLE_EXTS } from "@/lib/tenmatsu/local/merge";
 import {
@@ -24,11 +24,13 @@ import {
   loadFolderHandle,
   loadFolderList,
   loadPdfStats,
+  loadRoutePin,
   loadSource,
   loadUserId,
   saveDept,
   saveFolderHandle,
   saveFolderList,
+  saveRoutePin,
   saveSource,
   saveUserId,
 } from "@/lib/tenmatsu/store";
@@ -41,6 +43,8 @@ const KEYS = [
   "tenmatsu:dept",
   "senketsu:dept",
   "tenmatsu:pdfStats",
+  "tenmatsu:route",
+  "senketsu:route",
   "rakuraku:userId",
   "tenmatsu:list",
 ];
@@ -98,6 +102,24 @@ describe("新しい方式の設定", () => {
     await clearUserId();
     expect(await loadUserId()).toBeNull();
     expect(await hasFolderData("tenmatsu")).toBe(false);
+  });
+});
+
+describe("一覧の経路の固定（このブラウザに置く）", () => {
+  it("固定した経路が次に読める。自動（null）に戻せる", async () => {
+    expect(await loadRoutePin("tenmatsu")).toBeNull();
+    await saveRoutePin("tenmatsu", "shinsei");
+    expect(await loadRoutePin("tenmatsu")).toBe("shinsei");
+    // 種類ごとに別
+    expect(await loadRoutePin("senketsu")).toBeNull();
+    await saveRoutePin("tenmatsu", null);
+    expect(await loadRoutePin("tenmatsu")).toBeNull();
+  });
+
+  it("★知らない値が入っていても、その経路を固定したことにしない", async () => {
+    await saveMeta("tenmatsu:route", "keihi");
+    expect(await loadRoutePin("tenmatsu")).toBeNull();
+    await deleteMeta("tenmatsu:route");
   });
 });
 
