@@ -3,10 +3,8 @@
  * テンプレート (public/report/completion-report.xlsx の sheet3) の
  * 文字・配置・結合・罫線をそのまま書き写したもの。値は field で差し込む。
  */
+import { MAIN_SHEET_METRICS } from "@/lib/report/metrics";
 import type { CellSpec, SheetSpec, Sides } from "@/lib/report/layout/grid";
-import type { MainRow } from "@/lib/report/layout/wrap";
-import { COL_CHAR_UNIT, MAIN_SHEET_METRICS, PAD_LEFT, PAD_RIGHT, PRINT_FACTOR } from "@/lib/report/metrics";
-import { MAIN_SLOTS } from "@/lib/report/model";
 
 const BOX: Sides = { l: "thin", r: "thin", t: "thin", b: "thin" };
 const TOP_BOTTOM: Sides = { t: "thin", b: "thin" };
@@ -18,72 +16,7 @@ const LIST_ROW: Sides = { l: "thin", r: "thin", b: "thin" };
 /** 会社名・作業者の欄と確認欄は太線 */
 const MEDIUM_BOX: Sides = { l: "medium", r: "medium", t: "medium", b: "medium" };
 
-/** 指示内容の枠 (C〜U の19列) に文字を置ける幅 (pt)。折り返しの計画と描画で同じ値を使う */
-export const MAIN_ITEM_USABLE_WIDTH =
-  19 * 4 * COL_CHAR_UNIT * PRINT_FACTOR * MAIN_SHEET_METRICS.scale -
-  (PAD_LEFT + PAD_RIGHT) * MAIN_SHEET_METRICS.scale;
-
-/** 5つの枠をすべて1行ずつ使う既定の割り付け (値が空のときと、6件以上で「別紙参照」のとき) */
-const SINGLE_ROWS: MainRow[] = Array.from({ length: MAIN_SLOTS }, (_, i) => ({
-  no: "",
-  text: "",
-  lines: [""],
-  rowStart: i,
-  rowSpan: 1,
-}));
-
-/**
- * 指示内容 (16〜20行) と作業内容 (23〜27行) の枠を、行の割り付けから作る。
- * ★長い項目は次の枠に続けて書くので、その項目の枠は縦につないだ1つのセルにする (間の罫線は引かない)。
- *   作業内容の№は指示内容と行で対応している (Excel の数式 B23=B16 と同じ) ので、同じ割り付けを写す。
- *   使わなかった枠は今までどおり1行ずつ (空)。
- */
-function instructionCells(rows: readonly MainRow[]): CellSpec[] {
-  const out: CellSpec[] = [];
-  const used = new Set<number>();
-  rows.forEach((row, k) => {
-    const first = row.rowStart;
-    const last = row.rowStart + row.rowSpan - 1;
-    for (let r = first; r <= last; r++) used.add(r);
-    out.push(
-      // №は折り返した項目の1行目の横に置く (wrap で1行目に置かれる)
-      { ref: `B${16 + first}:B${16 + last}`, field: `no${k}`, h: "center", border: LIST_ROW, wrap: true },
-      {
-        ref: `C${16 + first}:U${16 + last}`,
-        field: `item${k}`,
-        border: LIST_ROW,
-        // 幅に入らなければ次の行へ折り返す (文字は小さくしない)。警告は「指示内容①」の形で出す
-        wrap: true,
-        label: `指示内容${row.no || `(${k + 1}件目)`}`,
-      },
-      { ref: `B${23 + first}:B${23 + last}`, field: `no${k}`, h: "center", border: LIST_ROW, wrap: true },
-      { ref: `C${23 + first}:S${23 + last}`, border: LIST_ROW },
-      {
-        ref: `T${23 + first}:U${23 + last}`,
-        checkbox: `done${k}`,
-        v: "center",
-        border: first === 0 ? LIST_ROW : { ...LIST_ROW, t: "thin" },
-      },
-    );
-  });
-  for (let i = 0; i < MAIN_SLOTS; i++) {
-    if (used.has(i)) continue;
-    out.push(
-      { ref: `B${16 + i}`, h: "center", border: LIST_ROW },
-      { ref: `C${16 + i}:U${16 + i}`, border: LIST_ROW },
-      { ref: `B${23 + i}`, h: "center", border: LIST_ROW },
-      { ref: `C${23 + i}:S${23 + i}`, border: LIST_ROW },
-      {
-        ref: `T${23 + i}:U${23 + i}`,
-        v: "center",
-        border: i === 0 ? LIST_ROW : { ...LIST_ROW, t: "thin" },
-      },
-    );
-  }
-  return out;
-}
-
-const cellsBefore: CellSpec[] = [
+const cells: CellSpec[] = [
   // 右上の社名 (右寄せ・セルからはみ出して左へ伸びる)
   { ref: "U1", text: "タカマツビルド　株式会社", h: "right" },
   { ref: "U2", text: "アフターメンテナンス課", h: "right" },
@@ -142,14 +75,27 @@ const cellsBefore: CellSpec[] = [
   { ref: "K13:L13", text: "受付者", border: BOX },
   { ref: "M13:U13", field: "receptionist", border: BOX, shrink: true },
 
-  // 指示内容 (15行が見出し) と作業内容 (22行が見出し)。
-  // 16〜20行・23〜27行の枠は instructionCells が行の割り付けから作る
+  // 指示内容 (15行が見出し、16〜20行が枠)
   { ref: "B15:U15", text: "指示内容", border: HEADER_ROW },
+  ...[0, 1, 2, 3, 4].flatMap((i): CellSpec[] => [
+    { ref: `B${16 + i}`, field: `no${i}`, h: "center", border: LIST_ROW },
+    { ref: `C${16 + i}:U${16 + i}`, field: `item${i}`, border: LIST_ROW, shrink: true },
+  ]),
+
+  // 作業内容・是正内容 (22行が見出し、23〜27行が枠。内容は空欄のまま)
   { ref: "B22:S22", text: "作業内容・是正内容", border: HEADER_ROW },
   { ref: "T22:U22", text: "完了ﾁｪｯｸ", size: 10, h: "center", border: HEADER_ROW },
-];
+  ...[0, 1, 2, 3, 4].flatMap((i): CellSpec[] => [
+    { ref: `B${23 + i}`, field: `no${i}`, h: "center", border: LIST_ROW },
+    { ref: `C${23 + i}:S${23 + i}`, border: LIST_ROW },
+    {
+      ref: `T${23 + i}:U${23 + i}`,
+      checkbox: `done${i}`,
+      v: "center",
+      border: i === 0 ? LIST_ROW : { ...LIST_ROW, t: "thin" },
+    },
+  ]),
 
-const cellsAfter: CellSpec[] = [
   // 会社名・作業者 (29行)
   {
     ref: "B29:L29",
@@ -183,23 +129,17 @@ const cellsAfter: CellSpec[] = [
   { ref: "B33:U33", border: { l: "medium", r: "medium", b: "medium" } },
 ];
 
-/** 本紙の仕様を、指示内容の行の割り付けから作る (差し込む値は no0../item0../done0.. で rows の順) */
-export function mainSheet(rows: readonly MainRow[] = SINGLE_ROWS): SheetSpec {
-  return {
-    scale: MAIN_SHEET_METRICS.scale,
-    // A列は非表示なので B列を原点にする
-    originColumn: "B",
-    x0: MAIN_SHEET_METRICS.x0,
-    y0: MAIN_SHEET_METRICS.y0,
-    colChars: MAIN_SHEET_METRICS.colChars,
-    rowHeights: MAIN_SHEET_METRICS.rowHeights,
-    header: MAIN_SHEET_METRICS.header,
-    cells: [...cellsBefore, ...instructionCells(rows), ...cellsAfter],
-  };
-}
-
-/** 5枠すべて1行ずつの既定 (見本と同じ形。6件以上で「別紙参照」のときもこれ) */
-export const MAIN_SHEET: SheetSpec = mainSheet();
+export const MAIN_SHEET: SheetSpec = {
+  scale: MAIN_SHEET_METRICS.scale,
+  // A列は非表示なので B列を原点にする
+  originColumn: "B",
+  x0: MAIN_SHEET_METRICS.x0,
+  y0: MAIN_SHEET_METRICS.y0,
+  colChars: MAIN_SHEET_METRICS.colChars,
+  rowHeights: MAIN_SHEET_METRICS.rowHeights,
+  header: MAIN_SHEET_METRICS.header,
+  cells,
+};
 
 /** MEDIUM_BOX は将来 (帯の作り替え) 用。未使用の警告を避ける */
 void MEDIUM_BOX;

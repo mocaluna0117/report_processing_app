@@ -113,8 +113,6 @@ export interface ReportAppendix {
 }
 
 export interface ReportData {
-  /** 定期点検か、アフターメンテナンスか (別紙のタイトルに使う) */
-  kind: ReportKind;
   pj: string;
   /** 受付種別 (「1年」など)。別紙のタイトルに使う */
   timing: string;
@@ -177,22 +175,6 @@ export function buildOwnerLine(ownerName: string, ownerKana: string): string {
   return kana ? `${owner}（${kana}）` : owner;
 }
 
-/**
- * 別紙に載せる内容。6件以上のときは buildReportData がここで作って data.appendix に入れる。
- * PDF は「項目が長くて本紙の5行に入らない」ときにも同じ形で別紙を作る (xlsx は変えない)。
- */
-export function buildAppendix(
-  data: Pick<ReportData, "kind" | "timing" | "propertyName" | "ownerName" | "items">,
-): ReportAppendix {
-  return {
-    title: appendixTitle(data.timing, data.kind),
-    propertyLine: `物件名：${data.propertyName}`,
-    // 別紙は漢字のみ・姓名間は半角スペース・「様」を直結 (見本と同じ)
-    ownerLine: data.ownerName ? `施主名：${data.ownerName.replace(/　/g, " ")}様` : "施主名：",
-    items: data.items.map((text, i) => `${circledNumber(i + 1)}${text}`),
-  };
-}
-
 export function buildReportData(row: ReportSource, options: ReportOptions): ReportData {
   const cell = (i: number) => (row.cells[i] ?? "").trim();
   const warnings: string[] = [];
@@ -218,9 +200,15 @@ export function buildReportData(row: ReportSource, options: ReportOptions): Repo
   }
   if (!ownerKana) warnings.push("施主名のカナが未入力です (カナ無しで出力します)");
 
-  const kind: ReportKind = row.kind ?? "inspection";
-  const appendixSource = { kind, timing: cell(RECEPTION_TYPE_COL), propertyName: cell(PROPERTY_COL), ownerName, items };
-  const appendix: ReportAppendix | null = useAppendix ? buildAppendix(appendixSource) : null;
+  const appendix: ReportAppendix | null = useAppendix
+    ? {
+        title: appendixTitle(cell(RECEPTION_TYPE_COL), row.kind),
+        propertyLine: `物件名：${cell(PROPERTY_COL)}`,
+        // 別紙は漢字のみ・姓名間は半角スペース・「様」を直結 (見本と同じ)
+        ownerLine: ownerName ? `施主名：${ownerName.replace(/　/g, " ")}様` : "施主名：",
+        items: items.map((text, i) => `${circledNumber(i + 1)}${text}`),
+      }
+    : null;
 
   if (useAppendix && items.length > APPENDIX_SLOTS) {
     warnings.push(
@@ -230,7 +218,6 @@ export function buildReportData(row: ReportSource, options: ReportOptions): Repo
   }
 
   return {
-    kind,
     pj: cell(PJ_COL),
     timing: cell(RECEPTION_TYPE_COL),
     receptionDate: cell(RECEPTION_DATE_COL),

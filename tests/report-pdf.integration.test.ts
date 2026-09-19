@@ -118,35 +118,6 @@ describe.skipIf(!fonts)("完了報告書PDF", () => {
     expect(warnings.filter((w) => w.includes("フォントに無い文字"))).toHaveLength(0);
   }, 30_000);
 
-  it("★長い項目 (56文字) は本紙の中で折り返し、警告を出さない", async () => {
-    const long =
-      "基礎の巾木仕上げ施工時に土台水切りや通気パッキン周辺の通気スリットまで塗り込まれて隙間が閉塞・阻害されている状況";
-    const { pageCount, compact, warnings } = await render([long]);
-    expect(pageCount).toBe(1);
-    // 折り返しても文字は全部入る (空白を除いて比べる)
-    expect(compact[0]).toContain(long);
-    expect(compact[0]).not.toContain("別紙参照");
-    expect(warnings.filter((w) => w.includes("枠に収まらない"))).toHaveLength(0);
-  }, 30_000);
-
-  it("★長い項目が続いて本紙の5行に入らないときは、PDFでは別紙に回して知らせる", async () => {
-    // 1行は全角41文字。60文字の項目は2行使うので、3件で6行になり本紙 (5行) に入らない
-    const items = [
-      "基礎の巾木仕上げ施工時に土台水切りや通気パッキン周辺の通気スリットまで塗り込まれて隙間が閉塞している状況",
-      "外壁のシーリングに切れがあり、開口部まわりから雨水が侵入するおそれがあるため打ち替えが必要な状況",
-      "床下点検口の断熱材がずれて隙間ができており、冬季に床が冷えるとご指摘をいただいている状況",
-    ];
-    const { pageCount, compact, warnings } = await render(items);
-    expect(pageCount).toBe(2);
-    expect(compact[0]).toContain("別紙参照");
-    expect(compact[0]).not.toContain(items[0]);
-    for (const [i, item] of items.entries()) {
-      expect(compact[1], `別紙の${i + 1}件目`).toContain(item);
-    }
-    expect(warnings.some((w) => w.includes("別紙に載せました"))).toBe(true);
-    expect(warnings.filter((w) => w.includes("枠に収まらない"))).toHaveLength(0);
-  }, 30_000);
-
   it("指示内容が空でも1ページのPDFになる", async () => {
     const { pageCount, pageText } = await render([]);
     expect(pageCount).toBe(1);
