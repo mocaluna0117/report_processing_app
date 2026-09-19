@@ -234,6 +234,9 @@ function mainValues(data: ReportData): Record<string, string> {
     values[`no${i}`] = slot.no;
     values[`item${i}`] = slot.text;
   });
+  data.workNos.forEach((no, i) => {
+    values[`workNo${i}`] = no;
+  });
   return values;
 }
 

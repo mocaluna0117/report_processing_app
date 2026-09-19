@@ -130,7 +130,11 @@ function patchMainSheet(xml: string, data: ReportData): string {
     const cells = MAIN_SLOT_CELLS[i];
     out = setFormulaCache(out, cells.no, slot.no);
     out = setFormulaCache(out, cells.text, slot.text);
-    out = setFormulaCache(out, cells.workNo, slot.no);
+  });
+  // ★作業内容の№は項目ごとに1行ずつ。テンプレートの数式 (指示内容の枠の№をそのまま写す) では
+  //   折り返しの続き・補足の行の分だけ空きができてしまうので、値を直接入れる
+  data.workNos.forEach((no, i) => {
+    out = setInlineString(out, MAIN_SLOT_CELLS[i].workNo, no, "本紙");
   });
   for (const [group, refs] of Object.entries(CHECKBOX_CELLS)) {
     for (const [key, ref] of Object.entries(refs)) {

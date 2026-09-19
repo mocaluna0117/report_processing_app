@@ -152,6 +152,11 @@ export interface ReportData {
   useAppendix: boolean;
   /** 本紙の指示内容枠 (常に MAIN_SLOTS 個。余りは空) */
   main: InstructionItem[];
+  /**
+   * 本紙の作業内容・是正内容の№ (常に MAIN_SLOTS 個。余りは空)。
+   * ★指示内容と違い、項目1件につき1行ずつ (折り返しの続き・補足で行を増やさない)。
+   */
+  workNos: string[];
   appendix: ReportAppendix | null;
   options: ReportOptions;
   warnings: string[];
@@ -231,6 +236,11 @@ export function buildReportData(row: ReportSource, options: ReportOptions): Repo
   const plan = items.length >= APPENDIX_THRESHOLD ? null : planMainSlots(items, supplements);
   const useAppendix = plan === null;
 
+  // 作業内容・是正内容の№は項目ごとに1行ずつ (別紙に回したときは本紙に番号を出さない)
+  const workNos = Array.from({ length: MAIN_SLOTS }, (_, i) =>
+    !useAppendix && i < items.length ? circledNumber(i + 1) : "",
+  );
+
   const main: InstructionItem[] =
     plan ??
     // 別紙に全項目を書き、本紙は「別紙参照」の1行だけ (№は付けない)
@@ -283,6 +293,7 @@ export function buildReportData(row: ReportSource, options: ReportOptions): Repo
     supplements,
     useAppendix,
     main,
+    workNos,
     appendix,
     options,
     warnings,

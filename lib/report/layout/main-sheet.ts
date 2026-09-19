@@ -83,10 +83,11 @@ const cells: CellSpec[] = [
   ]),
 
   // 作業内容・是正内容 (22行が見出し、23〜27行が枠。内容は空欄のまま)
+  // ★№は指示内容と違い、項目1件につき1行ずつ (折り返しの続き・補足で行を増やさない)
   { ref: "B22:S22", text: "作業内容・是正内容", border: HEADER_ROW },
   { ref: "T22:U22", text: "完了ﾁｪｯｸ", size: 10, h: "center", border: HEADER_ROW },
   ...[0, 1, 2, 3, 4].flatMap((i): CellSpec[] => [
-    { ref: `B${23 + i}`, field: `no${i}`, h: "center", border: LIST_ROW },
+    { ref: `B${23 + i}`, field: `workNo${i}`, h: "center", border: LIST_ROW },
     { ref: `C${23 + i}:S${23 + i}`, border: LIST_ROW },
     {
       ref: `T${23 + i}:U${23 + i}`,

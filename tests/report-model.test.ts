@@ -392,6 +392,20 @@ describe("本紙の割り付け (折り返しと補足)", () => {
     expect(d.appendix?.items[1]).toEqual({ text: "②床のきしみ", supplement: "・2階のみ" });
   });
 
+  it("★作業内容・是正内容の№は項目ごとに1行ずつ (続き・補足では増やさない)", () => {
+    const d = build(`①${LONG}\n補足: 通気スリットの清掃も必要\n②建具の調整`);
+    // 指示内容は ①・続き・補足・② の4行
+    expect(d.main.map((m) => m.no)).toEqual(["①", "", "", "②", ""]);
+    // 作業内容は ①② が続けて並ぶ
+    expect(d.workNos).toEqual(["①", "②", "", "", ""]);
+  });
+
+  it("別紙に回したときは作業内容にも番号を出さない", () => {
+    const items = ["壁のひび", "床のきしみ", "建具の調整", "外壁の汚れ", "雨樋の詰まり", "天井の凹凸"];
+    const d = build(items.map((s, i) => `${"①②③④⑤⑥"[i]}${s}`).join("\n"));
+    expect(d.workNos).toEqual(Array(5).fill(""));
+  });
+
   it("ちょうど5行なら本紙のまま (41文字は1行)", () => {
     const d = build(`①${"あ".repeat(41)}\n補足: 補足1件\n②短い項目\n③短い項目\n④短い項目`);
     expect(d.useAppendix).toBe(false);

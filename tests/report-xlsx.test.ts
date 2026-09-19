@@ -113,8 +113,9 @@ describe("buildReportXlsx", () => {
     const { main, input } = build(["壁のひび", "床のきしみ"]);
     expect(cell(main, "B16")).toContain("<v>①</v>");
     expect(cell(main, "C16")).toContain("<v>壁のひび</v>");
-    expect(cell(main, "B23")).toContain("<v>①</v>");
-    expect(cell(main, "B24")).toContain("<v>②</v>");
+    // 作業内容の№は項目ごとに1行ずつ (数式ではなく値で入れる)
+    expect(cell(main, "B23")).toContain("<t xml:space=\"preserve\">①</t>");
+    expect(cell(main, "B24")).toContain("<t xml:space=\"preserve\">②</t>");
     // 3件目以降は空 (<v/>)
     expect(cell(main, "C18")).toContain("<v/>");
     expect(cell(input, "B19")).toBe('<c r="B19" s="15"/>');
@@ -128,7 +129,8 @@ describe("buildReportXlsx", () => {
     expect(cell(input, "B17")).toBe('<c r="B17" s="15"/>');
     expect(cell(main, "C16")).toContain("<v>別紙参照</v>");
     expect(cell(main, "B16")).toContain("<v/>");
-    expect(cell(main, "B23")).toContain("<v/>");
+    // 別紙に回したときは作業内容にも番号を出さない
+    expect(cell(main, "B23")).toBe('<c r="B23" s="8"/>');
     expect(cell(appendix, "A4")).toContain("1年目点検是正項目");
     expect(cell(appendix, "A2")).toContain("物件名：653.架空町7-21-12A号棟");
     expect(cell(appendix, "A3")).toContain("施主名：山田 太郎様");
@@ -214,7 +216,22 @@ describe("buildReportXlsx", () => {
     expect(cell(input, "B18")).toBe('<c r="B18" s="15"/>');
     expect(cell(main, "C17")).toContain("<v>隙間が閉塞・阻害されている状況</v>");
     expect(cell(main, "B17")).toContain("<v/>");
-    expect(cell(main, "B24")).toContain("<v/>");
+    // ★作業内容・是正内容は続きの行で広げない (①は1行だけ)
+    expect(cell(main, "B23")).toContain("<t xml:space=\"preserve\">①</t>");
+    expect(cell(main, "B24")).toBe('<c r="B24" s="8"/>');
+  });
+
+  it("★作業内容の№は項目ごとに1行ずつ (続き・補足があっても詰めて並べる)", () => {
+    const long =
+      "基礎の巾木仕上げ施工時に土台水切りや通気パッキン周辺の通気スリットまで塗り込まれて隙間が閉塞・阻害されている状況";
+    const { main } = build([long, "補足: 通気スリットの清掃も必要", "建具の調整"]);
+    // 指示内容は ①・続き・補足・② の4行
+    expect(cell(main, "B16")).toContain("<v>①</v>");
+    expect(cell(main, "B19")).toContain("<v>②</v>");
+    // 作業内容は ①② が続けて並ぶ
+    expect(cell(main, "B23")).toContain("<t xml:space=\"preserve\">①</t>");
+    expect(cell(main, "B24")).toContain("<t xml:space=\"preserve\">②</t>");
+    expect(cell(main, "B25")).toBe('<c r="B25" s="8"/>');
   });
 
   it("★別紙は補足のある項目だけ、項目行の下に細い欄を作る", () => {

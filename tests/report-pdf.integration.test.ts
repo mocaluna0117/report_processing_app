@@ -141,6 +141,8 @@ describe.skipIf(!fonts)("完了報告書PDF", () => {
     expect(compact[0]).toContain("・通気スリットの清掃も必要");
     expect(data.useAppendix).toBe(false);
     expect(compact[0]).not.toContain("別紙参照");
+    // 作業内容・是正内容は続き・補足の行で広げない (1件なら①だけ)
+    expect(data.workNos).toEqual(["①", "", "", "", ""]);
   }, 30_000);
 
   it("★補足で本紙の5つの枠を超えると別紙に回り、補足は項目の下に入る", async () => {
