@@ -1,4 +1,15 @@
-import type { AttachmentRequest, FetchRequest, ReceivedFile, ScanRequest, ScanTarget } from "@/lib/rakuraku/protocol";
+import type {
+  AttachmentRequest,
+  FetchRequest,
+  KindId,
+  ReceivedFile,
+  RouteHow,
+  RouteId,
+  RouteScope,
+  ScanRequest,
+  ScanTarget,
+  SurveyReport,
+} from "@/lib/rakuraku/protocol";
 import { type FetchResult, RakurakuApiError, type RakurakuApi, type ScanResult, type StreamHandlers } from "@/lib/tenmatsu/local/server-api";
 
 /**
@@ -14,9 +25,27 @@ export interface FakeApiScript {
   /** 伝票No.ごとの答え。配列なら呼ばれるたびに先頭から使う */
   fetch?: Record<string, FetchScript | FetchScript[]>;
   attachment?: (request: AttachmentRequest) => ReceivedFile | RakurakuApiError;
+  /** 画面の下見の結果 */
+  survey?: SurveyReport | RakurakuApiError;
   /** 流れてくる進捗の行 */
   logs?: string[];
+  /** 一覧を開けた経路（scan / fetch のときに流す） */
+  route?: { kind: KindId; route: RouteId; label: string; scope: RouteScope; how: RouteHow };
 }
+
+/** 中身の無い下見の結果（既定） */
+const EMPTY_SURVEY: SurveyReport = {
+  at: "2026-09-19 00:00:00",
+  home: { path: "/", title: "", frames: [] },
+  department: { hasSelect: false, count: 0, applied: null, message: null },
+  menus: [],
+  afterWorkflow: [],
+  lists: [],
+  clicked: [],
+  probes: [],
+  details: [],
+  notes: [],
+};
 
 export interface FakeApi extends RakurakuApi {
   calls: { method: string; request?: unknown }[];
@@ -41,6 +70,7 @@ export function createFakeApi(script: FakeApiScript): FakeApi {
   const fetchCounts = new Map<string, number>();
   const emit = (handlers?: StreamHandlers) => {
     for (const line of script.logs ?? []) handlers?.log?.(line);
+    if (script.route) handlers?.route?.(script.route);
     handlers?.session?.(`refreshed-${calls.length}`);
   };
 
@@ -56,6 +86,12 @@ export function createFakeApi(script: FakeApiScript): FakeApi {
     departments: async () => {
       calls.push({ method: "departments" });
       return { departments: [], current: null, sessionToken: "token-d", expiresAt: null };
+    },
+    survey: async (request, handlers) => {
+      calls.push({ method: "survey", request });
+      emit(handlers);
+      if (script.survey instanceof RakurakuApiError) throw script.survey;
+      return script.survey ?? EMPTY_SURVEY;
     },
     scan: async (request, handlers) => {
       scans += 1;

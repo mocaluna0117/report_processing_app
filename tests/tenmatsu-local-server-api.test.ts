@@ -154,6 +154,70 @@ describe("Folio のサーバーを呼ぶ", () => {
   });
 });
 
+describe("一覧の経路と画面の下見", () => {
+  it("★どの経路で一覧を開いたかを受け取る（ほかの行と混ざらない）", async () => {
+    const { impl } = fakeFetch({
+      "/api/rakuraku/scan": () =>
+        stream(async (sink) => {
+          await sink.send({
+            type: "route",
+            kind: "tenmatsu",
+            route: "shinsei",
+            label: "ワークフロー（申請検索）",
+            scope: "own",
+            how: "fallback",
+          });
+          await sink.send({
+            type: "targets",
+            items: [],
+            scanned: 0,
+            pages: 1,
+            total: 0,
+            last: 0,
+            stoppedEarly: false,
+            reason: null,
+            department: null,
+          });
+        }),
+    });
+    const routes: unknown[] = [];
+    const others: unknown[] = [];
+    await createRakurakuApi({ fetchImpl: impl }).scan(SCAN, {
+      route: (event) => routes.push(event),
+      log: (line) => others.push(line),
+    });
+    expect(routes).toEqual([
+      { type: "route", kind: "tenmatsu", route: "shinsei", label: "ワークフロー（申請検索）", scope: "own", how: "fallback" },
+    ]);
+    expect(others).toEqual([]);
+  });
+
+  it("画面の下見: 結果を受け取る。届かなければ成功にしない", async () => {
+    const report = {
+      at: "2026-09-19 00:00:00",
+      home: { path: "/", title: "", frames: [] },
+      department: { hasSelect: false, count: 0, applied: null, message: null },
+      menus: [],
+      afterWorkflow: [],
+      lists: [],
+      clicked: [],
+      probes: [],
+      details: [],
+      notes: [],
+    };
+    const ok = fakeFetch({
+      "/api/rakuraku/survey": () => stream(async (sink) => void (await sink.send({ type: "survey", report }))),
+    });
+    expect(await createRakurakuApi({ fetchImpl: ok.impl }).survey({ sessionToken: "t", deptCode: null })).toEqual(report);
+
+    const empty = fakeFetch({ "/api/rakuraku/survey": () => stream(async () => undefined) });
+    const error = await createRakurakuApi({ fetchImpl: empty.impl })
+      .survey({ sessionToken: "t", deptCode: null })
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: "STREAM_CUT" });
+  });
+});
+
 describe("捺印決裁書の取得結果を受け取る", () => {
   it("★紐づく専決決裁書の本体・添付・写す項目・組み立ての結果を、自分の本体と分けて受け取る", async () => {
     const { impl } = fakeFetch({
