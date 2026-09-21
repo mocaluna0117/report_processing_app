@@ -56,7 +56,7 @@ export function HelpDialog() {
       panelClassName="flex h-[85vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-xl"
     >
       <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
-        <h2 className="text-lg font-semibold">使い方</h2>
+        <h2 className="text-xl font-bold text-slate-900">使い方</h2>
         <button
           type="button"
           onClick={closeHelp}
@@ -91,11 +91,14 @@ export function HelpDialog() {
         </div>
       </nav>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
         {section ? (
           <>
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-sm text-slate-600">{section.intro}</p>
+            {/* ★選んでいる画面の名前を、タブとは別に本文の先頭にも大きく出す
+                （タブの印だけでは、今どの画面を見ているか見落としやすかった） */}
+            <h3 className="text-xl font-bold text-slate-900">{section.title}</h3>
+            <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <p className="text-base leading-relaxed text-slate-600">{section.intro}</p>
               <Link
                 href={section.href}
                 onNavigate={(e) => {
@@ -109,17 +112,17 @@ export function HelpDialog() {
                   }
                   closeHelp();
                 }}
-                className="whitespace-nowrap text-sm text-blue-700 underline hover:text-blue-900"
+                className="whitespace-nowrap text-sm font-medium text-blue-700 underline hover:text-blue-900"
               >
                 この画面を開く
               </Link>
             </div>
 
-            <h3 className="mt-3 text-sm font-semibold text-slate-800">進め方</h3>
-            <ol className="mt-1 list-decimal space-y-1 pl-5 text-sm text-slate-700">
+            <h4 className="mt-6 text-base font-semibold text-slate-900">進め方</h4>
+            <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm leading-relaxed text-slate-700">
               {section.steps.map((step) => (
                 <li key={step.id}>
-                  <span className="font-medium">{step.label}</span>
+                  <span className="font-semibold text-slate-900">{step.label}</span>
                   {" — "}
                   {step.description}
                 </li>
@@ -128,25 +131,28 @@ export function HelpDialog() {
 
             <HelpShots section={section} />
 
-            <h3 className="mt-3 text-sm font-semibold text-slate-800">よくあるつまずき</h3>
-            <dl className="mt-1 space-y-2 text-sm">
+            <h4 className="mt-6 text-base font-semibold text-slate-900">よくあるつまずき</h4>
+            <dl className="mt-2 space-y-3 text-sm">
               {section.faq.map((item) => (
                 <div key={item.q}>
-                  <dt className="font-medium text-slate-800">{item.q}</dt>
-                  <dd className="text-slate-600">{item.a}</dd>
+                  <dt className="font-semibold text-slate-900">{item.q}</dt>
+                  <dd className="mt-0.5 leading-relaxed text-slate-600">{item.a}</dd>
                 </div>
               ))}
             </dl>
           </>
         ) : (
-          <dl className="space-y-2 text-sm">
-            {COMMON_FAQ.map((item) => (
-              <div key={item.q}>
-                <dt className="font-medium text-slate-800">{item.q}</dt>
-                <dd className="text-slate-600">{item.a}</dd>
-              </div>
-            ))}
-          </dl>
+          <>
+            <h3 className="text-xl font-bold text-slate-900">どの画面でも</h3>
+            <dl className="mt-4 space-y-3 text-sm">
+              {COMMON_FAQ.map((item) => (
+                <div key={item.q}>
+                  <dt className="font-semibold text-slate-900">{item.q}</dt>
+                  <dd className="mt-0.5 leading-relaxed text-slate-600">{item.a}</dd>
+                </div>
+              ))}
+            </dl>
+          </>
         )}
       </div>
     </ModalShell>

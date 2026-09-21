@@ -20,7 +20,7 @@ export function HelpShots({ section }: { section: HelpSection }) {
   if (shots.length === 0) return null;
   return (
     <>
-      <h3 className="mt-3 text-sm font-semibold text-slate-800">画面の写真</h3>
+      <h4 className="mt-6 text-base font-semibold text-slate-900">画面の写真</h4>
       {shots.map((shot) => {
         const geometry = HELP_SHOT_GEOMETRY[shot.id];
         return (
@@ -49,18 +49,18 @@ export function HelpShots({ section }: { section: HelpSection }) {
                 </span>
               ))}
             </div>
-            <figcaption className="mt-1 text-sm text-slate-600">
+            <figcaption className="mt-1.5 text-sm leading-relaxed text-slate-600">
               {shot.caption}
               <a
                 href={helpShotSrc(shot)}
                 target="_blank"
                 rel="noreferrer"
-                className="ml-2 text-xs text-blue-700 underline hover:text-blue-900"
+                className="ml-2 text-xs font-medium text-blue-700 underline hover:text-blue-900"
               >
                 大きく見る
               </a>
               {shot.hotspots.length > 0 && (
-                <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-slate-700">
+                <ol className="mt-1 list-decimal space-y-1 pl-5 text-slate-700">
                   {shot.hotspots.map((hotspot) => (
                     <li key={hotspot.text}>{hotspot.text}</li>
                   ))}
