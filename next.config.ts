@@ -56,6 +56,12 @@ const nextConfig: NextConfig = {
         source: "/report/completion-report.xlsx",
         headers: [{ key: "Cache-Control", value: "public, max-age=0, must-revalidate" }],
       },
+      {
+        // 「使い方」ページの写真も名前が固定 (npm run help:shots で撮り直す)。
+        // 撮り直したら次の読み込みで必ず反映されるようにする
+        source: "/help/:path*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=0, must-revalidate" }],
+      },
     ];
   },
 };
