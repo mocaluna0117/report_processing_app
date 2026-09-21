@@ -29,6 +29,7 @@ function formatDate(ms: number | null): string {
 
 /** 顧客データの取り込み (xlsx/csv) と件数の表示 */
 export function CustomerImport({
+  id,
   summary,
   report,
   importing,
@@ -44,9 +45,11 @@ export function CustomerImport({
   onImport: (file: File) => void;
   onDelete: () => void;
   onShowReview: () => void;
+  /** 手順バーから飛んでくるときの目印 */
+  id?: string;
 }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4">
+    <section id={id} tabIndex={-1} className="scroll-mt-4 rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">顧客データ</h2>

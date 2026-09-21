@@ -20,6 +20,7 @@ import {
   type StatusBadgeKey,
   statusBadges,
 } from "@/lib/tenmatsu/list-view";
+import { listEmptyText } from "@/lib/tenmatsu/local/flow";
 import type { DocKind } from "@/lib/tenmatsu/kinds";
 import { pendingBadgeTitle, recomposeDisabledReason } from "@/lib/tenmatsu/pending";
 
@@ -122,6 +123,7 @@ const flagsUpdatedTitle = (item: ListItem) =>
 export function TenmatsuList({
   kind,
   items,
+  connected,
   filter,
   onFilterChange,
   showCompleted,
@@ -143,6 +145,8 @@ export function TenmatsuList({
   kind: DocKind;
   /** /list が返した全行。絞り込みと非表示はこの中で行い、items 自体は書き換えない */
   items: ListItem[];
+  /** 保存先フォルダーにつながっているか。★空のときの言い方を変える（未接続と「0件」は別物） */
+  connected: boolean;
   filter: ListFilter;
   onFilterChange: (value: ListFilter) => void;
   showCompleted: boolean;
@@ -282,7 +286,7 @@ export function TenmatsuList({
       )}
 
       {items.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-600">まだ取得した{kind.label}はありません。</p>
+        <p className="mt-2 text-sm text-slate-600">{listEmptyText(kind, connected)}</p>
       ) : visible.length === 0 ? (
         // 完了を既定で隠すので、作業が全部済んでいると表が空になる。
         // ここで「まだ取得した◯◯はありません」と出すと嘘になる

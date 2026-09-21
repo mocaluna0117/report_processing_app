@@ -1,10 +1,13 @@
 "use client";
 
+import { BlockedReason } from "@/components/blocked-reason";
 import { effectiveFields } from "@/lib/after/customer";
+import { intakeBlockedReason } from "@/lib/after/flow";
 import type { Customer } from "@/lib/after/types";
 
 /** コールセンターの受付内容を貼り付けて、1件の受付として登録する */
 export function AfterIntake({
+  id,
   customer,
   value,
   onChange,
@@ -13,6 +16,8 @@ export function AfterIntake({
   error,
   notice,
 }: {
+  /** 手順バーから飛んでくるときの目印 */
+  id?: string;
   customer: Customer | null;
   value: string;
   onChange: (value: string) => void;
@@ -23,8 +28,9 @@ export function AfterIntake({
   notice?: string | null;
 }) {
   const ready = customer !== null && value.trim() !== "" && !busy;
+  const blocked = intakeBlockedReason({ hasCustomer: customer !== null, memoEmpty: value.trim() === "", busy });
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4">
+    <section id={id} tabIndex={-1} className="scroll-mt-4 rounded-lg border border-slate-200 bg-white p-4">
       <h2 className="text-lg font-semibold">
         受付内容
         <span className="ml-2 text-xs font-normal text-slate-500">
@@ -59,13 +65,18 @@ export function AfterIntake({
       />
 
       <div className="mt-2 flex items-center justify-between gap-3">
-        <p className="text-xs text-slate-500">
-          要約のためにGemini APIへ送るのは、お客様の氏名・電話番号・住所を伏せ字にした受付内容だけです
-        </p>
+        <div>
+          <p className="text-xs text-slate-500">
+            要約のためにGemini APIへ送るのは、お客様の氏名・電話番号・住所を伏せ字にした受付内容だけです
+          </p>
+          {/* ★押せない理由を見える文字で（お客様が未選択のときは上に出ているので重ねない） */}
+          <BlockedReason reason={blocked} className="mt-1" />
+        </div>
         <button
           type="button"
           onClick={onSubmit}
           disabled={!ready}
+          title={blocked ?? undefined}
           aria-busy={busy}
           className="whitespace-nowrap rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         >

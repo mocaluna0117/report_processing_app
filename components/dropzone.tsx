@@ -17,6 +17,7 @@ export function Dropzone({
       PDFはブラウザ内で処理され、外部にアップロードされません。
     </>
   ),
+  example,
   compact = false,
 }: {
   onFiles: (files: File[]) => void;
@@ -27,6 +28,8 @@ export function Dropzone({
   multiple?: boolean;
   title?: ReactNode;
   description?: ReactNode;
+  /** 受け付けるファイル名の例。★失敗する前に決まりが分かるよう、常に出す（定期点検だけが渡す） */
+  example?: string;
   compact?: boolean;
 }) {
   const [dragging, setDragging] = useState(false);
@@ -82,6 +85,11 @@ export function Dropzone({
         {title}
       </p>
       <p className="mt-1 text-sm text-slate-500">{description}</p>
+      {example && (
+        <p className="mt-2 text-xs text-slate-500">
+          例: <span className="font-mono">{example}</span>
+        </p>
+      )}
     </button>
   );
 }

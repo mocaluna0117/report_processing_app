@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { BlockedReason } from "@/components/blocked-reason";
 import { Dropzone } from "@/components/dropzone";
+import { FlowSteps } from "@/components/flow-steps";
 import { FallbackTsvDialog } from "@/components/fallback-tsv-dialog";
 import { MailDialog } from "@/components/mail-dialog";
 import { PairTable, type PairView } from "@/components/pair-table";
@@ -12,6 +14,13 @@ import { ExamplesDialog } from "@/components/examples-dialog";
 import { StorageBanner } from "@/components/storage-banner";
 import { runLimited } from "@/lib/concurrency";
 import { downloadBlob as download } from "@/lib/download";
+import {
+  FILENAME_EXAMPLE,
+  type InspectionFlowInput,
+  inspectionFlow,
+  inspectionRunBlockedReason,
+  isFreshInspection,
+} from "@/lib/inspection-flow";
 import { setNavigationGuard } from "@/lib/navigation-guard";
 import { pairFiles, parseFileName } from "@/lib/pairing";
 import { warmUpPdfjs } from "@/lib/pdf/extract";
@@ -606,14 +615,33 @@ export default function Home() {
     storage.refreshFontInfo();
   };
 
+  /** 手順バーと「押せない理由」のもと。規則は lib/inspection-flow.ts にまとめてある */
+  const flowInput: InspectionFlowInput = {
+    restored: storage.restored,
+    processing,
+    fileCount: files.length,
+    unclassifiedCount: unclassified.length,
+    counts,
+    needsReviewCount: pairs.filter((p) => p.needsReview).length,
+    okRowCount: allRows.filter((r) => !r.error).length,
+  };
+
   return (
     <main>
       <p className="mt-4 text-sm text-slate-600">
         写真報告書と点検報告書をアップロードすると、結合PDFの作成とExcel転記用テキストの抽出を行います。
       </p>
 
-      <section className="mt-6">
-        <Dropzone onFiles={handleFiles} disabled={processing || !storage.restored} />
+      <FlowSteps
+        plan={inspectionFlow(flowInput)}
+        ariaLabel="定期点検の手順"
+        expanded={isFreshInspection(flowInput)}
+        intro="PDFはブラウザの中で処理され、外部にアップロードされません。"
+        helpHref="/help#help-inspection"
+      />
+
+      <section id="inspection-drop" tabIndex={-1} className="mt-6 scroll-mt-4">
+        <Dropzone onFiles={handleFiles} disabled={processing || !storage.restored} example={FILENAME_EXAMPLE} />
         {!storage.restored && (
           <p className="mt-2 text-sm text-slate-500">前回の内容を読み込んでいます…</p>
         )}
@@ -638,7 +666,7 @@ export default function Home() {
       </section>
 
       {pairs.length > 0 && (
-        <section className="mt-6">
+        <section id="inspection-pairs" tabIndex={-1} className="mt-6 scroll-mt-4">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-semibold">
               ペアリング結果
@@ -667,6 +695,8 @@ export default function Home() {
                   : "選択した分を処理"}
             </button>
           </div>
+
+          <BlockedReason reason={inspectionRunBlockedReason(flowInput)} className="mb-2" />
 
           {/* 処理するペアの選び方。「すべて」に処理済みが入ることは文字で書く */}
           <div
@@ -741,7 +771,7 @@ export default function Home() {
       )}
 
       {allRows.length > 0 && (
-        <section className="mt-8">
+        <section id="inspection-results" tabIndex={-1} className="mt-8 scroll-mt-4">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-semibold">
               抽出結果

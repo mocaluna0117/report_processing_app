@@ -32,6 +32,12 @@ export function ModeNav() {
   // ログイン画面では画面の切り替えを出さない (押しても戻されるだけなので)
   if (pathname === "/login") return null;
 
+  // 処理中の離脱は取り消せないので確認する（タブと「使い方」で共通）
+  const guardNavigation = (e: { preventDefault: () => void }) => {
+    const guard = getNavigationGuard();
+    if (guard && !confirm(guard)) e.preventDefault();
+  };
+
   return (
     <div className="flex items-center gap-3">
       <nav
@@ -45,11 +51,7 @@ export function ModeNav() {
               key={mode.href}
               href={mode.href}
               aria-current={active ? "page" : undefined}
-              onNavigate={(e) => {
-                // 処理中の離脱は取り消せないので確認する
-                const guard = getNavigationGuard();
-                if (guard && !confirm(guard)) e.preventDefault();
-              }}
+              onNavigate={guardNavigation}
               className={
                 active
                   ? "rounded-md bg-white px-3 py-1.5 font-semibold text-slate-900 shadow-sm"
@@ -61,6 +63,19 @@ export function ModeNav() {
           );
         })}
       </nav>
+      {/* ★タブではなく右側に置く（画面の種類ではないので MODES には入れない） */}
+      <Link
+        href="/help"
+        aria-current={pathname === "/help" ? "page" : undefined}
+        onNavigate={guardNavigation}
+        className={
+          pathname === "/help"
+            ? "rounded-md border border-slate-400 bg-white px-2.5 py-1 text-xs font-semibold text-slate-900"
+            : "rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+        }
+      >
+        使い方
+      </Link>
       {signedIn && (
         <form method="post" action="/api/logout">
           <button

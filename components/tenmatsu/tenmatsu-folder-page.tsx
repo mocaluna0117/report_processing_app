@@ -1,6 +1,8 @@
 "use client";
 
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { BlockedReason } from "@/components/blocked-reason";
+import { FlowSteps } from "@/components/flow-steps";
 import { StorageBanner } from "@/components/storage-banner";
 import { TenmatsuImportRecords } from "@/components/tenmatsu/tenmatsu-import-records";
 import { TenmatsuList } from "@/components/tenmatsu/tenmatsu-list";
@@ -44,6 +46,16 @@ import {
   pickFolder,
   queryFolderPermission,
 } from "@/lib/tenmatsu/local/folder-handle";
+import {
+  type TenmatsuFlowInput,
+  canStartRun,
+  folderBlockedReason,
+  isFreshTenmatsu,
+  listEmptyText,
+  runBlockedReason,
+  tenmatsuFlow,
+  tenmatsuStepDefs,
+} from "@/lib/tenmatsu/local/flow";
 import { LOCAL_KINDS, RUN_LIMITS } from "@/lib/tenmatsu/local/kind-config";
 import { createRakurakuApi, RakurakuApiError } from "@/lib/tenmatsu/local/server-api";
 import {
@@ -717,17 +729,28 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     flagDisabledReason ?? (running || otherRunning ? "取得中は添付を結合できません。取得が終わってから操作してください" : null);
   const completion = status && !running && runObserved ? describeCompletion(status, kind.label) : null;
   const deptLabel = departments?.find((d) => d.code === deptCode)?.label ?? null;
-  const canRun =
-    connected && loggedIn && departments !== null && (departments.length === 0 || deptCode !== null) && !running && !otherRunning && storage.restored;
-  const runBlockedReason = !connected
-    ? "保存先フォルダーにつないでください"
-    : !loggedIn
-      ? "楽楽精算にログインしてください"
-      : departments === null
-        ? "部門を読み込んでください"
-        : otherRunning
-          ? "別の書類の取得が動いています"
-          : null;
+  /** 手順バーと「押せない理由」のもと。規則は lib/tenmatsu/local/flow.ts にまとめてある */
+  const flowInput: TenmatsuFlowInput = {
+    kind,
+    supported,
+    restored: storage.restored,
+    hasHandle: handle !== null,
+    handleName: handle?.name ?? null,
+    connection,
+    connected,
+    loggedIn,
+    loginBusy,
+    departmentCount: departments?.length ?? null,
+    deptLabel,
+    running,
+    otherRunKind: otherRunning ? otherRunKind : null,
+    itemCount: items.length,
+    userIdSaved,
+  };
+  const canRun = canStartRun(flowInput);
+  const runBlocked = runBlockedReason(flowInput);
+  const steps = tenmatsuStepDefs(kind);
+  const sectionId = (id: string) => steps.find((s) => s.id === id)?.targetId;
 
   const preview = previewNo ? (items.find((i) => i.denpyo_no === previewNo) ?? null) : null;
   const pending = pendingNo ? (items.find((i) => i.denpyo_no === pendingNo && isPending(i)) ?? null) : null;
@@ -745,11 +768,19 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
 
       {header}
 
+      <FlowSteps
+        plan={tenmatsuFlow(flowInput)}
+        ariaLabel={`${kind.label}の手順`}
+        expanded={isFreshTenmatsu(flowInput)}
+        intro={`${kind.label}を楽楽精算から取り、本体と添付を1つのPDFにして、選んだPCのフォルダーへ保存します。楽楽精算のパスワードは保存しません。`}
+        helpHref={`/help#help-${kind.id}`}
+      />
+
       {storage.storageError && <p className={WARN_CLASS}>{storage.storageError}</p>}
 
       <div className="mt-6 space-y-4">
         {/* ---------- 保存先フォルダー ---------- */}
-        <section className={SECTION_CLASS}>
+        <section id={sectionId("folder")} tabIndex={-1} className={`${SECTION_CLASS} scroll-mt-4`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">
@@ -788,12 +819,15 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
                 type="button"
                 onClick={() => void chooseFolder()}
                 disabled={!supported || connection === "checking" || running || !storage.restored}
+                title={folderBlockedReason(flowInput) ?? undefined}
                 className={handle ? SECONDARY_BUTTON_CLASS : PRIMARY_BUTTON_CLASS}
               >
                 {handle ? "別のフォルダーを選ぶ" : "保存先フォルダーを選ぶ"}
               </button>
             </div>
           </div>
+          {/* 対応していないブラウザは下に大きく出しているので、ここでは出さない */}
+          <BlockedReason reason={supported ? folderBlockedReason(flowInput) : null} className="mt-2" />
           {!supported && <p className={WARN_CLASS}>{FOLDER_UNSUPPORTED_TEXT}</p>}
           {supported && !handle && (
             <p className="mt-2 text-sm text-slate-600">
@@ -827,7 +861,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
         </section>
 
         {/* ---------- 楽楽精算 ---------- */}
-        <section className={SECTION_CLASS}>
+        <section id={sectionId("login")} tabIndex={-1} className={`${SECTION_CLASS} scroll-mt-4`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">
@@ -891,7 +925,12 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
                   className={`mt-1 w-48 ${INPUT_CLASS}`}
                 />
               </label>
-              <button type="submit" disabled={loginBusy || !userId.trim() || !passwordInput} className={PRIMARY_BUTTON_CLASS}>
+              <button
+                type="submit"
+                disabled={loginBusy || !userId.trim() || !passwordInput}
+                title={!userId.trim() || !passwordInput ? "ログインIDとパスワードを入れてください" : undefined}
+                className={PRIMARY_BUTTON_CLASS}
+              >
                 {loginBusy ? "ログインしています…" : "ログイン"}
               </button>
             </form>
@@ -921,7 +960,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
         </section>
 
         {/* ---------- 取得 ---------- */}
-        <section className={SECTION_CLASS}>
+        <section id={sectionId("run")} tabIndex={-1} className={`${SECTION_CLASS} scroll-mt-4`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">
@@ -1003,7 +1042,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
                 type="button"
                 onClick={() => void startRun()}
                 disabled={!canRun}
-                title={runBlockedReason ?? undefined}
+                title={runBlocked?.text ?? undefined}
                 aria-busy={running}
                 className={PRIMARY_BUTTON_CLASS}
               >
@@ -1023,7 +1062,12 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
               </button>
             </p>
           )}
-          {!canRun && !running && runBlockedReason && <p className="mt-2 text-xs text-slate-500">{runBlockedReason}</p>}
+          <BlockedReason
+            reason={!canRun && !running ? (runBlocked?.text ?? null) : null}
+            targetId={runBlocked?.targetId}
+            targetLabel={runBlocked?.targetLabel}
+            className="mt-2"
+          />
 
           {/* この種類だけの進み方（捺印決裁書は取得しただけでは終わらない） */}
           {kind.text.flowNote && <p className="mt-2 text-sm text-slate-600">{kind.text.flowNote}</p>}
@@ -1062,7 +1106,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
         </section>
 
         {/* ---------- 一覧 ---------- */}
-        <section className={SECTION_CLASS}>
+        <section id={sectionId("list")} tabIndex={-1} className={`${SECTION_CLASS} scroll-mt-4`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold">
               取得済み一覧
@@ -1074,6 +1118,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
               type="button"
               onClick={() => void refreshList()}
               disabled={!connected || listLoading}
+              title={!connected ? "保存先フォルダーにつなぐと読み込めます" : undefined}
               className={SECONDARY_BUTTON_CLASS}
             >
               {listLoading ? "読み込んでいます…" : "一覧を再読み込み"}
@@ -1100,6 +1145,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
           <TenmatsuList
             kind={kind}
             items={items}
+            connected={connected}
             filter={listFilter}
             onFilterChange={setListFilter}
             sort={listSort}

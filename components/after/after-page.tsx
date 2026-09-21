@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AfterIntake } from "@/components/after/after-intake";
+import { BlockedReason } from "@/components/blocked-reason";
+import { FlowSteps } from "@/components/flow-steps";
 import { CustomerCard } from "@/components/after/customer-card";
 import { CustomerImport, type CustomerSummary } from "@/components/after/customer-import";
 import { CustomerSearch } from "@/components/after/customer-search";
@@ -13,6 +15,7 @@ import { ResultsTable } from "@/components/results-table";
 import { StorageBanner } from "@/components/storage-banner";
 import { createAfterCase } from "@/lib/after/case";
 import { applyEdits, effectiveFields, needsReview, resetEdits } from "@/lib/after/customer";
+import { type AfterFlowInput, afterFlow, isFreshAfter } from "@/lib/after/flow";
 import {
   clearCustomers,
   loadCustomers,
@@ -331,12 +334,31 @@ export function AfterPage() {
   const mailRow = mailCaseId ? (cases.find((c) => c.pairId === mailCaseId) ?? null) : null;
   const reportRow = reportCaseId ? (cases.find((c) => c.pairId === reportCaseId) ?? null) : null;
 
+  /** 手順バーのもと。規則は lib/after/flow.ts にまとめてある */
+  const flowInput: AfterFlowInput = {
+    restored: storage.restored,
+    importing,
+    customerCount: customers.length,
+    hasSelected: selected !== null,
+    memoEmpty: inquiryText.trim() === "",
+    registering,
+    caseCount: cases.length,
+  };
+
   return (
     <main>
       <p className="mt-4 text-sm text-slate-600">
         お問い合わせを受けた補修の受付です。お客様を選び、コールセンターの受付内容を貼り付けると、
         Excel転記用の行・メール文・完了報告書を作れます。
       </p>
+
+      <FlowSteps
+        plan={afterFlow(flowInput)}
+        ariaLabel="アフターメンテナンス受付の手順"
+        expanded={isFreshAfter(flowInput)}
+        intro="顧客データと受付一覧はこのブラウザ内にだけ保存されます。要約のためにGemini APIへ送るのは、氏名・電話番号・住所を伏せ字にした受付内容だけです。"
+        helpHref="/help#help-after"
+      />
 
       {storage.storageError && (
         <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -346,6 +368,7 @@ export function AfterPage() {
 
       <div className="mt-6 space-y-4">
         <CustomerImport
+          id="after-import"
           summary={summary}
           report={importReport}
           importing={importing}
@@ -359,7 +382,7 @@ export function AfterPage() {
         />
 
         {customers.length > 0 && (
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div id="after-search" tabIndex={-1} className="grid scroll-mt-4 gap-4 lg:grid-cols-2">
             <CustomerSearch
               customers={customers}
               query={query}
@@ -381,6 +404,7 @@ export function AfterPage() {
 
         {customers.length > 0 && (
           <AfterIntake
+            id="after-intake"
             customer={selected}
             value={inquiryText}
             onChange={setInquiryText}
@@ -409,7 +433,7 @@ export function AfterPage() {
       </div>
 
       {cases.length > 0 && (
-        <section className="mt-8">
+        <section id="after-cases" tabIndex={-1} className="mt-8 scroll-mt-4">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-semibold">
               受付一覧

@@ -999,9 +999,11 @@ export function TenmatsuLocalServerPage({ kind: kindId, header }: { kind: DocKin
           {/* 取得のエラーとは別に出す (Excelの失敗などを潰さないため) */}
           {flagError && <p className={ERROR_CLASS}>{flagError}</p>}
 
+          {/* 今までの方式はPCのサーバーが一覧を持つので、フォルダーの接続という考え方は無い（常に繋がっている扱い） */}
           <TenmatsuList
             kind={kind}
             items={items}
+            connected
             filter={listFilter}
             onFilterChange={setListFilter}
             showCompleted={showCompleted}
