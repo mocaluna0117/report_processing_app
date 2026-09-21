@@ -357,7 +357,7 @@ export function AfterPage() {
         plan={afterFlow(flowInput)}
         ariaLabel="アフターメンテナンス受付の手順"
         expanded={isFreshAfter(flowInput)}
-        helpHref="/help#help-after"
+        helpHref="/help/after"
       />
 
       {storage.storageError && (

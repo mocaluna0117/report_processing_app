@@ -22,6 +22,8 @@ export interface HelpFaq {
 
 export interface HelpSection {
   id: string;
+  /** ページのURL断片。/help/<slug> がこの節の専用ページになる */
+  slug: string;
   /** その画面へのリンク */
   href: string;
   title: string;
@@ -61,6 +63,7 @@ export const COMMON_FAQ: readonly HelpFaq[] = [
 
 const inspectionSection = (): HelpSection => ({
   id: "help-inspection",
+  slug: "inspection",
   shots: shotsOf("help-inspection"),
   href: "/",
   title: "定期点検",
@@ -101,6 +104,7 @@ const inspectionSection = (): HelpSection => ({
 
 const afterSection = (): HelpSection => ({
   id: "help-after",
+  slug: "after",
   shots: shotsOf("help-after"),
   href: "/after",
   title: "アフターメンテナンス受付",
@@ -136,6 +140,7 @@ const afterSection = (): HelpSection => ({
 
 const tenmatsuSection = (kind: DocKind): HelpSection => ({
   id: `help-${kind.id}`,
+  slug: kind.id,
   shots: shotsOf(`help-${kind.id}`),
   href: kind.route,
   title: kind.label,

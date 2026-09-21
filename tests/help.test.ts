@@ -75,10 +75,23 @@ describe("「使い方」ページの中身", () => {
   it("★写真は next/image を使わない（認証の外に出さないため）", () => {
     // proxy.ts の matcher は /_next/image と /_next/static を素通しにしている。
     // そこに社内画面の写真を置くと、APP_PASSWORD の保護が効かない。
-    const page = readFileSync("app/help/page.tsx", "utf8");
+    // 写真を出しているのは app/help/_shots.tsx（各画面のページが読み込む）
+    const shots = readFileSync("app/help/_shots.tsx", "utf8");
     // （理由はページの冒頭コメントに書いてあるので、import だけを見る）
-    expect(page).not.toMatch(/from\s+["']next\/image["']/);
-    expect(page).toContain("<img");
+    expect(shots).not.toMatch(/from\s+["']next\/image["']/);
+    expect(shots).toContain("<img");
+  });
+
+  it("★各画面の目印（slug）が一意で、URLに使える形になっている", () => {
+    const slugs = HELP_SECTIONS.map((s) => s.slug);
+    expect(new Set(slugs).size).toBe(slugs.length);
+    for (const slug of slugs) expect(slug).toMatch(/^[a-z]+$/);
+  });
+
+  it("★画面ごとのページに、写真を出す部品 (_shots) が読み込まれている", () => {
+    const page = readFileSync("app/help/[slug]/page.tsx", "utf8");
+    expect(page).toContain("Shots");
+    expect(page).toMatch(/from\s+["']@\/app\/help\/_shots["']/);
   });
 
   it("顛末書系にはログインのロックとフォルダーの許可が載っている", () => {

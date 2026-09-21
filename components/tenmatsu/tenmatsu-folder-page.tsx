@@ -842,7 +842,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
         plan={tenmatsuFlow(flowInput)}
         ariaLabel={`${kind.label}の手順`}
         expanded={isFreshTenmatsu(flowInput)}
-        helpHref={`/help#help-${kind.id}`}
+        helpHref={`/help/${kind.id}`}
       />
 
       {storage.storageError && <p className={WARN_CLASS}>{storage.storageError}</p>}

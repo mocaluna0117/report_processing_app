@@ -638,7 +638,7 @@ export default function Home() {
         plan={inspectionFlow(flowInput)}
         ariaLabel="定期点検の手順"
         expanded={isFreshInspection(flowInput)}
-        helpHref="/help#help-inspection"
+        helpHref="/help/inspection"
       />
 
       <section id="inspection-drop" tabIndex={-1} className="mt-6 scroll-mt-4">

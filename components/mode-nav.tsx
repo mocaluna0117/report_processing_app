@@ -64,12 +64,13 @@ export function ModeNav() {
         })}
       </nav>
       {/* ★タブではなく右側に置く（画面の種類ではないので MODES には入れない） */}
+      {/* ★/help/<slug> の各画面ページでも「使い方」を選んだ状態に見せる */}
       <Link
         href="/help"
-        aria-current={pathname === "/help" ? "page" : undefined}
+        aria-current={pathname.startsWith("/help") ? "page" : undefined}
         onNavigate={guardNavigation}
         className={
-          pathname === "/help"
+          pathname.startsWith("/help")
             ? "rounded-md border border-slate-400 bg-white px-2.5 py-1 text-xs font-semibold text-slate-900"
             : "rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
         }
