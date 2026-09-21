@@ -30,6 +30,10 @@ export interface TenmatsuFlowInput {
   departmentCount: number | null;
   /** 選んでいる部門の表示名。未選択は null */
   deptLabel: string | null;
+  /** 部門を読めなかった（自動のやり直しも失敗した）。読み直しと「指定せず」の導線を出す */
+  departmentFailed: boolean;
+  /** 利用者が「部門を指定せずに取得する」を選んだ。★取得では deptCode を null で送る */
+  departmentSkipped: boolean;
   running: boolean;
   /** 別の種類の取得が動いていれば、その種類 */
   otherRunKind: DocKindId | null;
@@ -65,7 +69,7 @@ export function tenmatsuStepDefs(kind: DocKind): FlowStepDef[] {
       id: "dept",
       label: "部門を選ぶ",
       description:
-        "そのアカウントで選べる部門を楽楽精算から読んで選びます。部門の切り替えが無いアカウントでは、この手順は自動で済みます。",
+        "そのアカウントで選べる部門を楽楽精算から読んで選びます。部門の切り替えが無いアカウント（「閲覧」タブが無い方）では、この手順は自動で済みます。読み込めないときは「もう一度読み込む」か「部門を指定せずに取得する」を選べます。",
       targetId: `${kind.id}-run`,
     },
     {
@@ -83,18 +87,33 @@ export function tenmatsuStepDefs(kind: DocKind): FlowStepDef[] {
   ];
 }
 
-/** 取得を始められるか。★画面にあった canRun の式をそのまま移したもの（動きを変えない） */
+/**
+ * 部門の段が片付いているか。
+ *
+ * ★「部門を指定せず」が効くのは**部門を読めていないときだけ**。選択肢が読めているのに指定せずに進むと、
+ *   取得の開始時に applyDepartment（lib/rakuraku/navigation.ts）が止める。押せるのに必ず失敗するボタンは出さない。
+ * ★canStartRun と runBlockedReason が食い違うと「押せないのに理由が出ない」に戻るので、判定はこの1か所だけ。
+ */
+function departmentReady(input: TenmatsuFlowInput): boolean {
+  if (input.departmentCount === null) return input.departmentSkipped;
+  return input.departmentCount === 0 || input.deptLabel !== null;
+}
+
+/** 取得を始められるか。★画面にあった canRun の式をそのまま移したもの（部門の判定だけ上にまとめた） */
 export function canStartRun(input: TenmatsuFlowInput): boolean {
   return (
     input.connected &&
     input.loggedIn &&
-    input.departmentCount !== null &&
-    (input.departmentCount === 0 || input.deptLabel !== null) &&
+    departmentReady(input) &&
     !input.running &&
     input.otherRunKind === null &&
     input.restored
   );
 }
+
+/** 部門を読めなかったときに、取得ボタンの下へ出す理由 */
+export const DEPT_READ_FAILED_BLOCK_TEXT =
+  "部門を読み込めませんでした。「もう一度読み込む」か「部門を指定せずに取得する」を押してください";
 
 export interface BlockedReasonText {
   text: string;
@@ -118,8 +137,12 @@ export function runBlockedReason(input: TenmatsuFlowInput): BlockedReasonText | 
   if (!input.supported && !input.connected) return { text: FOLDER_UNSUPPORTED_TEXT, ...folder };
   if (!input.connected) return { text: "保存先フォルダーにつないでください", ...folder };
   if (!input.loggedIn) return { text: "楽楽精算にログインしてください", ...rakuraku };
-  if (input.departmentCount === null) return { text: "部門を読み込んでください", ...here };
-  if (input.departmentCount > 0 && input.deptLabel === null) return { text: "部門を選んでください", ...here };
+  if (!departmentReady(input)) {
+    if (input.departmentCount === null) {
+      return { text: input.departmentFailed ? DEPT_READ_FAILED_BLOCK_TEXT : "部門を読み込んでください", ...here };
+    }
+    return { text: "部門を選んでください", ...here };
+  }
   if (input.otherRunKind !== null) {
     return { text: `${otherLabel(input.otherRunKind)}の取得が動いています。終わってから始めてください`, ...here };
   }
@@ -186,16 +209,20 @@ export function tenmatsuFlow(input: TenmatsuFlowInput): FlowPlan {
 
   const dept: StepEval = !input.loggedIn
     ? { kind: "ready", hint: "先に楽楽精算にログインしてください" }
-    : input.departmentCount === 0
-      ? { kind: "done", note: "切り替えなし" }
-      : input.departmentCount === null
-        ? {
-            kind: "ready",
-            hint: `「${label}の取得」の欄の「部門を読み込む」を押してください`,
-          }
-        : input.deptLabel === null
-          ? { kind: "ready", hint: `「${label}の取得」の欄の「部門」で部門を選んでください` }
-          : { kind: "done", note: input.deptLabel };
+    : input.departmentCount === null && input.departmentSkipped
+      ? { kind: "done", note: "指定せず" }
+      : input.departmentCount === 0
+        ? { kind: "done", note: "切り替えなし" }
+        : input.departmentCount === null
+          ? {
+              kind: "ready",
+              hint: input.departmentFailed
+                ? `部門を読み込めませんでした。「${label}の取得」の欄の「もう一度読み込む」か「部門を指定せずに取得する」を押してください`
+                : `「${label}の取得」の欄の「部門を読み込む」を押してください`,
+            }
+          : input.deptLabel === null
+            ? { kind: "ready", hint: `「${label}の取得」の欄の「部門」で部門を選んでください` }
+            : { kind: "done", note: input.deptLabel };
 
   const run: StepEval = input.running
     ? {

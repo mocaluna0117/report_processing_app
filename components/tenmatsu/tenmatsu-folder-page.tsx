@@ -47,6 +47,13 @@ import {
   queryFolderPermission,
 } from "@/lib/tenmatsu/local/folder-handle";
 import {
+  DEPT_OPTIONS_EMPTY_TEXT,
+  departmentErrorText,
+  departmentFixFromStatus,
+  pickDepartment,
+  readDepartments,
+} from "@/lib/tenmatsu/local/departments";
+import {
   type TenmatsuFlowInput,
   canStartRun,
   folderBlockedReason,
@@ -175,6 +182,12 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   const [loginError, setLoginError] = useState<string | null>(null);
   const [departments, setDepartments] = useState<DepartmentOption[] | null>(kept.departments);
   const [deptCode, setDeptCode] = useState<string | null>(kept.deptCode);
+  /** ★部門の失敗は loginError と分ける。混ぜると、やり直しの導線まで隠れて行き止まりになる */
+  const [deptError, setDeptError] = useState<string | null>(null);
+  const [deptBusy, setDeptBusy] = useState(false);
+  /** 部門を読めないまま「指定せずに取得する」を選んだか */
+  const [skipDepartment, setSkipDepartment] = useState(kept.skipDepartment);
+  const deptBusyRef = useRef(false);
   /** 一覧の経路の固定（null なら自動で順に試す） */
   const [routePin, setRoutePin] = useState<RouteId | null>(kept.routePin);
   const deptCodeRef = useRef(deptCode);
@@ -385,30 +398,49 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
 
   // --- 楽楽精算のログインと部門 -------------------------------------------------
 
+  /**
+   * 部門を読む。規則（やり直し・3通りの結果）は lib/tenmatsu/local/departments.ts にある。
+   * ★ここでは loginError を書かない。書くと、やり直しの導線まで隠れて行き止まりになっていた。
+   */
   const loadDepartments = async () => {
     const token = getSessionToken();
-    if (!token) return;
-    setLoginError(null);
+    if (!token || deptBusyRef.current) return; // ★二重押しで呼び出しを増やさない
+    deptBusyRef.current = true;
+    setDeptBusy(true);
+    setDeptError(null);
     try {
-      const res = await api.departments(token);
-      setLogin({ sessionToken: res.sessionToken, ...(res.expiresAt !== null ? { expiresAt: res.expiresAt } : {}) });
-      setDepartments(res.departments);
-      const saved = await loadDept(kind.id).catch(() => null);
-      const pick =
-        res.departments.find((d) => d.code === saved?.code) ??
-        res.departments.find((d) => d.code === res.current?.code) ??
-        res.departments[0] ??
-        null;
-      setDeptCode(pick?.code ?? null);
-    } catch (e) {
-      if (e instanceof RakurakuApiError && e.code === "DEPT_SELECT_MISSING") {
-        // 部門の切り替えが無いアカウント。部門を指定せずに取得する
-        setDepartments([]);
-        setDeptCode(null);
-        return;
+      const outcome = await readDepartments({ api }, token);
+      if (outcome.kind !== "failed" && outcome.sessionToken) {
+        setLogin({
+          sessionToken: outcome.sessionToken,
+          ...(outcome.expiresAt !== null ? { expiresAt: outcome.expiresAt } : {}),
+        });
       }
-      if (e instanceof RakurakuApiError && e.sessionLost) setLogin({ sessionToken: null });
-      setLoginError(`部門を読み込めませんでした (${errorText(e)})`);
+      if (outcome.kind !== "failed") setSkipDepartment(false);
+      switch (outcome.kind) {
+        case "list": {
+          const saved = await loadDept(kind.id).catch(() => null);
+          setDepartments(outcome.departments);
+          setDeptCode(pickDepartment(outcome.departments, saved?.code ?? null, outcome.current?.code ?? null)?.code ?? null);
+          return;
+        }
+        case "none":
+          // 部門の切り替えが無いアカウント。部門を指定せずに取得する
+          setDepartments([]);
+          setDeptCode(null);
+          return;
+        case "empty":
+          // ★このまま取得しても取得開始時に止まるので、取得は許さない（departments は null のまま）
+          setDeptError(DEPT_OPTIONS_EMPTY_TEXT);
+          return;
+        case "failed":
+          if (outcome.sessionLost) setLogin({ sessionToken: null });
+          setDeptError(departmentErrorText(outcome));
+          return;
+      }
+    } finally {
+      deptBusyRef.current = false;
+      setDeptBusy(false);
     }
   };
 
@@ -478,6 +510,15 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
           logSinceRef.current = nextLogSince(s, logSinceRef.current);
           setLogLines((prev) => appendRunLog(prev, s));
           setStatus(s);
+          // ★「部門を指定せず」で始めたが、実は部門を選べるアカウントだった場合。
+          //   取得は止まっているので、選べる部門を画面に出して選び直してもらう
+          const fix = departmentFixFromStatus(s);
+          if (fix) {
+            setDepartments(fix.departments);
+            setDeptCode(fix.deptCode);
+            setSkipDepartment(false);
+            setDeptError("部門を指定せずに取得しようとしましたが、このアカウントには部門の切り替えがありました。部門を選んでから、もう一度取得してください");
+          }
           if (isFinished(s.state)) {
             setStopping(false);
             void refreshListRef.current(client);
@@ -704,6 +745,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
       maxInput,
       departments,
       deptCode,
+      skipDepartment,
       routePin,
     });
   });
@@ -742,6 +784,8 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     loginBusy,
     departmentCount: departments?.length ?? null,
     deptLabel,
+    departmentFailed: deptError !== null && departments === null,
+    departmentSkipped: skipDepartment,
     running,
     otherRunKind: otherRunning ? otherRunKind : null,
     itemCount: items.length,
@@ -1054,7 +1098,60 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
           {loggedIn && departments !== null && departments.length === 0 && (
             <p className="mt-2 text-xs text-slate-500">このアカウントには部門の切り替えが無いので、部門を指定せずに取得します。</p>
           )}
-          {loggedIn && departments === null && !loginError && (
+          {/* ★部門を読めなかったときの逃げ道。指定せずに取得しても、取得の開始時に
+              楽楽精算で「本当に切り替えが無いか」を確かめ直すので、別の部門の伝票は取らない */}
+          {loggedIn && skipDepartment && departments === null && (
+            <p className={WARN_CLASS}>
+              部門を指定せずに取得します。部門の切り替えがあるアカウントだったときは、取得を始めた時点で止まります（別の部門の伝票は取りません）。
+              <button
+                type="button"
+                onClick={() => {
+                  setSkipDepartment(false);
+                  void loadDepartments();
+                }}
+                disabled={running || deptBusy}
+                className="ml-2 cursor-pointer underline hover:text-amber-950 disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
+              >
+                部門を読み込み直す
+              </button>
+            </p>
+          )}
+          {loggedIn && deptBusy && <p className="mt-2 text-xs text-slate-500">部門を読み込んでいます…</p>}
+          {loggedIn && deptError && !deptBusy && <p className={ERROR_CLASS}>{deptError}</p>}
+          {loggedIn && departments === null && deptError && !deptBusy && !skipDepartment && (
+            <>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void loadDepartments()}
+                  disabled={running}
+                  className={SECONDARY_BUTTON_CLASS}
+                >
+                  もう一度読み込む
+                </button>
+                {/* 選択肢が空のときは出さない（指定せずに取得しても、取得開始時に必ず止まるため） */}
+                {deptError !== DEPT_OPTIONS_EMPTY_TEXT && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSkipDepartment(true);
+                      setDeptCode(null);
+                      setDeptError(null);
+                    }}
+                    disabled={running}
+                    className={SECONDARY_BUTTON_CLASS}
+                  >
+                    部門を指定せずに取得する
+                  </button>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                「部門を指定せずに取得する」を選ぶと、楽楽精算がそのアカウントに見せている部門のまま取得します。
+                部門の切り替えがあるアカウントだった場合は、取得を始めた時点で止まります（別の部門の伝票は取りません）。
+              </p>
+            </>
+          )}
+          {loggedIn && departments === null && !deptError && !deptBusy && !skipDepartment && (
             <p className="mt-2 text-xs text-slate-500">
               部門を読み込んでいません。
               <button type="button" onClick={() => void loadDepartments()} className="ml-1 cursor-pointer underline hover:text-slate-700">

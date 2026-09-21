@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DOC_KINDS, type DocKind, TENMATSU, NATSUIN, SENKETSU } from "@/lib/tenmatsu/kinds";
 import { FOLDER_UNSUPPORTED_TEXT } from "@/lib/tenmatsu/local/folder-handle";
 import {
+  DEPT_READ_FAILED_BLOCK_TEXT,
   type TenmatsuFlowInput,
   canStartRun,
   folderBlockedReason,
@@ -25,6 +26,8 @@ const fresh = (kind: DocKind, over: Partial<TenmatsuFlowInput> = {}): TenmatsuFl
   loginBusy: false,
   departmentCount: null,
   deptLabel: null,
+  departmentFailed: false,
+  departmentSkipped: false,
   running: false,
   otherRunKind: null,
   itemCount: 0,
@@ -156,6 +159,8 @@ describe("★押せない理由と、押せるかの判定が食い違わない"
             for (const departmentCount of [null, 0, 2])
               for (const deptLabel of [null, "品質管理部(1900)"])
                 for (const running of bool)
+                  for (const departmentFailed of bool)
+                    for (const departmentSkipped of bool)
                   for (const otherRunKind of [null, "senketsu"] as const) {
                     const input = fresh(TENMATSU, {
                       supported,
@@ -166,11 +171,16 @@ describe("★押せない理由と、押せるかの判定が食い違わない"
                       loggedIn,
                       departmentCount,
                       deptLabel,
+                      departmentFailed,
+                      departmentSkipped,
                       running,
                       otherRunKind,
                     });
                     const reason = runBlockedReason(input);
-                    expect(reason === null, JSON.stringify({ supported, restored, connected, loggedIn, departmentCount, deptLabel, running, otherRunKind })).toBe(
+                    expect(
+                      reason === null,
+                      JSON.stringify({ supported, restored, connected, loggedIn, departmentCount, deptLabel, departmentFailed, departmentSkipped, running, otherRunKind }),
+                    ).toBe(
                       canStartRun(input) || running,
                     );
                     // 段は常に1つだけがいまここ（または進められない）
@@ -178,7 +188,7 @@ describe("★押せない理由と、押せるかの判定が食い違わない"
                     expect(plan.steps.filter((s) => s.state === "current" || s.state === "blocked").length).toBeLessThanOrEqual(1);
                     checked++;
                   }
-    expect(checked).toBe(2 * 2 * 2 * 2 * 3 * 2 * 2 * 2);
+    expect(checked).toBe(2 * 2 * 2 * 2 * 3 * 2 * 2 * 2 * 2 * 2);
   });
 
   it("今までの4つの文はそのまま使う（画面の言い回しを変えない）", () => {
@@ -187,6 +197,27 @@ describe("★押せない理由と、押せるかの判定が食い違わない"
     expect(runBlockedReason({ ...base, loggedIn: false })?.text).toBe("楽楽精算にログインしてください");
     expect(runBlockedReason({ ...base, departmentCount: null })?.text).toBe("部門を読み込んでください");
     expect(runBlockedReason({ ...base, otherRunKind: "senketsu" })?.text).toContain("取得が動いています");
+  });
+
+  it("★部門を読めなかったときは、読み直しと「指定せず」を促す", () => {
+    const input = ready(TENMATSU, { departmentCount: null, deptLabel: null, departmentFailed: true });
+    expect(runBlockedReason(input)?.text).toBe(DEPT_READ_FAILED_BLOCK_TEXT);
+    expect(canStartRun(input)).toBe(false);
+  });
+
+  it("★「部門を指定せず」を選べば取得できる（読めていないときだけ）", () => {
+    const skipped = ready(TENMATSU, { departmentCount: null, deptLabel: null, departmentSkipped: true });
+    expect(canStartRun(skipped)).toBe(true);
+    expect(runBlockedReason(skipped)).toBeNull();
+    const plan = tenmatsuFlow(skipped);
+    expect(plan.steps.find((s) => s.id === "dept")).toMatchObject({ state: "done", note: "指定せず" });
+    expect(plan.currentId).toBe("run");
+  });
+
+  it("★選択肢が読めているときは「指定せず」を効かせない（押しても必ず止まるため）", () => {
+    const input = ready(TENMATSU, { deptLabel: null, departmentSkipped: true });
+    expect(canStartRun(input)).toBe(false);
+    expect(runBlockedReason(input)?.text).toBe("部門を選んでください");
   });
 
   it("★今まで無言だった2つに理由を付ける", () => {

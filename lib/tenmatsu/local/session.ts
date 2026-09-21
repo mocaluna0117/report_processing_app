@@ -211,6 +211,11 @@ export interface FolderSession {
   /** 楽楽精算から読んだ部門の選択肢。null はまだ読んでいない、[] は部門の切り替えが無いアカウント */
   departments: DepartmentOption[] | null;
   deptCode: string | null;
+  /**
+   * 「部門を指定せずに取得する」を選んだか。
+   * ★タブを行き来しても残すが、保存はしない（画面を読み込み直したら、普通に読みに行く）。
+   */
+  skipDepartment: boolean;
   /** 一覧の経路の固定（null なら自動で順に試す） */
   routePin: RouteId | null;
 }
@@ -234,6 +239,7 @@ const initial = (): FolderSession => ({
   maxInput: "",
   departments: null,
   deptCode: null,
+  skipDepartment: false,
   routePin: null,
 });
 
