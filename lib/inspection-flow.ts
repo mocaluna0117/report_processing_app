@@ -14,14 +14,14 @@ export const INSPECTION_STEPS: readonly FlowStepDef[] = [
   {
     id: "drop",
     label: "PDFをドロップ",
-    description: `写真報告書と点検報告書のPDFをまとめてドロップします。ファイル名の日付と施主名から自動で組にします (例: ${FILENAME_EXAMPLE})。`,
+    description: `写真報告書と点検報告書のPDFをまとめてドロップします (例: ${FILENAME_EXAMPLE})。`,
     targetId: "inspection-drop",
   },
   {
     id: "pairs",
     label: "ペアを確かめる",
     description:
-      "ペアリング結果で組み合わせを確かめます。違うときはプルダウンで直せます。処理するペアにはチェックを入れます (未処理は最初からチェックされています)。",
+      "ペアリング結果で組み合わせを確かめ、処理するペアにチェックを入れます (違う組はプルダウンで直せます)。",
     targetId: "inspection-pairs",
   },
   {

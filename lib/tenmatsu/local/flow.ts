@@ -48,7 +48,7 @@ export function tenmatsuStepDefs(kind: DocKind): FlowStepDef[] {
   const label = kind.label;
   const lastDescription =
     kind.id === "natsuin"
-      ? "取得した直後はすべて「アップロード待ち」です。一覧の右端の「書類を足す」から、あとからアップロードする書類を入れて確定すると、保存先フォルダーに入ります。"
+      ? "取得した直後はすべて「アップロード待ち」です。一覧の「書類を足す」から書類を入れて確定すると、保存先フォルダーに入ります。"
       : kind.id === "tenmatsu"
         ? "取得したPDFは保存先フォルダーにあります。実行予算の入力とクラウド格納が済んだら、一覧の右端の印を押して記録します。"
         : "取得したPDFは保存先フォルダーにあります。クラウド格納が済んだら、一覧の右端の印を押して記録します。";
@@ -56,21 +56,21 @@ export function tenmatsuStepDefs(kind: DocKind): FlowStepDef[] {
     {
       id: "folder",
       label: "保存先フォルダー",
-      description: `PDFを置くフォルダー (例: ドキュメントの「${label}」) を選びます。ブラウザが「このフォルダーの編集を許可しますか」と尋ねたら「許可」を選んでください。`,
+      description: `PDFを置くフォルダー (例: ドキュメントの「${label}」) を選び、ブラウザに聞かれたら「許可」を選びます。`,
       targetId: `${kind.id}-folder`,
     },
     {
       id: "login",
       label: "楽楽精算にログイン",
       description:
-        "ご自分の楽楽精算のログインIDとパスワードを入れます。失敗しても自動でやり直しません (続けて失敗するとアカウントがロックされるため)。",
+        "ご自分の楽楽精算のログインIDとパスワードを入れます。失敗しても自動でやり直しません (アカウントがロックされるため)。",
       targetId: `${kind.id}-rakuraku`,
     },
     {
       id: "dept",
       label: "部門を選ぶ",
       description:
-        "ログインできたら、そのアカウントで選べる部門を楽楽精算から自動で読み込みます。部門の切り替えが無いアカウント（「閲覧」タブが無い方）では、何もせずにこの手順を通り過ぎます。読み込めなかったときだけ「もう一度読み込む」か「部門を指定せずに取得する」を選びます。",
+        "選べる部門を楽楽精算から自動で読み込みます。切り替えが無いアカウント（「閲覧」タブが無い方）は、何もせずに通り過ぎます。",
       targetId: `${kind.id}-run`,
     },
     {
@@ -219,7 +219,7 @@ export function tenmatsuFlow(input: TenmatsuFlowInput): FlowPlan {
           : input.hasHandle
             ? {
                 kind: "ready",
-                hint: "「フォルダーにつなぐ」を押し、ブラウザが「編集を許可しますか」と尋ねたら「許可」を選んでください",
+                hint: "「フォルダーにつなぐ」を押し、ブラウザに聞かれたら「許可」を選んでください",
               }
             : {
                 kind: "ready",
@@ -232,7 +232,7 @@ export function tenmatsuFlow(input: TenmatsuFlowInput): FlowPlan {
       ? { kind: "ready", hint: "ログインしています…", note: "ログイン中" }
       : {
           kind: "ready",
-          hint: "「楽楽精算」の欄にご自分のログインIDとパスワードを入れて「ログイン」を押してください (失敗しても自動でやり直しません)",
+          hint: "「楽楽精算」の欄にご自分のログインIDとパスワードを入れて「ログイン」を押してください",
         };
 
   const dept: StepEval = !input.loggedIn

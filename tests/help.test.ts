@@ -40,6 +40,23 @@ describe("「使い方」ページの中身", () => {
     expect(COMMON_FAQ.length).toBeGreaterThan(0);
   });
 
+  it("★画面のフッターを消したぶん、Gemini へ送るものが使い方に載っている", () => {
+    for (const id of ["help-inspection", "help-after"]) {
+      const section = HELP_SECTIONS.find((s) => s.id === id)!;
+      const answers = section.faq.map((f) => f.a).join("");
+      expect(answers).toContain("Gemini API");
+      expect(answers).toContain("APIキーが未設定");
+    }
+  });
+
+  it("★段の説明は短く保つ（画面の手順バーと同じ文を使うため）", () => {
+    for (const section of HELP_SECTIONS) {
+      for (const step of section.steps) {
+        expect(step.description.length, `${section.title} / ${step.label}`).toBeLessThanOrEqual(70);
+      }
+    }
+  });
+
   it("★押せない理由の説明が、画面ごとに必ずある", () => {
     for (const section of HELP_SECTIONS) {
       expect(section.faq.some((f) => f.q.includes("押せません"))).toBe(true);
