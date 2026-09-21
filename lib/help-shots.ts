@@ -27,7 +27,7 @@ export interface HelpShot {
 /** 撮影時の倍率。表示幅は width / SHOT_SCALE（原寸より大きく引き伸ばさない） */
 export const SHOT_SCALE = 2;
 
-/** 画像の置き場。★next/image は使わない（app/help/page.tsx のコメントを見ること） */
+/** 画像の置き場。★next/image は使わない（components/help-shots.tsx のコメントを見ること） */
 export const helpShotSrc = (shot: Pick<HelpShot, "id">): string => `/help/${shot.id}.webp`;
 
 /** 節の id → その節に出す写真 */

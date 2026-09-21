@@ -1,8 +1,10 @@
 /**
- * 「使い方」ページの中身。純データのみ（React も next/navigation も引かない）。
+ * 「使い方」の中身。純データのみ（React も next/navigation も引かない）。
  *
  * ★手順の文言は各画面の規則（lib/inspection-flow.ts・lib/after/flow.ts・lib/tenmatsu/local/flow.ts）から
  *   そのまま持ってくる。画面の手順バーと「使い方」で言うことがずれないようにするため。
+ * ★「使い方」はページではなく、どこからでも開けるモーダル（components/help-dialog.tsx）で出す。
+ *   このファイルはそのモーダルが読むデータで、slug がタブの切り替えとリンク先の対応に使う。
  */
 import { AFTER_STEPS } from "@/lib/after/flow";
 import type { FlowStepDef } from "@/lib/flow-steps";
@@ -22,7 +24,7 @@ export interface HelpFaq {
 
 export interface HelpSection {
   id: string;
-  /** ページのURL断片。/help/<slug> がこの節の専用ページになる */
+  /** モーダルのタブの目印（components/help-dialog.tsx が画面の切り替えに使う） */
   slug: string;
   /** その画面へのリンク */
   href: string;

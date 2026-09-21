@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { HelpDialog } from "@/components/help-dialog";
 import { SIGNED_IN_COOKIE } from "@/lib/auth";
+import { HELP_SECTIONS } from "@/lib/help";
+import { getHelpDialogState, openHelp, subscribeHelpDialog } from "@/lib/help-dialog";
 import { getNavigationGuard } from "@/lib/navigation-guard";
 import { DOC_KINDS } from "@/lib/tenmatsu/kinds";
 
@@ -28,6 +31,11 @@ export function ModeNav() {
   useEffect(() => {
     setSignedIn(document.cookie.split("; ").some((c) => c === `${SIGNED_IN_COOKIE}=1`));
   }, []);
+  // ヘッダーの「使い方」がいま選んだ状態に見えるように（開いていなくても、モーダルの表示と揃える）
+  const [helpOpen, setHelpOpen] = useState(false);
+  useEffect(() => subscribeHelpDialog((s) => setHelpOpen(s.open)), []);
+  /** いま見ている画面の使い方を、開いたときの既定タブにする */
+  const currentSlug = HELP_SECTIONS.find((s) => s.href === pathname)?.slug ?? null;
 
   // ログイン画面では画面の切り替えを出さない (押しても戻されるだけなので)
   if (pathname === "/login") return null;
@@ -63,20 +71,21 @@ export function ModeNav() {
           );
         })}
       </nav>
-      {/* ★タブではなく右側に置く（画面の種類ではないので MODES には入れない） */}
-      {/* ★/help/<slug> の各画面ページでも「使い方」を選んだ状態に見せる */}
-      <Link
-        href="/help"
-        aria-current={pathname.startsWith("/help") ? "page" : undefined}
-        onNavigate={guardNavigation}
+      {/* ★タブではなく右側に置く（画面の種類ではないので MODES には入れない）。
+          以前はページへのリンクだったが、モーダルに変えた（2026-09-22） */}
+      <button
+        type="button"
+        onClick={() => openHelp(currentSlug)}
+        aria-pressed={helpOpen}
         className={
-          pathname.startsWith("/help")
-            ? "rounded-md border border-slate-400 bg-white px-2.5 py-1 text-xs font-semibold text-slate-900"
-            : "rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+          helpOpen
+            ? "cursor-pointer rounded-md border border-slate-400 bg-white px-2.5 py-1 text-xs font-semibold text-slate-900"
+            : "cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
         }
       >
         使い方
-      </Link>
+      </button>
+      <HelpDialog />
       {signedIn && (
         <form method="post" action="/api/logout">
           <button

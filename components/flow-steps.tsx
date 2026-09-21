@@ -5,9 +5,9 @@
 // ★どの段かを決める規則は lib/flow-steps.ts と画面ごとの lib/*flow*.ts にあり、ここは描くだけ。
 //   （React のテスト基盤が無いので、間違えると困る判断はすべて純関数側に置いてある）
 // ★状態は色だけで伝えない。読み上げ用に「完了」「いまここ」などの語も入れる。
-import Link from "next/link";
 import type { ReactNode } from "react";
 import type { FlowPlan, FlowStepState } from "@/lib/flow-steps";
+import { openHelp } from "@/lib/help-dialog";
 
 /** 段の印と、読み上げ用の状態の語 */
 const STATE_STYLE: Record<FlowStepState, { badge: string; word: string; label: string }> = {
@@ -36,7 +36,7 @@ export function FlowSteps({
   expanded,
   title = "はじめて使う方へ",
   intro,
-  helpHref,
+  helpSlug,
 }: {
   plan: FlowPlan;
   ariaLabel: string;
@@ -44,7 +44,8 @@ export function FlowSteps({
   expanded: boolean;
   title?: string;
   intro?: ReactNode;
-  helpHref: string;
+  /** 「使い方を見る」で開くモーダルの、最初に選んでおく画面（lib/help.ts の HelpSection.slug） */
+  helpSlug: string;
 }) {
   return (
     <nav
@@ -85,9 +86,14 @@ export function FlowSteps({
           {plan.blocked && <span aria-hidden>! </span>}
           {plan.nextHint}
         </p>
-        <Link href={helpHref} className="text-xs text-slate-500 underline hover:text-slate-700">
+        {/* ★以前はページへのリンクだったが、モーダルに変えた（2026-09-22） */}
+        <button
+          type="button"
+          onClick={() => openHelp(helpSlug)}
+          className="cursor-pointer text-xs text-slate-500 underline hover:text-slate-700"
+        >
           使い方を見る
-        </Link>
+        </button>
       </div>
 
       {expanded && (

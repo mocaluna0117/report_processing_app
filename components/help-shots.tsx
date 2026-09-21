@@ -15,7 +15,7 @@ const MARKER_CLASS =
   "absolute z-10 inline-flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center " +
   "rounded-full bg-blue-600 text-xs font-semibold text-white shadow ring-2 ring-white";
 
-export function Shots({ section }: { section: HelpSection }) {
+export function HelpShots({ section }: { section: HelpSection }) {
   const shots = section.shots.filter((shot) => HELP_SHOT_GEOMETRY[shot.id]);
   if (shots.length === 0) return null;
   return (
