@@ -6,10 +6,13 @@
  */
 import { AFTER_STEPS } from "@/lib/after/flow";
 import type { FlowStepDef } from "@/lib/flow-steps";
+import { HELP_SHOTS, type HelpShot } from "@/lib/help-shots";
 import { FILENAME_EXAMPLE, INSPECTION_STEPS } from "@/lib/inspection-flow";
 import { AFTER_SAVE_NOTE, INSPECTION_SAVE_NOTE } from "@/lib/privacy-notes";
 import { DOC_KINDS, type DocKind } from "@/lib/tenmatsu/kinds";
 import { tenmatsuStepDefs } from "@/lib/tenmatsu/local/flow";
+
+export type { HelpShot, HelpShotHotspot } from "@/lib/help-shots";
 
 /** よくあるつまずき1つ */
 export interface HelpFaq {
@@ -25,7 +28,12 @@ export interface HelpSection {
   intro: string;
   steps: readonly FlowStepDef[];
   faq: readonly HelpFaq[];
+  /** その画面の写真。無い節は空配列（画面は「画面の写真」の見出しごと出さない） */
+  shots: readonly HelpShot[];
 }
+
+/** 節の id から写真を引く（まだ撮っていない節は空） */
+const shotsOf = (id: string): readonly HelpShot[] => HELP_SHOTS[id] ?? [];
 
 /** どの画面でも同じつまずき */
 export const COMMON_FAQ: readonly HelpFaq[] = [
@@ -53,6 +61,7 @@ export const COMMON_FAQ: readonly HelpFaq[] = [
 
 const inspectionSection = (): HelpSection => ({
   id: "help-inspection",
+  shots: shotsOf("help-inspection"),
   href: "/",
   title: "定期点検",
   intro: "写真報告書と点検報告書のPDFから、結合PDFとExcel転記用のテキストを作ります。",
@@ -92,6 +101,7 @@ const inspectionSection = (): HelpSection => ({
 
 const afterSection = (): HelpSection => ({
   id: "help-after",
+  shots: shotsOf("help-after"),
   href: "/after",
   title: "アフターメンテナンス受付",
   intro: "コールセンターの受付内容から、Excel転記用の行・メール文・完了報告書を作ります。",
@@ -126,6 +136,7 @@ const afterSection = (): HelpSection => ({
 
 const tenmatsuSection = (kind: DocKind): HelpSection => ({
   id: `help-${kind.id}`,
+  shots: shotsOf(`help-${kind.id}`),
   href: kind.route,
   title: kind.label,
   intro: `楽楽精算で最終承認まで進んだ${kind.label}を、本体と添付書類を1つのPDFに結合して、選んだPCのフォルダーへ保存します。楽楽精算に対しては検索・閲覧・ダウンロードだけを行います。`,
