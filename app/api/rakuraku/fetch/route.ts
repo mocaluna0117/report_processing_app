@@ -56,6 +56,8 @@ export async function POST(request: Request) {
           remembered: session.routes?.[kind.id] ?? null,
           linkedRemembered: kind.compose ? (session.routes?.[kind.compose.linkedKind] ?? null) : null,
           pin,
+          // ★ログインしたときに見た「閲覧」タブの有無。無ければ申請検索を先に試す
+          viewTab: session.viewTab,
           log: sink.log,
           progress: sink.progress,
           send: sink.send,

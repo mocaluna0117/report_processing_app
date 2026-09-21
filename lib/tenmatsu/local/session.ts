@@ -23,6 +23,11 @@ let password: string | null = null;
 let sessionToken: string | null = null;
 /** sessionToken の期限（ミリ秒）。サーバーが教えてくれなかったら null（期限を見ない） */
 let expiresAt: number | null = null;
+/**
+ * ログインしたアカウントに「閲覧」タブがあったか（サーバーがログインのときに見る）。
+ * null＝分からない（古いサーバー）。一覧の経路をこれで決めるので、画面にも出す。
+ */
+let viewTab: boolean | null = null;
 /** 種類ごとの部門の選択肢と選んだ部門（再読み込みのたびに楽楽精算へ読みに行かないため） */
 let savedDepartments: Partial<Record<DocKindId, { departments: DepartmentOption[]; deptCode: string | null }>> = {};
 /** このページ読み込みで、タブの控えを一度読んだか */
@@ -36,6 +41,7 @@ interface LoginSnapshot {
   sessionToken: string;
   expiresAt: number | null;
   departments: typeof savedDepartments;
+  viewTab?: boolean | null;
 }
 
 /** sessionStorage を使えないとき（サーバーで描くとき・ブラウザが禁止しているとき）は null */
@@ -56,7 +62,7 @@ function persistLogin(): void {
       store.removeItem(LOGIN_STORAGE_KEY);
       return;
     }
-    const snapshot: LoginSnapshot = { sessionToken, expiresAt, departments: savedDepartments };
+    const snapshot: LoginSnapshot = { sessionToken, expiresAt, departments: savedDepartments, viewTab };
     store.setItem(LOGIN_STORAGE_KEY, JSON.stringify(snapshot));
   } catch {
     // 書けなくてもメモリでは使える（再読み込みでログインが切れるだけ）
@@ -104,6 +110,7 @@ export function restoreLogin(now: number = Date.now()): boolean {
   sessionToken = snapshot.sessionToken;
   expiresAt = snapshot.expiresAt;
   savedDepartments = snapshot.departments ?? {};
+  viewTab = typeof snapshot.viewTab === "boolean" ? snapshot.viewTab : null;
   notify();
   return true;
 }
@@ -114,6 +121,11 @@ export function getPassword(): string | null {
 
 export function getSessionToken(): string | null {
   return sessionToken;
+}
+
+/** ログインしたアカウントに「閲覧」タブがあったか。null＝分からない */
+export function getViewTab(): boolean | null {
+  return viewTab;
 }
 
 const notify = () => {
@@ -128,6 +140,7 @@ export function setLogin(next: {
   password?: string | null;
   sessionToken?: string | null;
   expiresAt?: number | null;
+  viewTab?: boolean | null;
 }): void {
   if (next.password !== undefined) password = next.password;
   if (next.sessionToken !== undefined) {
@@ -135,8 +148,10 @@ export function setLogin(next: {
     if (next.sessionToken === null) {
       expiresAt = null;
       savedDepartments = {};
+      viewTab = null;
     }
   }
+  if (next.viewTab !== undefined && sessionToken !== null) viewTab = next.viewTab;
   if (next.expiresAt !== undefined && sessionToken !== null) expiresAt = next.expiresAt;
   persistLogin();
   notify();
@@ -147,6 +162,7 @@ export function forgetLogin(): void {
   password = null;
   sessionToken = null;
   expiresAt = null;
+  viewTab = null;
   savedDepartments = {};
   for (const session of sessions.values()) session.departments = null;
   persistLogin();
@@ -263,6 +279,7 @@ export function resetFolderSessions(): void {
   password = null;
   sessionToken = null;
   expiresAt = null;
+  viewTab = null;
   savedDepartments = {};
   restored = false;
   listeners.clear();

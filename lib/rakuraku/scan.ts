@@ -26,6 +26,8 @@ export interface ScanRun {
   remembered: RememberedRoute | null;
   /** 利用者が画面で固定した経路。省略すると自動で順に試す */
   pin?: RouteId | null;
+  /** ログインしたときに「閲覧」タブがあったか（無ければ申請検索を先に試す） */
+  viewTab?: boolean | null;
   log: Log;
   progress: (stage: ProgressStage, message: string) => void;
   /** どの経路で一覧を開いたかを知らせる（画面に出す） */
@@ -65,6 +67,7 @@ export async function runScan(run: ScanRun): Promise<ScanResult> {
   const location = await gotoList(page, kind, run.tenant, {
     log,
     remembered: run.remembered,
+    viewTab: run.viewTab,
     pin: run.pin,
     home: run.home,
     timing: run.timing?.navigation,

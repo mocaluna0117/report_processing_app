@@ -15,7 +15,7 @@ import { TenmatsuRunLog } from "@/components/tenmatsu/tenmatsu-run-log";
 import { TenmatsuStaffSync } from "@/components/tenmatsu/tenmatsu-staff-sync";
 import { TenmatsuSurvey } from "@/components/tenmatsu/tenmatsu-survey";
 import { ROUTE_LABELS } from "@/lib/rakuraku/kinds";
-import { routeNoticeText, routeOptionLabel, routeOptions } from "@/lib/rakuraku/parse/route";
+import { accountRouteText, routeNoticeText, routeOptionLabel, routeOptions } from "@/lib/rakuraku/parse/route";
 import { type DepartmentOption, type RouteId, isRouteId } from "@/lib/rakuraku/protocol";
 import { isStorageAvailable } from "@/lib/storage";
 import {
@@ -77,6 +77,7 @@ import {
   getFolderSession,
   getPassword,
   getSessionToken,
+  getViewTab,
   keepFolderSession,
   rememberDepartments,
   restoreLogin,
@@ -193,6 +194,10 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   const [deptBusy, setDeptBusy] = useState(false);
   /** 部門を読めないまま「指定せずに取得する」を選んだか */
   const [skipDepartment, setSkipDepartment] = useState(kept.skipDepartment);
+  /** ログインしたアカウントに「閲覧」タブがあるか。null＝分からない（古いサーバー） */
+  const [viewTab, setViewTab] = useState<boolean | null>(getViewTab());
+  /** 「このアカウントはどの経路から取るか」の1行（判定できていないときは null） */
+  const accountRoute = accountRouteText(kind.id, viewTab);
   const deptBusyRef = useRef(false);
   /** このログインで、画面が勝手に部門を読みに行ったか（失敗したあとは押したときだけ読む） */
   const deptAutoRef = useRef(false);
@@ -223,6 +228,8 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
       const token = getSessionToken();
       setLoggedIn(token !== null);
       setHasPassword(getPassword() !== null);
+      // 「閲覧」タブの有無も揃える（再読み込みで戻したとき・別の種類のタブでログインしたとき）
+      setViewTab(getViewTab());
       if (token === null) {
         deptAutoRef.current = false;
         setDepartments((prev) => (prev === null ? prev : null));
@@ -481,8 +488,10 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     setLoginError(null);
     try {
       // ★ログインは1回だけ。失敗しても自動でやり直さない（楽楽精算はアカウントをロックする）
-      const { sessionToken, expiresAt } = await api.login(id, pass);
-      setLogin({ password: pass, sessionToken, expiresAt });
+      const { sessionToken, expiresAt, viewTab } = await api.login(id, pass);
+      // ★viewTab＝このアカウントに「閲覧」タブがあるか。一覧の経路はこれで決まるので、画面にも出す
+      setLogin({ password: pass, sessionToken, expiresAt, viewTab });
+      setViewTab(viewTab);
       setPasswordInput("");
       storage.persist(async () => {
         await saveUserId(id);
@@ -945,6 +954,9 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
                   "まだログインしていません"
                 )}
               </p>
+              {/* ★ログインした時点で分かる「閲覧」タブの有無。一覧の経路はこれで決まるので、
+                  選ばせるのではなく、決まった結果を伝える（取れる伝票の範囲が変わるため） */}
+              {loggedIn && accountRoute && <p className="mt-1 text-xs text-slate-500">{accountRoute}</p>}
             </div>
             {loggedIn && (
               <button
@@ -1063,7 +1075,9 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
                   </select>
                 </label>
               )}
-              {loggedIn && ROUTES.length > 1 && (
+              {/* ★「閲覧」タブの有無が分かるときは経路を選ばせない（自動で決まる）。
+                  分からない古いサーバーのときだけ、今までどおり選べるようにしておく */}
+              {loggedIn && viewTab === null && ROUTES.length > 1 && (
                 <label className="flex items-center gap-1.5 text-sm text-slate-600">
                   一覧の経路
                   <select

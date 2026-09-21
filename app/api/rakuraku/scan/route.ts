@@ -55,6 +55,8 @@ export async function POST(request: Request) {
           request: body,
           remembered: session.routes?.[kind.id] ?? null,
           pin,
+          // ★ログインしたときに見た「閲覧」タブの有無。無ければ申請検索を先に試す
+          viewTab: session.viewTab,
           log: sink.log,
           progress: sink.progress,
           onRoute: (id, route, how) =>

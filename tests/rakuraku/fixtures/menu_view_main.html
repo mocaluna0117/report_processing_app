@@ -1,0 +1,24 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>閲覧タブがあるアカウント（テスト用）</title>
+<!--
+  「閲覧」タブがある（＝自部門検索を使える）アカウントのトップ画面の再現（架空）。
+  上部タブに「閲覧」があり、部門の切り替えも出る。
+  ★「閲覧権限がありません」のような文は、タブではないので判定に数えてはいけない。
+-->
+<body>
+<div class="top_menu">
+  <a href="javascript:void(0)" onclick="void 0">ワークフロー</a>
+  <a href="javascript:void(0)" onclick="void 0">閲覧</a>
+  <a href="javascript:void(0)" onclick="void 0">経費精算</a>
+</div>
+<form id="deptForm" action="menu_view_main.html" method="get">
+  <select name="bumonCd">
+    <option value="1800">アフターメンテナンス課(1800)</option>
+    <option value="1900">品質管理部(1900)</option>
+  </select>
+</form>
+<p>ここに「閲覧権限がありません」という文があっても、タブではないので数えない。</p>
+<!-- たたまれたタブの中の「閲覧」も数えない（見えていないため） -->
+<div style="display:none"><a href="javascript:void(0)">閲覧</a></div>
+</body>

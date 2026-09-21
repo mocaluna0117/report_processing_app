@@ -26,6 +26,12 @@ export interface SessionPayload {
    *   （画面から受けるのは経路の id だけ）。
    */
   routes?: Partial<Record<KindId, RememberedRoute>>;
+  /**
+   * ログインしたときに「閲覧」タブがあったか（lib/rakuraku/tabs.ts）。
+   * ★これで一覧の経路を最初から選べるので、閲覧側を試して失敗する1回が要らなくなる。
+   *   無い（undefined）＝古い札。今までどおり閲覧 → ワークフローの順に試す。
+   */
+  viewTab?: boolean;
   /** 期限 (epoch ミリ秒) */
   exp: number;
 }
@@ -61,7 +67,13 @@ function key(): Buffer {
  *   使い続けるだけで永久に使える札にしないため。
  */
 export function seal(
-  input: { state: string; home: string; routes?: Partial<Record<KindId, RememberedRoute>>; exp?: number },
+  input: {
+    state: string;
+    home: string;
+    routes?: Partial<Record<KindId, RememberedRoute>>;
+    viewTab?: boolean;
+    exp?: number;
+  },
   ttlMs = DEFAULT_TTL_MS,
 ): string {
   const iv = randomBytes(12);
@@ -70,6 +82,7 @@ export function seal(
     state: input.state,
     home: input.home,
     ...(input.routes && Object.keys(input.routes).length > 0 ? { routes: input.routes } : {}),
+    ...(input.viewTab === undefined ? {} : { viewTab: input.viewTab }),
     exp: input.exp ?? Date.now() + ttlMs,
   };
   const body = Buffer.concat([
@@ -81,11 +94,18 @@ export function seal(
 }
 
 /**
- * クッキーだけ新しくして封じ直す。★期限（exp）と覚えた経路（routes）は前のまま引き継ぐ。
- * 部門を読むだけの呼び出しで期限を延ばしたり、覚えた経路を落としたりしないため。
+ * クッキーだけ新しくして封じ直す。
+ * ★期限（exp）・覚えた経路（routes）・タブの判定（viewTab）は前のまま引き継ぐ。
+ * 部門を読むだけの呼び出しで期限を延ばしたり、覚えた分を落としたりしないため。
  */
 export function reseal(session: SessionPayload, state: string): string {
-  return seal({ state, home: session.home, routes: session.routes, exp: session.exp });
+  return seal({
+    state,
+    home: session.home,
+    routes: session.routes,
+    viewTab: session.viewTab,
+    exp: session.exp,
+  });
 }
 
 export function unseal(token: string): SessionPayload {
@@ -107,6 +127,7 @@ export function unseal(token: string): SessionPayload {
     typeof payload.state !== "string" ||
     typeof payload.home !== "string" ||
     typeof payload.exp !== "number" ||
+    (payload.viewTab !== undefined && typeof payload.viewTab !== "boolean") ||
     (payload.routes !== undefined && !isRouteMap(payload.routes))
   ) {
     throw new SessionError("セッションの中身が不正です");

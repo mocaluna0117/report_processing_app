@@ -109,7 +109,11 @@ export interface FetchResult {
 
 export interface RakurakuApi {
   /** expiresAt はログイン状態の期限 (ミリ秒)。古いサーバーは返さないので null */
-  login(userId: string, password: string): Promise<{ sessionToken: string; expiresAt: number | null }>;
+  login(
+    userId: string,
+    password: string,
+    /** viewTab: このアカウントに「閲覧」タブがあったか。古いサーバーは返さないので null */
+  ): Promise<{ sessionToken: string; expiresAt: number | null; viewTab: boolean | null }>;
   departments(
     sessionToken: string,
   ): Promise<DepartmentsResponse & { sessionToken: string; expiresAt: number | null }>;
@@ -226,8 +230,16 @@ export function createRakurakuApi(options: { fetchImpl?: typeof fetch; baseUrl?:
 
   return {
     login: async (userId, password) => {
-      const res = await json<{ sessionToken: string; expiresAt?: number }>("login", { userId, password });
-      return { sessionToken: res.sessionToken, expiresAt: typeof res.expiresAt === "number" ? res.expiresAt : null };
+      const res = await json<{ sessionToken: string; expiresAt?: number; viewTab?: boolean }>("login", {
+        userId,
+        password,
+      });
+      return {
+        sessionToken: res.sessionToken,
+        expiresAt: typeof res.expiresAt === "number" ? res.expiresAt : null,
+        // ★古いサーバーは返さない。null は「分からない」（経路は今までどおり順に試す）
+        viewTab: typeof res.viewTab === "boolean" ? res.viewTab : null,
+      };
     },
 
     departments: async (sessionToken) => {

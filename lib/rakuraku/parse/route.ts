@@ -1,4 +1,4 @@
-import { KINDS } from "@/lib/rakuraku/kinds";
+import { KINDS, routesForAccount } from "@/lib/rakuraku/kinds";
 import type { KindId, RouteHow, RouteId, RouteScope } from "@/lib/rakuraku/protocol";
 
 /**
@@ -26,6 +26,22 @@ export function routeNoticeText(kindLabel: string, notice: RouteNotice): string 
 /** 画面の「一覧の経路」の選択肢（その種類にある経路だけ） */
 export function routeOptions(kind: KindId): { id: RouteId; label: string; scope: RouteScope }[] {
   return KINDS[kind].routes.map((r) => ({ id: r.id, label: r.label, scope: r.scope }));
+}
+
+/**
+ * ログインした時点で分かる「この種類はどの経路から取るか」の1行。
+ *
+ * ★経路を選ばせる代わりに、決まった結果を伝えるための文（利用者の決定 2026-09-22）。
+ *   経路によって一覧に出る範囲が変わるので、**自分の申請分だけ**のときは必ずそう書く。
+ * ★viewTab が分からない（古いサーバー・古い札）ときは null（何も出さない）。
+ */
+export function accountRouteText(kind: KindId, viewTab: boolean | null): string | null {
+  if (viewTab === null) return null;
+  const doc = KINDS[kind];
+  const route = routesForAccount(doc, viewTab)[0];
+  const tab = viewTab ? "「閲覧」タブがあるので" : "「閲覧」タブが無いので";
+  const scope = route.scope === "own" ? `（一覧に出るのは自分が申請した${doc.label}だけです）` : "";
+  return `このアカウントには${tab}、${doc.label}は「${route.label}」の一覧から取ります${scope}`;
 }
 
 /** 選択肢に添える説明（自分が申請した伝票だけ、を必ず添える） */

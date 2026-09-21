@@ -16,7 +16,15 @@ import { RakurakuError } from "./errors";
 import { sendFile } from "./file-frames";
 import { type ListRoute, type RakurakuKind, findRoute, resolveKind } from "./kinds";
 import { type ListTiming, type Log, defaultTiming, scanListForNo } from "./list";
-import { type NavigationTiming, applyDepartment, gotoList, openHome, pinnedRoute, rememberedOf } from "./navigation";
+import {
+  type NavigationTiming,
+  applyDepartment,
+  gotoList,
+  openHome,
+  orderRoutes,
+  pinnedRoute,
+  rememberedOf,
+} from "./navigation";
 import { parseStaffNames } from "./parse/fields";
 import { extOf } from "./parse/sniff";
 import type { FetchRequest, KindId, ProgressStage, RakurakuEvent, RememberedRoute, RouteHow, RouteId } from "./protocol";
@@ -40,6 +48,8 @@ export interface FetchRun {
   linkedRemembered?: RememberedRoute | null;
   /** 利用者が画面で固定した経路。★紐づく種類には使わない（自動で落とす） */
   pin?: RouteId | null;
+  /** ログインしたときに「閲覧」タブがあったか（無ければ申請検索を先に試す） */
+  viewTab?: boolean | null;
   log: Log;
   progress: (stage: ProgressStage, message: string) => void;
   /** どの経路で一覧を開いたかを知らせる（画面に出す） */
@@ -93,9 +103,11 @@ export async function openRequestedDetail(run: FetchRun): Promise<OpenedDetail> 
 
   let href = run.request.href;
   let remembered: RememberedRoute | null = null;
-  // URL が分かっている伝票は一覧を開かないので、経路は「固定 → 前に通った経路 → 種類の既定」で決める
+  // URL が分かっている伝票は一覧を開かないので、経路は「固定 → 前に通った経路 → アカウントに合う既定」で決める
+  // （orderRoutes の先頭＝「閲覧」タブが無いアカウントなら申請検索）
   let route: ListRoute =
-    (run.pin ? pinnedRoute(kind, run.pin) : findRoute(kind, run.remembered?.id)) ?? kind.routes[0];
+    (run.pin ? pinnedRoute(kind, run.pin) : findRoute(kind, run.remembered?.id)) ??
+    orderRoutes(kind, { viewTab: run.viewTab })[0];
   if (!href) {
     log(`  伝票画面のURLが分からないので、${kind.label}一覧から探します`);
     progress("department", "所属部門を確かめています");
@@ -105,6 +117,7 @@ export async function openRequestedDetail(run: FetchRun): Promise<OpenedDetail> 
       log,
       remembered: run.remembered,
       pin: run.pin,
+      viewTab: run.viewTab,
       home: run.home,
       timing: run.timing?.navigation,
       onRoute: (r, how) => run.onRoute?.(kind.id, r, how),

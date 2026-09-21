@@ -15,7 +15,14 @@ import {
   sessionExpiredError,
 } from "./errors";
 import { contentFrame, stampDocument, waitForDetailFrame } from "./frames";
-import { type ListRoute, type RakurakuKind, type ResolvedKind, findRoute, resolveKind } from "./kinds";
+import {
+  type ListRoute,
+  type RakurakuKind,
+  type ResolvedKind,
+  findRoute,
+  resolveKind,
+  routesForAccount,
+} from "./kinds";
 import type { Log } from "./list";
 import { isLoginScreen } from "./login";
 import { parsePagerText } from "./parse/pager";
@@ -339,6 +346,12 @@ export interface GotoListOptions {
   remembered?: RememberedRoute | null;
   /** 利用者が画面で固定した経路。★あるときは他の経路へ落とさない */
   pin?: RouteId | null;
+  /**
+   * ログインしたときに「閲覧」タブがあったか（lib/rakuraku/tabs.ts で見る）。
+   * false なら自部門検索は使えないので、申請検索を先に試す（無駄な1回をやめる）。
+   * 無い（undefined）＝分からない。今までどおり種類の並び（閲覧 → ワークフロー）で試す。
+   */
+  viewTab?: boolean | null;
   /** 経路を切り替える前に開き直すトップ。エラーの画面から frameset へ戻すために渡す */
   home?: string;
   timing?: NavigationTiming;
@@ -627,13 +640,22 @@ export function pinnedRoute(kind: RakurakuKind, id: RouteId): ListRoute {
 
 /**
  * 試す順番を決める。
- * 固定されていればそれだけ、前に使えた経路があればそれを先頭に、あとは種類の並び（閲覧 → ワークフロー）。
+ * 固定されていればそれだけ、前に使えた経路があればそれを先頭に、
+ * 「閲覧」タブが無いアカウントなら自部門検索を後ろへ、あとは種類の並び（閲覧 → ワークフロー）。
+ *
+ * ★自部門検索を**消さずに後ろへ回す**。判定が外れていても、申請検索が開けなければ
+ *   今までどおり自部門検索へ切り替わる（取れるはずの伝票が取れなくなるのを防ぐ）。
  */
-export function orderRoutes(kind: RakurakuKind, options: Pick<GotoListOptions, "pin" | "remembered">): ListRoute[] {
+export function orderRoutes(
+  kind: RakurakuKind,
+  options: Pick<GotoListOptions, "pin" | "remembered" | "viewTab">,
+): ListRoute[] {
   if (options.pin) return [pinnedRoute(kind, options.pin)];
+  const byAccount = routesForAccount(kind, options.viewTab);
+  // ★前に通った経路がいちばん確かなので、タブの判定より優先する
   const first = findRoute(kind, options.remembered?.id);
-  if (!first) return [...kind.routes];
-  return [first, ...kind.routes.filter((r) => r.id !== first.id)];
+  if (!first) return byAccount;
+  return [first, ...byAccount.filter((r) => r.id !== first.id)];
 }
 
 /** 開けた経路を、封じたログイン状態に覚える形にする */

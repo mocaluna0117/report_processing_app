@@ -75,6 +75,8 @@ export async function fetchComposedParts(
     const location = await gotoList(page, linkedKind, tenant, {
       log,
       remembered: run.linkedRemembered ?? null,
+      // ★固定は持ち込まないが、アカウントに「閲覧」タブが無いことは別の種類でも同じ
+      viewTab: run.viewTab,
       home: run.home,
       timing: run.timing?.navigation,
       onRoute: (r, how) => run.onRoute?.(linkedKind.id, r, how),

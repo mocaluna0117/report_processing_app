@@ -2,7 +2,14 @@ import type { Browser, Page } from "playwright-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { TenantConfig } from "@/lib/rakuraku/config";
 import { RakurakuError } from "@/lib/rakuraku/errors";
-import { KINDS, type ListRoute, type RakurakuKind, detailMarkerFor, resolveKind } from "@/lib/rakuraku/kinds";
+import {
+  KINDS,
+  type ListRoute,
+  type RakurakuKind,
+  ROUTE_LABELS,
+  detailMarkerFor,
+  resolveKind,
+} from "@/lib/rakuraku/kinds";
 import {
   type NavigationTiming,
   gotoList,
@@ -11,6 +18,8 @@ import {
   rememberedOf,
 } from "@/lib/rakuraku/navigation";
 import type { RouteHow } from "@/lib/rakuraku/protocol";
+import { accountRouteText } from "@/lib/rakuraku/parse/route";
+import { hasViewTab, isTabNamed } from "@/lib/rakuraku/tabs";
 import { tryLaunch } from "./rakuraku/helpers/browser";
 import { type FixtureServer, startFixtureServer } from "./rakuraku/helpers/fixture-server";
 import { withRoutes } from "./rakuraku/helpers/kinds";
@@ -203,6 +212,62 @@ describe.skipIf(!browser)("経路の切り替え", () => {
   }, 30_000);
 });
 
+describe("「閲覧」タブがあるアカウントかを見る", () => {
+  it.runIf(browser)("★タブがあれば true（frameset の中のタブも見る）", async () => {
+    const page = await open("menu_view.html");
+    expect(await hasViewTab(page)).toBe(true);
+    await page.close();
+  }, 20_000);
+
+  it.runIf(browser)("★タブが無ければ false（ワークフローだけのアカウント）", async () => {
+    const page = await open("menu_workflow.html");
+    expect(await hasViewTab(page)).toBe(false);
+    await page.close();
+  }, 20_000);
+
+  it.runIf(browser)("★「閲覧権限がありません」のような文には反応しない", async () => {
+    // 文言に反応すると、権限が無い画面を見て「権限がある」と読み違える
+    const page = await open("list_denied.html");
+    expect(await hasViewTab(page)).toBe(false);
+    await page.close();
+  }, 20_000);
+
+  it("タブの名前は、字間や前後の空白を落としてから見比べる", () => {
+    expect(isTabNamed(" 閲覧 ", "閲覧")).toBe(true);
+    expect(isTabNamed("閲　覧", "閲覧")).toBe(true);
+    expect(isTabNamed("閲覧権限がありません", "閲覧")).toBe(false);
+    expect(isTabNamed("ワークフロー", "閲覧")).toBe(false);
+  });
+});
+
+describe("ログインした時点で「どの経路から取るか」を伝える文", () => {
+  it("「閲覧」タブがあるアカウントは、自部門検索から取ると伝える", () => {
+    const text = accountRouteText("tenmatsu", true)!;
+    expect(text).toContain("「閲覧」タブがあるので");
+    expect(text).toContain(ROUTE_LABELS.jibumon);
+    // 自部門検索は自分の申請分だけではないので、その断りは付けない
+    expect(text).not.toContain("自分が申請した");
+  });
+
+  it("★「閲覧」タブが無いアカウントには、自分の申請分だけだと必ず伝える", () => {
+    const text = accountRouteText("tenmatsu", false)!;
+    expect(text).toContain("「閲覧」タブが無いので");
+    expect(text).toContain(ROUTE_LABELS.shinsei);
+    expect(text).toContain("自分が申請した顛末書だけ");
+  });
+
+  it("★捺印決裁書はもともとワークフローだけなので、タブがあっても申請検索と伝える", () => {
+    const text = accountRouteText("natsuin", true)!;
+    expect(text).toContain(ROUTE_LABELS.shinsei);
+    expect(text).toContain("自分が申請した捺印決裁書だけ");
+    expect(text).not.toContain(ROUTE_LABELS.jibumon);
+  });
+
+  it("分からないとき（古いサーバー）は何も言わない", () => {
+    expect(accountRouteText("tenmatsu", null)).toBeNull();
+  });
+});
+
 describe("経路の選び方（ブラウザ無し）", () => {
   it("固定が無ければ種類の順、前に使えた経路があればそれが先頭", () => {
     expect(orderRoutes(KINDS.tenmatsu, {}).map((r) => r.id)).toEqual(["jibumon", "shinsei"]);
@@ -212,6 +277,26 @@ describe("経路の選び方（ブラウザ無し）", () => {
     ]);
     // 知らない経路を覚えていても落とさない（種類の順に戻る）
     expect(orderRoutes(KINDS.natsuin, { remembered: { id: "jibumon" } }).map((r) => r.id)).toEqual(["shinsei"]);
+  });
+
+  it("★「閲覧」タブが無いアカウントは、申請検索を先に試す（開けない1回を省く）", () => {
+    expect(orderRoutes(KINDS.tenmatsu, { viewTab: false }).map((r) => r.id)).toEqual(["shinsei", "jibumon"]);
+    expect(orderRoutes(KINDS.senketsu, { viewTab: false }).map((r) => r.id)).toEqual(["shinsei", "jibumon"]);
+    // 閲覧タブがあるアカウント・分からないときは今までどおり
+    expect(orderRoutes(KINDS.tenmatsu, { viewTab: true }).map((r) => r.id)).toEqual(["jibumon", "shinsei"]);
+    expect(orderRoutes(KINDS.tenmatsu, { viewTab: null }).map((r) => r.id)).toEqual(["jibumon", "shinsei"]);
+  });
+
+  it("★自部門検索は消さずに後ろへ回す（判定が外れても取れるはずの伝票を落とさない）", () => {
+    const order = orderRoutes(KINDS.tenmatsu, { viewTab: false });
+    expect(order.map((r) => r.id)).toContain("jibumon");
+    expect(order).toHaveLength(KINDS.tenmatsu.routes.length);
+  });
+
+  it("★前に通った経路は、タブの判定より優先する（いちばん確かなので）", () => {
+    expect(
+      orderRoutes(KINDS.tenmatsu, { viewTab: false, remembered: { id: "jibumon" } }).map((r) => r.id),
+    ).toEqual(["jibumon", "shinsei"]);
   });
 
   it("固定したらその経路だけを試す", () => {

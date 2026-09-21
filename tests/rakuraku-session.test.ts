@@ -118,14 +118,30 @@ describe("前に一覧を開けた経路も封じて持ち回る", () => {
   });
 });
 
+describe("「閲覧」タブの判定", () => {
+  it("ログインしたときに見た有無を、そのまま持ち歩く", () => {
+    expect(unseal(seal({ ...INPUT, viewTab: true })).viewTab).toBe(true);
+    expect(unseal(seal({ ...INPUT, viewTab: false })).viewTab).toBe(false);
+  });
+
+  it("★古い札は「分からない」まま（false で埋めない。今までどおり閲覧から試す）", () => {
+    expect(unseal(seal(INPUT)).viewTab).toBeUndefined();
+  });
+
+  it("真偽値でなければ断る", () => {
+    expect(() => unseal(seal({ ...INPUT, viewTab: "yes" } as never))).toThrow("中身が不正");
+  });
+});
+
 describe("封じ直し (部門を読んだとき)", () => {
-  it("★期限を延ばさず、覚えた経路も落とさない", () => {
+  it("★期限を延ばさず、覚えた経路もタブの判定も落とさない", () => {
     const exp = Date.now() + 60_000;
     const routes = { tenmatsu: { id: "jibumon" as const, url: "https://example.test/abcd/list" } };
-    const first = unseal(seal({ ...INPUT, routes, exp }));
+    const first = unseal(seal({ ...INPUT, routes, viewTab: false, exp }));
     const again = unseal(reseal(first, JSON.stringify({ cookies: [], origins: [] })));
     expect(again.exp).toBe(exp);
     expect(again.routes).toEqual(routes);
+    expect(again.viewTab).toBe(false);
     expect(again.home).toBe(HOME);
     expect(again.state).toBe(JSON.stringify({ cookies: [], origins: [] }));
   });

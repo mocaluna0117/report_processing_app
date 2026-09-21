@@ -128,6 +128,23 @@ export function resolveKind(kind: RakurakuKind, route: ListRoute): ResolvedKind 
   return { ...kind, route, list: route.list ? { ...kind.list, ...route.list } : kind.list };
 }
 
+/**
+ * ログインしたアカウントに合わせて、経路を試す順に並べる。
+ *
+ * ★「閲覧」タブが無いアカウント（viewTab === false）は自部門検索を使えないので、申請検索を先に試す。
+ *   **消さずに後ろへ回す**ので、判定が外れていても開ける経路があればそこへ切り替わる。
+ * ★分からない（undefined / null＝古い札や古いサーバー）ときは、今までどおり種類の並び。
+ * ★この規則は gotoList（lib/rakuraku/navigation.ts）と画面の両方が使う。
+ *   画面は「どの経路で取るか」を先に伝えるために読むので、言うことがずれないよう1か所に置く。
+ */
+export function routesForAccount(kind: RakurakuKind, viewTab: boolean | null | undefined): ListRoute[] {
+  if (viewTab !== false) return [...kind.routes];
+  return [
+    ...kind.routes.filter((r) => r.scope !== "department"),
+    ...kind.routes.filter((r) => r.scope === "department"),
+  ];
+}
+
 /** その種類にその経路があれば返す。無ければ null */
 export function findRoute(kind: RakurakuKind, id: RouteId | null | undefined): ListRoute | null {
   if (!id) return null;

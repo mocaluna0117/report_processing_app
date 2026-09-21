@@ -6,6 +6,7 @@ import { GuardError, assertEnabled, assertSameOrigin } from "@/lib/rakuraku/guar
 import { autoLoginOnce } from "@/lib/rakuraku/login";
 import { log } from "@/lib/rakuraku/log";
 import { SESSION_TTL_MS, SessionError, seal } from "@/lib/rakuraku/session";
+import { hasViewTab } from "@/lib/rakuraku/tabs";
 
 /**
  * 楽楽精算にログインし、その状態を封じた `sessionToken` を返す。
@@ -85,17 +86,23 @@ export async function POST(request: Request) {
       return fail(result.code, result.message);
     }
 
+    // ★このアカウントに「閲覧」タブがあるか（＝自部門検索を使えるか）を、着いた画面で見ておく。
+    //   一覧の経路をここで決められるので、閲覧側を試して失敗する1回が要らなくなる。
+    //   見るだけ（押さない）。読めなければ false として扱い、開けなければ経路は切り替わる。
+    const viewTab = await hasViewTab(page);
+
     // 期限はここで決めて、ブラウザにも伝える（タブに控えを残すとき、期限切れを戻さないため）
     const expiresAt = Date.now() + SESSION_TTL_MS;
     const sessionToken = seal({
       state: JSON.stringify(await context.storageState()),
       // ★ ログイン画面ではなく「着いた画面」を覚える（次回の状態確認に使う）
       home: result.homeUrl ?? tenant.loginUrl,
+      viewTab,
       exp: expiresAt,
     });
-    log("login", { ok: true, ms_total: Date.now() - started });
+    log("login", { ok: true, n_view_tab: viewTab ? 1 : 0, ms_total: Date.now() - started });
     return NextResponse.json(
-      { ok: true, sessionToken, expiresAt, totalMs: Date.now() - started },
+      { ok: true, sessionToken, expiresAt, viewTab, totalMs: Date.now() - started },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (e) {
