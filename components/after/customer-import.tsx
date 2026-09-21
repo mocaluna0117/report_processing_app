@@ -1,6 +1,7 @@
 "use client";
 
 import { Dropzone } from "@/components/dropzone";
+import { MoreDetails } from "@/components/more-details";
 import type { ImportReport } from "@/lib/after/customer-store";
 import type { CustomerSource } from "@/lib/after/types";
 
@@ -121,12 +122,17 @@ export function CustomerImport({
             {report.needsReview > 0 && ` / 要確認 ${report.needsReview}件`}
           </p>
           {report.dedupRemoved > 0 && (
-            <p className="mt-1">
+            <div className="mt-1">
               点検保守台帳 (DX) を正として、同じ物件の {SOURCE_LABEL.suketto} {report.dedupRemoved}件
               を{report.source === "suketto" ? "取り込みませんでした" : "削除しました"}
-              {report.supplemented > 0 &&
-                ` (台帳が空欄だった ${report.supplemented}件 は ${SOURCE_LABEL.suketto} から補いました)`}
-            </p>
+              {report.supplemented > 0 && (
+                <MoreDetails size="xs">
+                  <p>
+                    台帳が空欄だった {report.supplemented}件 は {SOURCE_LABEL.suketto} から補いました。
+                  </p>
+                </MoreDetails>
+              )}
+            </div>
           )}
           {report.dedupUncertain > 0 && (
             <p className="mt-1">

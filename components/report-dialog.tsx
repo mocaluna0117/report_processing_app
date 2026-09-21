@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { MoreDetails } from "@/components/more-details";
 import { ModalShell } from "@/components/modal-shell";
 import { PdfPagesPreview } from "@/components/pdf-preview";
 import { downloadBytes } from "@/lib/download";
@@ -591,13 +592,17 @@ export function ReportDialog({
             </p>
           )}
           {data.useAppendix && (
-            <p className="mt-2 rounded bg-blue-50 px-2 py-1.5 text-xs text-blue-900">
-              {data.items.length >= APPENDIX_THRESHOLD
-                ? `${APPENDIX_THRESHOLD}件以上あるので、`
-                : `折り返しや補足で本紙の${MAIN_SLOTS}行に入りきらないので、`}
-              本紙の指示内容は「別紙参照」にして、全{data.items.length}件を別紙に記載します
-              {data.supplements.some((s) => s) && "（補足は項目の下の細い欄に入ります）"}
-            </p>
+            <div className="mt-2 rounded bg-blue-50 px-2 py-1.5 text-xs text-blue-900">
+              全{data.items.length}件を別紙に載せ、本紙の指示内容は「別紙参照」にします。
+              <MoreDetails size="xs" className="text-blue-900">
+                <p>
+                  {data.items.length >= APPENDIX_THRESHOLD
+                    ? `指示内容が${APPENDIX_THRESHOLD}件以上あるためです。`
+                    : `折り返しや補足で、本紙の${MAIN_SLOTS}行に入りきらないためです。`}
+                  {data.supplements.some((s) => s) && "補足は項目の下の細い欄に入ります。"}
+                </p>
+              </MoreDetails>
+            </div>
           )}
           {data.warnings.map((w) => (
             <p key={w} className="mt-2 text-xs text-amber-800">

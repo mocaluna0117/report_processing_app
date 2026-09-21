@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { MoreDetails } from "@/components/more-details";
 import { effectiveFields } from "@/lib/after/customer";
 import {
   loadCustomers,
@@ -290,11 +291,15 @@ export function HandoverSync({
         </table>
       </div>
 
-      <p className="mt-2 text-xs text-slate-400">
-        反映した引渡日は「手直し」として保存されるので、顧客データを取り込み直しても残ります
-        (アフターメンテナンスの顧客カードで確認・取り消しできます)。
-        顧客データはこのブラウザの中だけにあるため、取り込んだ端末で処理してください。
-      </p>
+      <div className="mt-2 text-xs text-slate-400">
+        反映した引渡日は「手直し」として保存されます。
+        <MoreDetails size="xs" className="text-slate-400">
+          <p>
+            顧客データを取り込み直しても残ります (アフターメンテナンスの顧客カードで確認・取り消しできます)。
+            顧客データはこのブラウザの中だけにあるため、取り込んだ端末で処理してください。
+          </p>
+        </MoreDetails>
+      </div>
     </section>
   );
 }

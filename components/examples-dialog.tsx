@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ModalShell } from "@/components/modal-shell";
+import { MoreDetails } from "@/components/more-details";
 import { downloadBytes } from "@/lib/download";
+import { LEARNING_SEND_NOTE } from "@/lib/privacy-notes";
 import {
   type ExampleLabels,
   type InquiryExample,
@@ -87,11 +89,13 @@ export function ExamplesDialog({
     >
       <div>
         <h2 className="text-lg font-semibold">学習した書き方 {examples.length}件</h2>
-        <p className="mt-1 text-xs text-slate-500">
-          要約するとき、今回の{labels.input}に近いものを最大{EXAMPLES_PICK_DEFAULT}件まで手本として
-          Gemini に送ります。保存・送信しているのは、お客様の氏名・電話番号・住所・メールアドレスを
-          伏せ字にした本文だけです。
-        </p>
+        <div className="mt-1 text-xs text-slate-500">
+          要約するとき、今回の{labels.input}に近いものを最大{EXAMPLES_PICK_DEFAULT}件まで手本として Gemini に送ります。
+          {/* ★送るものの説明は、画面の各所から消してここと保存の欄に寄せた */}
+          <MoreDetails size="xs">
+            <p>{LEARNING_SEND_NOTE}</p>
+          </MoreDetails>
+        </div>
       </div>
 
       {error && (
