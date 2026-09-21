@@ -11,10 +11,16 @@ import { getNavigationGuard } from "@/lib/navigation-guard";
 /** 「どの画面でも」タブの目印（HELP_SECTIONS の slug とはぶつからない） */
 const COMMON_TAB = "__common__";
 
+/**
+ * ★前は「枠線が少し濃い＋太字」だけの違いで、選んでいるタブが分かりにくかった。
+ *   ヘッダーの画面タブ（components/mode-nav.tsx の MODES）と同じ
+ *   「グレーの帯の上に、選んだものだけ白いピル」にして、はっきり見分けられるようにする。
+ */
+const TAB_TRACK_CLASS = "inline-flex flex-wrap gap-1 rounded-lg bg-slate-200 p-1 shadow-inner";
 const TAB_CLASS = (active: boolean) =>
   active
-    ? "rounded-md border border-slate-400 bg-white px-2.5 py-1 text-sm font-semibold text-slate-900"
-    : "cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50";
+    ? "rounded-md bg-white px-2.5 py-1 text-sm font-semibold text-slate-900 shadow-sm"
+    : "cursor-pointer rounded-md px-2.5 py-1 text-sm font-medium text-slate-600 hover:text-slate-900";
 
 /**
  * 「使い方」をモーダルで表示する。
@@ -58,26 +64,28 @@ export function HelpDialog() {
         </button>
       </div>
 
-      <nav aria-label="画面を選ぶ" className="flex flex-wrap gap-2 border-b border-slate-200 px-5 py-3">
-        {HELP_SECTIONS.map((s) => (
+      <nav aria-label="画面を選ぶ" className="border-b border-slate-200 px-5 py-3">
+        <div className={TAB_TRACK_CLASS}>
+          {HELP_SECTIONS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => setTab(s.slug)}
+              aria-current={tab === s.slug ? "page" : undefined}
+              className={TAB_CLASS(tab === s.slug)}
+            >
+              {s.title}
+            </button>
+          ))}
           <button
-            key={s.id}
             type="button"
-            onClick={() => setTab(s.slug)}
-            aria-current={tab === s.slug ? "page" : undefined}
-            className={TAB_CLASS(tab === s.slug)}
+            onClick={() => setTab(COMMON_TAB)}
+            aria-current={tab === COMMON_TAB ? "page" : undefined}
+            className={TAB_CLASS(tab === COMMON_TAB)}
           >
-            {s.title}
+            どの画面でも
           </button>
-        ))}
-        <button
-          type="button"
-          onClick={() => setTab(COMMON_TAB)}
-          aria-current={tab === COMMON_TAB ? "page" : undefined}
-          className={TAB_CLASS(tab === COMMON_TAB)}
-        >
-          どの画面でも
-        </button>
+        </div>
       </nav>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
