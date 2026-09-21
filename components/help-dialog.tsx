@@ -50,7 +50,10 @@ export function HelpDialog() {
     <ModalShell
       label="使い方"
       onClose={closeHelp}
-      panelClassName="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-xl"
+      // ★max-h ではなく h にする。タブによって中身の長さが違う（「どの画面でも」は特に短い）ので、
+      //   max-h だと切り替えるたびにモーダルの大きさが変わって見にくかった。高さを固定し、
+      //   中身が短いタブは下に余白ができるだけにする（中身が長いタブは今までどおり中で縦スクロール）
+      panelClassName="flex h-[85vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-xl"
     >
       <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
         <h2 className="text-lg font-semibold">使い方</h2>
