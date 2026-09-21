@@ -40,8 +40,18 @@ export async function withSessionPage(
       { retryable: true },
     );
   }
-  // ブラウザが接続を切ったら、待っている人はいないので楽楽精算の操作もすぐやめる
-  sink.onAbort(() => void launched.close());
+  // ★閉じるのは1回だけ（中断で閉じたあと、finally でもう一度閉じない）
+  let closed = false;
+  const closeOnce = async () => {
+    if (closed) return;
+    closed = true;
+    await launched.close();
+  };
+  // すでに接続が切れていたら、楽楽精算には触らずに戻す（待っている人がいない）
+  if (sink.signal.aborted) {
+    await closeOnce();
+    return;
+  }
 
   let context: BrowserContext | null = null;
   const sendSession = async (routes = session.routes) => {
@@ -63,6 +73,10 @@ export async function withSessionPage(
       storageState: JSON.parse(session.state) as BrowserContextOptions["storageState"],
     });
     const page = await context.newPage();
+    // ★中断でブラウザを閉じる仕掛けは、用意ができてから登録する。
+    //   用意の前に登録すると、すでに切れている呼び出しでは stream.ts がその場で呼ぶので、
+    //   newContext の前にブラウザが消え（意味の分からない失敗になり）、共有の空き枠も先に返ってしまう。
+    sink.onAbort(() => void closeOnce());
     page.setDefaultTimeout(30_000);
     const outcome = await run({ page, session });
     await sendSession(outcome?.routes ? { ...session.routes, ...outcome.routes } : session.routes);
@@ -70,6 +84,6 @@ export async function withSessionPage(
     if (!(e instanceof RakurakuError && e.sessionLost)) await sendSession().catch(() => null);
     throw e;
   } finally {
-    await launched.close();
+    await closeOnce();
   }
 }
