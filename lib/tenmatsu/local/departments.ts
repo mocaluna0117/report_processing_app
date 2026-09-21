@@ -121,6 +121,33 @@ export async function readDepartments(
   }
 }
 
+export interface AutoLoadInput {
+  loggedIn: boolean;
+  /** 選択肢を読めているか（画面の departments !== null） */
+  loaded: boolean;
+  /** いま読みに行っている最中か */
+  busy: boolean;
+  /** 読めなかった（自動のやり直しも失敗した） */
+  failed: boolean;
+  /** 利用者が「部門を指定せずに取得する」を選んだ */
+  skipped: boolean;
+  /** このログインで、もう自動で読みに行ったか */
+  tried: boolean;
+}
+
+/**
+ * 画面が**勝手に**部門を読みに行ってよいか。
+ *
+ * ★部門の切り替えが無いアカウントかどうかは、読んでみないと分からない。押さないと進めない小さなボタンを
+ *   出すより、ログインできたら画面が読みに行って、切り替えが無ければ黙って次へ進めるほうがよい
+ *   （利用者の決定 2026-09-21）。読むのは開くだけで、楽楽精算には何も送らない。
+ * ★**失敗したあとは自動で読み直さない**（tried と failed の両方で止める）。押したときだけやり直す。
+ *   自動のやり直しは readDepartments の中の1回きりで、ここでは増やさない。
+ */
+export function shouldAutoLoadDepartments(input: AutoLoadInput): boolean {
+  return input.loggedIn && !input.loaded && !input.busy && !input.failed && !input.skipped && !input.tried;
+}
+
 /** 前に選んだ部門 → 楽楽精算がいま選んでいる部門 → 先頭、の順に選ぶ */
 export function pickDepartment(
   list: readonly DepartmentOption[],

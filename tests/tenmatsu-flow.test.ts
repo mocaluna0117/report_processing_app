@@ -3,6 +3,7 @@ import { DOC_KINDS, type DocKind, TENMATSU, NATSUIN, SENKETSU } from "@/lib/tenm
 import { FOLDER_UNSUPPORTED_TEXT } from "@/lib/tenmatsu/local/folder-handle";
 import {
   DEPT_READ_FAILED_BLOCK_TEXT,
+  DEPT_READING_TEXT,
   type TenmatsuFlowInput,
   canStartRun,
   folderBlockedReason,
@@ -81,9 +82,10 @@ describe.each(DOC_KINDS)("$label の手順", (kind) => {
   });
 
   it("部門を読み込んでいない・選んでいないときは、それぞれの案内を出す", () => {
+    // ★読み込みは画面が勝手にやるので、「押してください」ではなく「待っていてください」と伝える
     const notLoaded = tenmatsuFlow(ready(kind, { departmentCount: null, deptLabel: null }));
     expect(notLoaded.currentId).toBe("dept");
-    expect(notLoaded.nextHint).toContain("部門を読み込む");
+    expect(notLoaded.nextHint).toBe(DEPT_READING_TEXT);
 
     const notChosen = tenmatsuFlow(ready(kind, { deptLabel: null }));
     expect(notChosen.currentId).toBe("dept");
@@ -195,7 +197,7 @@ describe("★押せない理由と、押せるかの判定が食い違わない"
     const base = ready(TENMATSU);
     expect(runBlockedReason({ ...base, connected: false })?.text).toBe("保存先フォルダーにつないでください");
     expect(runBlockedReason({ ...base, loggedIn: false })?.text).toBe("楽楽精算にログインしてください");
-    expect(runBlockedReason({ ...base, departmentCount: null })?.text).toBe("部門を読み込んでください");
+    expect(runBlockedReason({ ...base, departmentCount: null })?.text).toBe(DEPT_READING_TEXT);
     expect(runBlockedReason({ ...base, otherRunKind: "senketsu" })?.text).toContain("取得が動いています");
   });
 

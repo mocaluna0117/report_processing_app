@@ -69,7 +69,7 @@ export function tenmatsuStepDefs(kind: DocKind): FlowStepDef[] {
       id: "dept",
       label: "部門を選ぶ",
       description:
-        "そのアカウントで選べる部門を楽楽精算から読んで選びます。部門の切り替えが無いアカウント（「閲覧」タブが無い方）では、この手順は自動で済みます。読み込めないときは「もう一度読み込む」か「部門を指定せずに取得する」を選べます。",
+        "ログインできたら、そのアカウントで選べる部門を楽楽精算から自動で読み込みます。部門の切り替えが無いアカウント（「閲覧」タブが無い方）では、何もせずにこの手順を通り過ぎます。読み込めなかったときだけ「もう一度読み込む」か「部門を指定せずに取得する」を選びます。",
       targetId: `${kind.id}-run`,
     },
     {
@@ -115,6 +115,9 @@ export function canStartRun(input: TenmatsuFlowInput): boolean {
 export const DEPT_READ_FAILED_BLOCK_TEXT =
   "部門を読み込めませんでした。「もう一度読み込む」か「部門を指定せずに取得する」を押してください";
 
+/** 部門を読んでいる最中（画面が勝手に読みに行くので、利用者は待つだけでよい） */
+export const DEPT_READING_TEXT = "部門を読み込んでいます。少しお待ちください";
+
 export interface BlockedReasonText {
   text: string;
   /** その理由を直せる欄（押すとそこへ動く）。同じ欄の中にあるものは null */
@@ -139,7 +142,7 @@ export function runBlockedReason(input: TenmatsuFlowInput): BlockedReasonText | 
   if (!input.loggedIn) return { text: "楽楽精算にログインしてください", ...rakuraku };
   if (!departmentReady(input)) {
     if (input.departmentCount === null) {
-      return { text: input.departmentFailed ? DEPT_READ_FAILED_BLOCK_TEXT : "部門を読み込んでください", ...here };
+      return { text: input.departmentFailed ? DEPT_READ_FAILED_BLOCK_TEXT : DEPT_READING_TEXT, ...here };
     }
     return { text: "部門を選んでください", ...here };
   }
@@ -218,7 +221,7 @@ export function tenmatsuFlow(input: TenmatsuFlowInput): FlowPlan {
               kind: "ready",
               hint: input.departmentFailed
                 ? `部門を読み込めませんでした。「${label}の取得」の欄の「もう一度読み込む」か「部門を指定せずに取得する」を押してください`
-                : `「${label}の取得」の欄の「部門を読み込む」を押してください`,
+                : DEPT_READING_TEXT,
             }
           : input.deptLabel === null
             ? { kind: "ready", hint: `「${label}の取得」の欄の「部門」で部門を選んでください` }

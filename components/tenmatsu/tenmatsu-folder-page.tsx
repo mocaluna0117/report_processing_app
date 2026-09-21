@@ -52,6 +52,7 @@ import {
   departmentFixFromStatus,
   pickDepartment,
   readDepartments,
+  shouldAutoLoadDepartments,
 } from "@/lib/tenmatsu/local/departments";
 import {
   type TenmatsuFlowInput,
@@ -188,6 +189,8 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   /** 部門を読めないまま「指定せずに取得する」を選んだか */
   const [skipDepartment, setSkipDepartment] = useState(kept.skipDepartment);
   const deptBusyRef = useRef(false);
+  /** このログインで、画面が勝手に部門を読みに行ったか（失敗したあとは押したときだけ読む） */
+  const deptAutoRef = useRef(false);
   /** 一覧の経路の固定（null なら自動で順に試す） */
   const [routePin, setRoutePin] = useState<RouteId | null>(kept.routePin);
   const deptCodeRef = useRef(deptCode);
@@ -216,6 +219,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
       setLoggedIn(token !== null);
       setHasPassword(getPassword() !== null);
       if (token === null) {
+        deptAutoRef.current = false;
         setDepartments((prev) => (prev === null ? prev : null));
         return;
       }
@@ -230,6 +234,23 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     restoreLogin();
     return unsubscribe;
   }, []);
+
+  // ★ログインできたら、部門は画面が勝手に読みに行く。部門の切り替えが無いアカウントは、
+  //   何も押さずにこの手順を通り過ぎる（押さないと進めない小さなボタンを出さない）。
+  //   失敗したあとは自動で読み直さない（「もう一度読み込む」を押したときだけ）。
+  useEffect(() => {
+    const auto = shouldAutoLoadDepartments({
+      loggedIn,
+      loaded: departments !== null,
+      busy: deptBusy,
+      failed: deptError !== null,
+      skipped: skipDepartment,
+      tried: deptAutoRef.current,
+    });
+    if (!auto) return;
+    deptAutoRef.current = true;
+    void loadDepartments();
+  }, [loggedIn, departments, deptBusy, deptError, skipDepartment]);
 
   // 部門の選択肢と選んだ部門をタブに覚える (再読み込みしても選び直さずに済むように)
   useEffect(() => {
@@ -1116,7 +1137,6 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
               </button>
             </p>
           )}
-          {loggedIn && deptBusy && <p className="mt-2 text-xs text-slate-500">部門を読み込んでいます…</p>}
           {loggedIn && deptError && !deptBusy && <p className={ERROR_CLASS}>{deptError}</p>}
           {loggedIn && departments === null && deptError && !deptBusy && !skipDepartment && (
             <>
@@ -1151,13 +1171,9 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
               </p>
             </>
           )}
-          {loggedIn && departments === null && !deptError && !deptBusy && !skipDepartment && (
-            <p className="mt-2 text-xs text-slate-500">
-              部門を読み込んでいません。
-              <button type="button" onClick={() => void loadDepartments()} className="ml-1 cursor-pointer underline hover:text-slate-700">
-                部門を読み込む
-              </button>
-            </p>
+          {/* ★読み込みは自動なので、押すものは出さない（失敗したときだけ上の2つのボタンが出る） */}
+          {loggedIn && departments === null && !deptError && !skipDepartment && (
+            <p className="mt-2 text-xs text-slate-500">部門を読み込んでいます…</p>
           )}
           <BlockedReason
             reason={!canRun && !running ? (runBlocked?.text ?? null) : null}

@@ -8,6 +8,7 @@ import {
   isRetryableDeptError,
   pickDepartment,
   readDepartments,
+  shouldAutoLoadDepartments,
 } from "@/lib/tenmatsu/local/departments";
 import { type ApiCode, RakurakuApiError } from "@/lib/tenmatsu/local/server-api";
 
@@ -128,6 +129,54 @@ describe("部門を読む", () => {
     expect(
       departmentErrorText({ kind: "failed", code: "INTERNAL", message: "画面を開けません", sessionLost: false, attempts: 2 }),
     ).toBe("部門を読み込めませんでした (画面を開けません)");
+  });
+});
+
+describe("画面が勝手に部門を読みに行ってよいか", () => {
+  const idle = {
+    loggedIn: true,
+    loaded: false,
+    busy: false,
+    failed: false,
+    skipped: false,
+    tried: false,
+  };
+
+  it("ログインできていて、まだ読んでいなければ読みに行く", () => {
+    expect(shouldAutoLoadDepartments(idle)).toBe(true);
+  });
+
+  it("ログインしていなければ読みに行かない（楽楽精算に触らない）", () => {
+    expect(shouldAutoLoadDepartments({ ...idle, loggedIn: false })).toBe(false);
+  });
+
+  it("★一度失敗したら、自動では読み直さない（押したときだけ）", () => {
+    expect(shouldAutoLoadDepartments({ ...idle, failed: true })).toBe(false);
+    // 失敗の表示を消しても、このログインではもう自動で読みに行かない
+    expect(shouldAutoLoadDepartments({ ...idle, tried: true })).toBe(false);
+  });
+
+  it("読めている・読んでいる最中・「指定せず」を選んだときは読みに行かない", () => {
+    expect(shouldAutoLoadDepartments({ ...idle, loaded: true })).toBe(false);
+    expect(shouldAutoLoadDepartments({ ...idle, busy: true })).toBe(false);
+    expect(shouldAutoLoadDepartments({ ...idle, skipped: true })).toBe(false);
+  });
+
+  it("★どの組み合わせでも、読みに行くのは「ログイン済み・未読・空き・失敗なし・指定せずでない・未実行」だけ", () => {
+    let checked = 0;
+    for (const loggedIn of [true, false])
+      for (const loaded of [true, false])
+        for (const busy of [true, false])
+          for (const failed of [true, false])
+            for (const skipped of [true, false])
+              for (const tried of [true, false]) {
+                checked += 1;
+                const input = { loggedIn, loaded, busy, failed, skipped, tried };
+                expect(shouldAutoLoadDepartments(input)).toBe(
+                  loggedIn && !loaded && !busy && !failed && !skipped && !tried,
+                );
+              }
+    expect(checked).toBe(64);
   });
 });
 
