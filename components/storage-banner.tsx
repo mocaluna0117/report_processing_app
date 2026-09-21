@@ -34,7 +34,8 @@ export function StorageBanner({
 }) {
   return (
     <div className="mt-8 flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
-      <span>
+      {/* ★span ではなく div。中に「くわしく」の折りたたみ (details) を置くため */}
+      <div>
         {description}
         {detail && <span className="ml-1">{detail}</span>}
         {fontInfo && (
@@ -53,7 +54,7 @@ export function StorageBanner({
               `（うち登録した書体 約${Math.round(fontInfo.bytes / 1024 / 1024)}MB）`}
           </span>
         )}
-      </span>
+      </div>
       <span className="flex shrink-0 flex-col items-end gap-1">
         {actions.map((action) => (
           <button
