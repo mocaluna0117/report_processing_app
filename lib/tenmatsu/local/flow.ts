@@ -9,6 +9,7 @@
  */
 import { type FlowPlan, type FlowStepDef, type StepEval, resolveFlow } from "@/lib/flow-steps";
 import type { DocKind, DocKindId } from "@/lib/tenmatsu/kinds";
+import { LOCAL_KINDS } from "@/lib/tenmatsu/local/kind-config";
 import { FOLDER_UNSUPPORTED_TEXT } from "@/lib/tenmatsu/local/folder-handle";
 import type { FolderConnection } from "@/lib/tenmatsu/local/session";
 
@@ -109,6 +110,30 @@ export function canStartRun(input: TenmatsuFlowInput): boolean {
     input.otherRunKind === null &&
     input.restored
   );
+}
+
+/**
+ * 取得の欄に出す「何を1つのPDFにするか」の1文と、その続き。
+ *
+ * ★以前はここに5文（捺印は flowNote と合わせて約520字）が常に並んでいて読み飛ばされていた。
+ *   要点1文だけを常に出し、保留・動画・保護のかかったPDFの話は「くわしく」に入れる
+ *   （利用者の決定 2026-09-21）。★保留の決まりは畳んでも必ず残す。
+ */
+export function composeSummary(kind: DocKind): string {
+  return LOCAL_KINDS[kind.id].composed
+    ? `${kind.label}の本体と、紐づく専決決裁書の本体・添付を1つのPDFにします (${kind.label}そのものの添付は使いません)。`
+    : "添付のPDFと画像 (JPG・PNG) を本体と結合します。";
+}
+
+export function composeDetails(kind: DocKind): string[] {
+  return [
+    ...(LOCAL_KINDS[kind.id].composed
+      ? ["専決決裁書から並べるのは、決定通知書 (無ければ見積総覧・見積：・写真) の添付です。"]
+      : []),
+    "開くのにパスワードが要らない保護のかかったPDFも結合できます。",
+    `Excel・Word・PowerPoint・メールの添付は結合できないので、その${kind.label}は保留にし、結合できた分だけのPDFをフォルダーの _保留 に置いて、残りの取得は続けます。一覧の「${kind.text.resolveButton}」から、手でPDFにしたものを入れて確定してください (${kind.text.resolveNote})。`,
+    "動画・音声は紙にできないので結合せず飛ばし、その行に「動画は未結合」と出します。",
+  ];
 }
 
 /** 部門を読めなかったときに、取得ボタンの下へ出す理由 */

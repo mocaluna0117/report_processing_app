@@ -10,6 +10,7 @@ import {
   clearedNoticeText,
   findHealthKind,
   flagErrorText,
+  saveNote,
   supportsKind,
   unsupportedServerText,
 } from "@/lib/tenmatsu/kinds";
@@ -177,11 +178,19 @@ describe("捺印決裁書の設定", () => {
     expect(NATSUIN.text.resolveButton).toBe("書類を足す");
   });
 
-  it("★取得のところに、この種類だけの進み方を出す", () => {
+  it("★取得のところに、この種類だけの進み方を出す（画面は1文、続きは「くわしく」）", () => {
     expect(NATSUIN.text.flowNote).toContain("アップロード待ち");
-    expect(NATSUIN.text.flowNote).toContain("書類を足す");
+    expect(NATSUIN.text.flowNote?.split("。").filter((t) => t.trim() !== "")).toHaveLength(1);
+    const details = NATSUIN.text.flowDetails.join("");
+    expect(details).toContain("書類を足す");
     // 確定したあとの差し替えも、この説明で伝える
-    expect(NATSUIN.text.flowNote).toContain("差し替え");
+    expect(details).toContain("差し替え");
+  });
+
+  it("★保留を確定するときの注記（捺印は書類が必須）", () => {
+    expect(NATSUIN.text.resolveNote).toContain("必ず入れる");
+    expect(TENMATSU.text.resolveNote).toContain("欠けたまま");
+    expect(SENKETSU.text.resolveNote).toContain("欠けたまま");
   });
 
   it("消去の確認文に、この画面が持っている項目が出る", () => {
@@ -198,12 +207,33 @@ describe("捺印決裁書の設定", () => {
   });
 });
 
+describe("画面の下に出す保存の説明", () => {
+  it.each(DOC_KINDS)("$label: 画面に出るのは1文だけ（80字以内）", (kind) => {
+    const note = saveNote(kind);
+    expect(note.summary.split("。").filter((t) => t.trim() !== "")).toHaveLength(1);
+    expect(note.summary.length).toBeLessThanOrEqual(80);
+    expect(note.summary).toContain("パスワードは保存しません");
+  });
+
+  it.each(DOC_KINDS)("$label: ★畳んだ中に、消せない約束が残っている", (kind) => {
+    const details = saveNote(kind).details.join("");
+    // 一覧に何が入るか（個人情報）・PDFの通り道・ログイン状態の期限・記録の正本
+    expect(details).toContain(kind.text.sensitiveFields);
+    expect(details).toContain("folio のサーバーには残しません");
+    expect(details).toContain("8時間");
+    expect(details).toContain("_記録");
+    expect(details.length).toBeLessThanOrEqual(500);
+  });
+});
+
 describe("既存の2つは変えない", () => {
   it("★ボタンの文字と流れの説明", () => {
     expect(TENMATSU.text.resolveButton).toBe("添付を足す");
     expect(SENKETSU.text.resolveButton).toBe("添付を足す");
     expect(TENMATSU.text.flowNote).toBeNull();
     expect(SENKETSU.text.flowNote).toBeNull();
+    expect(TENMATSU.text.flowDetails).toEqual([]);
+    expect(SENKETSU.text.flowDetails).toEqual([]);
   });
 
   it("★書類を差し替えられるのは捺印決裁書だけ", () => {

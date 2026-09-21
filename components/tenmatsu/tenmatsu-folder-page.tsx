@@ -3,7 +3,9 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { BlockedReason } from "@/components/blocked-reason";
 import { FlowSteps } from "@/components/flow-steps";
+import { MoreDetails } from "@/components/more-details";
 import { StorageBanner } from "@/components/storage-banner";
+import { SAVE_PAUSED_TEXT } from "@/lib/privacy-notes";
 import { TenmatsuImportRecords } from "@/components/tenmatsu/tenmatsu-import-records";
 import { TenmatsuList } from "@/components/tenmatsu/tenmatsu-list";
 import { TenmatsuPendingDialog } from "@/components/tenmatsu/tenmatsu-pending-dialog";
@@ -34,6 +36,7 @@ import {
   clearedNoticeText,
   flagErrorText,
   legacyFilePrefix,
+  saveNote,
 } from "@/lib/tenmatsu/kinds";
 import type { ListFilter, ListSort } from "@/lib/tenmatsu/list-view";
 import { activeRunKind, createLocalFolderClient, hasActiveRun, type LocalFolderClient } from "@/lib/tenmatsu/local/client";
@@ -57,6 +60,8 @@ import {
 import {
   type TenmatsuFlowInput,
   canStartRun,
+  composeDetails,
+  composeSummary,
   folderBlockedReason,
   isFreshTenmatsu,
   listEmptyText,
@@ -827,8 +832,8 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   return (
     <main>
       <p className="mt-4 text-sm text-slate-600">
-        楽楽精算で最終承認まで進んだ{kind.label}を、本体と添付書類を1つに結合して、選んだPCのフォルダーへ保存します。
-        楽楽精算からの取得は folio のサーバーが行い、PDFの結合と保存はこのブラウザの中で行います (folio のサーバーには保存しません)。
+        {/* ★保存とパスワードの話は画面のいちばん下（保存の欄）にまとめた。ここでは繰り返さない */}
+        楽楽精算で最終承認まで進んだ{kind.label}を、本体と添付書類を1つのPDFにまとめて、選んだPCのフォルダーへ保存します。
       </p>
 
       {header}
@@ -837,7 +842,6 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
         plan={tenmatsuFlow(flowInput)}
         ariaLabel={`${kind.label}の手順`}
         expanded={isFreshTenmatsu(flowInput)}
-        intro={`${kind.label}を楽楽精算から取り、本体と添付を1つのPDFにして、選んだPCのフォルダーへ保存します。楽楽精算のパスワードは保存しません。`}
         helpHref={`/help#help-${kind.id}`}
       />
 
@@ -897,13 +901,11 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
           {supported && !handle && (
             <p className="mt-2 text-sm text-slate-600">
               {kind.label}のPDFを置くフォルダー (例: ドキュメントの「{kind.label}」) を選んでください。
-              今までPCのツールで使っていたフォルダーを選ぶと、同じ場所に保存されます。
             </p>
           )}
           {supported && handle && !connected && connection !== "checking" && (
             <p className="mt-2 text-xs text-slate-500">
               ブラウザが「このフォルダーの編集を許可しますか」と尋ねたら「許可」を選んでください。
-              Chrome と Edge では「今後も許可」を選ぶと、次からは押さなくてもつながります。
             </p>
           )}
           {connectionError && <p className={ERROR_CLASS}>{connectionError}</p>}
@@ -1002,8 +1004,8 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
           )}
           {!loggedIn && (
             <p className="mt-2 text-xs text-slate-500">
-              パスワードは保存しません (このブラウザのメモリにだけ置きます)。ログイン状態 (暗号化したもの) はこのタブにだけ残るので、画面を読み込み直してもログインしたままです (タブやブラウザを閉じると消えます。期限は8時間)。ログインIDはこのブラウザに保存します。
-              楽楽精算は続けて失敗するとアカウントがロックされるので、ログインに失敗したときは自動でやり直しません。入力を確かめてから押し直してください。
+              {/* ★保存のしかたは下の保存の欄に書いた。ここは「押す前に知っておくこと」だけ */}
+              パスワードは保存しません。楽楽精算は続けて失敗するとアカウントがロックされるので、失敗しても自動でやり直しません。
             </p>
           )}
           {loggedIn && !hasPassword && (
@@ -1185,16 +1187,16 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
           {/* この種類だけの進み方（捺印決裁書は取得しただけでは終わらない） */}
           {kind.text.flowNote && <p className="mt-2 text-sm text-slate-600">{kind.text.flowNote}</p>}
 
-          <p className="mt-2 text-xs text-slate-500">
-            {LOCAL_KINDS[kind.id].composed
-              ? "捺印決裁書そのものの添付は結合しません。紐づく専決決裁書を楽楽精算で探し、その本体と、決定通知書 (無ければ見積総覧・見積：・写真) の添付を並べます。"
-              : "添付のPDFと画像 (JPG・PNG) を本体と結合します。"}
-            開くのにパスワードが要らない保護のかかったPDFも結合できます。
-            Excel・Word・PowerPoint・メールの添付は結合できないので、その{kind.label}を保留にして、結合できたものだけのPDFをフォルダーの _保留 に置き、残りの取得は続けます。
-            一覧の「{kind.text.resolveButton}」から、手でPDFにしたものを入れて確定してください
-            {kind.text.flowNote ? " (あとからアップロードする書類は必ず入れる必要があります)。" : " (どうしても手に入らないときは、欠けたまま確定することもできます)。"}
-            動画・音声は紙にできないので結合せず飛ばし、その行に「動画は未結合」と出します。
-          </p>
+          {/* ★何を1つのPDFにするかは1文だけ。保留・動画・保護のかかったPDFの話は「くわしく」に入れる
+              （以前は5文が常に並んでいて読み飛ばされていた）。文は lib/tenmatsu/local/flow.ts にある */}
+          <div className="mt-2 text-xs text-slate-500">
+            {composeSummary(kind)}
+            <MoreDetails size="xs">
+              {[...kind.text.flowDetails, ...composeDetails(kind)].map((text) => (
+                <p key={text}>{text}</p>
+              ))}
+            </MoreDetails>
+          </div>
 
           {running && deptLabel && <p className="mt-2 text-xs text-slate-500">部門: {deptLabel}</p>}
           {/* ★どの経路で取ったかは取得中も完了後も出す（経路によって一覧に出る伝票の範囲が違う） */}
@@ -1330,14 +1332,29 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
         />
       )}
 
-      {(items.length > 0 || handle !== null || userIdSaved) && (
+      {/* ★保存とパスワードの説明は、この欄だけに出す（リード文・ログイン欄・フッターの繰り返しはやめた）。
+          そのため、まだ何も取得していない画面でも必ず出す */}
+      {storage.restored && (
         <StorageBanner
           description={
-            storage.canPersist
-              ? `${kind.label}の取得済み一覧の写し (伝票№・物件名 (施主名を含むことがあります)・申請者・支払先・金額・印)、保存先フォルダーの場所、楽楽精算のログインID、1回に取る件数、選んだ部門を、このブラウザ内にだけ保存しています (folio のサーバーには送りません)。楽楽精算のパスワードは保存しません (ログイン状態は暗号化したものをこのタブにだけ残し、タブを閉じると消えます)。記録の正本は保存先フォルダーの _記録 にあり、一覧を消してもつなぎ直せば戻ります。PDFの実体も保存先フォルダーにあり、ブラウザには保存しません。共有の端末では、使い終わったら下のボタンで消してください。`
-              : "このタブでは保存を停止しています (再読み込みすると復元を試み直せます)。"
+            storage.canPersist ? (
+              <>
+                {saveNote(kind).summary}
+                <MoreDetails size="xs" summary="くわしく (保存する中身とPDFの通り道)">
+                  {saveNote(kind).details.map((text) => (
+                    <p key={text}>{text}</p>
+                  ))}
+                </MoreDetails>
+              </>
+            ) : (
+              SAVE_PAUSED_TEXT
+            )
           }
-          detail={`取得済み ${items.length}件 (未完了 ${items.filter((i) => i.completed !== true).length}件)`}
+          detail={
+            items.length > 0
+              ? `取得済み ${items.length}件 (未完了 ${items.filter((i) => i.completed !== true).length}件)`
+              : undefined
+          }
           usageBytes={storage.usageBytes}
           fontInfo={storage.fontInfo}
           disabled={running}
@@ -1350,10 +1367,6 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
         />
       )}
 
-      <footer className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-400">
-        {kind.label}のPDFは楽楽精算から folio のサーバーを通ってこのブラウザに届き、選んだフォルダーにだけ保存されます
-        (folio のサーバーには保存しません)。楽楽精算のパスワードはログインに使うだけで、どこにも保存しません (ログイン状態はこのタブにだけ残ります)。
-      </footer>
     </main>
   );
 }

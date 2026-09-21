@@ -6,6 +6,8 @@ import {
   DEPT_READING_TEXT,
   type TenmatsuFlowInput,
   canStartRun,
+  composeDetails,
+  composeSummary,
   folderBlockedReason,
   isFreshTenmatsu,
   listEmptyText,
@@ -133,6 +135,28 @@ describe.each(DOC_KINDS)("$label の手順", (kind) => {
   it("一覧が空のときの文は、つないでいるかで変える", () => {
     expect(listEmptyText(kind, false)).toContain("保存先フォルダーにつなぐと");
     expect(listEmptyText(kind, true)).toContain("まだ取得した");
+  });
+});
+
+describe("取得の欄の「何を1つのPDFにするか」", () => {
+  it("★画面に常に出るのは1文だけ（60字以内）", () => {
+    for (const kind of DOC_KINDS) {
+      const summary = composeSummary(kind);
+      expect(summary.split("。").filter((t) => t.trim() !== "")).toHaveLength(1);
+      expect(summary.length).toBeLessThanOrEqual(60);
+    }
+    expect(composeSummary(NATSUIN)).toContain("専決決裁書");
+    expect(composeSummary(TENMATSU)).toContain("JPG");
+  });
+
+  it("★畳んだ中に、保留と動画の決まりが残っている", () => {
+    for (const kind of DOC_KINDS) {
+      const details = composeDetails(kind).join("");
+      expect(details).toContain("_保留");
+      expect(details).toContain("動画");
+      expect(details).toContain(kind.text.resolveButton);
+      expect(details).toContain(kind.text.resolveNote);
+    }
   });
 });
 
