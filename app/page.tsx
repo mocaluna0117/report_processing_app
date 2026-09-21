@@ -330,7 +330,7 @@ export default function Home() {
       if (
         !confirm(
           `処理済みの${redo.length}件をもう一度処理します。` +
-            `いまの抽出結果 (直したセル・メール文のカナ・完了報告書の設定・結合PDF) は新しい結果に置き換わります (取り消せません)。\n` +
+            "直したセル・カナ・完了報告書の設定・結合PDFは新しい結果に置き換わります (取り消せません)。\n" +
             `対象: ${names.join(" / ")}${redo.length > names.length ? ` ほか${redo.length - names.length}件` : ""}\n` +
             "よろしいですか？",
         )
@@ -561,7 +561,7 @@ export default function Home() {
     if (
       !confirm(
         `ペアリングに残っていない抽出結果 ${orphanIds.length}件を削除します。` +
-          "アップロードしたPDFとペアリングは残ります (取り消せません)。よろしいですか？",
+          "PDFとペアリングは残ります (取り消せません)。よろしいですか？",
       )
     ) {
       return;
@@ -584,8 +584,8 @@ export default function Home() {
   const clearSaved = async () => {
     if (
       !confirm(
-        "定期点検で保存されているPDF・ペアリング・抽出結果をすべて消去します。取り消せません。" +
-          "(アフターメンテナンスの顧客データ・受付一覧、完了報告書の書体の登録は残ります)よろしいですか？",
+        "定期点検のPDF・ペアリング・抽出結果をすべて消します (取り消せません)。" +
+          "顧客データ・受付一覧・書体の登録は残ります。よろしいですか？",
       )
     ) {
       return;
@@ -738,16 +738,18 @@ export default function Home() {
           </div>
 
           {duplicateCount > 0 && (
-            <p className="mb-2 rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-900">
-              処理済みと同じ施主・点検日のペアが {duplicateCount}組 あります (再ダウンロードした
-              同じ報告書かもしれません)。処理すると抽出結果の行がもう1つ増えるので、
-              既定ではチェックを外しています。
-            </p>
+            <div className="mb-2 rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-900">
+              処理済みと同じ施主・点検日のペアが {duplicateCount}組 あります (既定ではチェックを外しています)。
+              <MoreDetails size="xs" className="text-orange-900">
+                <p>
+                  再ダウンロードした同じ報告書かもしれません。処理すると、抽出結果の行がもう1つ増えます。
+                </p>
+              </MoreDetails>
+            </div>
           )}
           {counts.selectedProcessed > 0 && (
             <p className="mb-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              処理済みの{counts.selectedProcessed}組が選ばれています。もう一度処理すると、
-              いまの抽出結果 (直したセルを含む) は新しい結果に置き換わります。
+              処理済みの{counts.selectedProcessed}組が選ばれています。もう一度処理すると、いまの抽出結果は新しい結果に置き換わります。
             </p>
           )}
           {/* 種別未判定ファイルも両側のプルダウンに含め、手動で割り当てられるようにする */}
@@ -859,10 +861,8 @@ export default function Home() {
           )}
 
           {orphanIds.length > 0 && (
-            <p className="mb-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              ペアリングに残っていない抽出結果が {orphanIds.length}件 あります
-              (以前の版で作られた分です)。コピーやダウンロードはできますが、取り直すには
-              そのPDFを入れ直してください。
+            <div className="mb-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              ペアリングに残っていない抽出結果が {orphanIds.length}件 あります。
               <button
                 type="button"
                 disabled={processing}
@@ -871,7 +871,12 @@ export default function Home() {
               >
                 この{orphanIds.length}件を削除
               </button>
-            </p>
+              <MoreDetails size="xs" className="text-amber-900">
+                <p>
+                  以前の版で作られた分です。コピーやダウンロードはできますが、取り直すにはそのPDFを入れ直してください。
+                </p>
+              </MoreDetails>
+            </div>
           )}
 
           {rows.length === 0 && (
