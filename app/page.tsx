@@ -11,7 +11,9 @@ import { PdfDocumentDialog } from "@/components/pdf-preview";
 import { ReportDialog } from "@/components/report-dialog";
 import { ResultsTable } from "@/components/results-table";
 import { ExamplesDialog } from "@/components/examples-dialog";
+import { MoreDetails } from "@/components/more-details";
 import { StorageBanner } from "@/components/storage-banner";
+import { INSPECTION_SAVE_NOTE, SAVE_PAUSED_TEXT } from "@/lib/privacy-notes";
 import { runLimited } from "@/lib/concurrency";
 import { downloadBlob as download } from "@/lib/download";
 import {
@@ -636,7 +638,6 @@ export default function Home() {
         plan={inspectionFlow(flowInput)}
         ariaLabel="定期点検の手順"
         expanded={isFreshInspection(flowInput)}
-        intro="PDFはブラウザの中で処理され、外部にアップロードされません。"
         helpHref="/help#help-inspection"
       />
 
@@ -888,10 +889,6 @@ export default function Home() {
             >
               一覧・消去
             </button>
-            <span>
-              行の「この書き方を学習」で覚えた文体を、次に処理する報告書の要約の手本として送ります
-              (伏せ字にした本文だけ。キー未設定時の定型要約には使われません)
-            </span>
           </div>
           <ResultsTable
             results={rows}
@@ -996,27 +993,33 @@ export default function Home() {
         <FallbackTsvDialog text={copyState.fallbackTsv} onClose={copyState.closeFallback} />
       )}
 
-      {(files.length > 0 ||
-        rows.length > 0 ||
-        storage.hasSaved ||
-        storage.fontInfo ||
-        learning.examples.length > 0) && (
+      {/* ★保存と送信の説明は、この欄だけに出す（リード文・フッター・各所の繰り返しはやめた）。
+          そのため、まだ何も取り込んでいない画面でも必ず出す */}
+      {storage.restored && (
         <StorageBanner
           description={
-            storage.canPersist
-              ? "アップロードしたPDF・ペアリング・抽出結果はこのブラウザ内に保存され、再読み込みしても残ります (サーバーには送信されません)。作業が終わったら消去してください。"
-              : "このタブでは保存を停止しています (再読み込みすると復元を試み直せます)。以前の保存データが端末に残っている場合は消去できます。"
+            storage.canPersist ? (
+              <>
+                {INSPECTION_SAVE_NOTE.summary}
+                <MoreDetails size="xs" summary="くわしく (保存する中身と Gemini へ送るもの)">
+                  {INSPECTION_SAVE_NOTE.details.map((text) => (
+                    <p key={text}>{text}</p>
+                  ))}
+                </MoreDetails>
+              </>
+            ) : (
+              SAVE_PAUSED_TEXT
+            )
           }
-          detail={
-            learning.examples.length > 0
-              ? `学習した書き方 ${learning.examples.length}件 (伏せ字にした本文だけを保存し、「保存データを消去」では消えません)`
-              : undefined
-          }
+          detail={learning.examples.length > 0 ? `学習した書き方 ${learning.examples.length}件` : undefined}
           usageBytes={storage.usageBytes}
           fontInfo={storage.fontInfo}
           disabled={processing}
           actions={[
-            { label: "保存データを消去", onClick: clearSaved, danger: true },
+            // ★欄自体は常に出すが、消すものが無いときに「消去」は出さない
+            ...(files.length > 0 || rows.length > 0 || storage.hasSaved
+              ? [{ label: "保存データを消去", onClick: clearSaved, danger: true }]
+              : []),
             ...(learning.examples.length > 0
               ? [
                   {
@@ -1042,11 +1045,6 @@ export default function Home() {
         />
       )}
 
-      <footer className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-400">
-        PDFの解析・結合・完了報告書 (Excel・PDF) の作成はすべてブラウザ内で行われます。Gemini APIへ送るのは、
-        個人情報を除いた不具合テキスト (要約用)・署名と電話番号を切り落とした点検シート画像 (工事区分用)・
-        施主名の漢字 (カナ読み用) のみです (キー未設定時は定型要約・手動選択になります)。
-      </footer>
     </main>
   );
 }
