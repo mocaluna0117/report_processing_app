@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
  * 素材を足すたびに人が気を付けるのでは漏れるので、形で見張る。
  * ※実際の値そのものをここに書くと、それ自体が漏えいになるので書かない。
  */
-const ROOTS = ["tests/rakuraku", "lib/rakuraku", "app/api/rakuraku"];
+const ROOTS = ["tests/rakuraku", "lib/rakuraku", "app/api/rakuraku", "scripts/help-shots"];
 
 function collect(): string[] {
   const out: string[] = [];

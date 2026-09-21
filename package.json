@@ -11,6 +11,7 @@
     "typecheck": "rm -f tsconfig.tsbuildinfo && tsc --noEmit",
     "postinstall": "node scripts/copy-assets.mjs",
     "dump": "tsx scripts/dump-textcontent.mts",
+    "help:shots": "tsx scripts/help-shots/index.mts",
     "report:assets": "python3 scripts/build_report_template.py && python3 scripts/build_report_fonts.py",
     "report:geometry": "python3 scripts/extract_report_geometry.py",
     "report:dump": "tsx scripts/dump-report.mts",
