@@ -96,12 +96,36 @@ export async function listDepartments(page: Page): Promise<Department[] | null> 
   return options.filter((o) => o.code !== "" && o.label !== "");
 }
 
-/** いま選ばれている部門。プルダウンが無ければ null */
+/**
+ * `/api/rakuraku/departments` が返す形。
+ *
+ * ★**プルダウンが無いのは失敗ではない。** 「閲覧」タブが無いアカウントには部門の切り替えが無く、
+ *   その人にとってはこれが普通の状態。失敗として返すと、画面で行き止まりになる
+ *   （部門を読めないまま取得ボタンが押せない）。
+ * ★プルダウンはあるが選択肢が空（hasDepartmentSelect が真で departments が空）は別物。
+ *   そのまま取得すると applyDepartment が止めるので、画面は取得させない。
+ */
+export function departmentsBody(
+  list: Department[] | null,
+  current: Department | null,
+): { departments: Department[]; hasDepartmentSelect: boolean; current: Department | null } {
+  return {
+    departments: list ?? [],
+    hasDepartmentSelect: list !== null,
+    current: list === null ? null : current,
+  };
+}
+
+/**
+ * いま選ばれている部門。プルダウンが無ければ null。
+ * ★空の選択肢（区切り用）が選ばれている状態は「選ばれていない」とみなす（listDepartments と揃える）。
+ */
 export async function currentDepartment(page: Page): Promise<Department | null> {
   const frame = await findSelect(page);
   if (!frame) return null;
   const { selected, options } = await readState(frame);
-  return options.find((o) => o.code === selected) ?? null;
+  const found = options.find((o) => o.code === selected) ?? null;
+  return found && found.code !== "" ? found : null;
 }
 
 /** 上限つきで待つ。時間切れでも例外にしない */

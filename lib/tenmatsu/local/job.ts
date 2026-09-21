@@ -596,7 +596,17 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
       } catch {
         errorFile = null; // 書けなくても、画面には理由を出す
       }
-      emit({ state: "error", error: message, error_file: errorFile, message, current: currentNo === "(未着手)" ? null : currentNo });
+      emit({
+        state: "error",
+        error: message,
+        error_file: errorFile,
+        message,
+        // ★符号と「選べる部門」も画面へ渡す。部門を選べずに止まったとき、画面が選択肢を直せるようにする
+        ...(e instanceof RakurakuApiError
+          ? { error_code: e.code, ...(e.available ? { error_departments: e.available } : {}) }
+          : {}),
+        current: currentNo === "(未着手)" ? null : currentNo,
+      });
     }
     return snapshot();
   })();

@@ -371,6 +371,14 @@ describe.skipIf(!browser)("部門を目的のものにする（呼ぶ側が必�
     await page.close();
   });
 
+  it("★選択肢が空のプルダウンがあるときは、部門を指定せずに進ませない（逃げ道の安全網）", async () => {
+    const page = await open("dept-select-empty.html");
+    const error = await failure(applyDepartment(page, null, { log }));
+    expect(error.code).toBe("DEPT_NOT_AVAILABLE");
+    expect(error.message).toContain("選択肢が空でした");
+    await page.close();
+  });
+
   it("★部門を選ばずに（null）来たのにプルダウンがあれば、選べるものを添えて止める", async () => {
     const page = await open("top_frameset.html");
     const error = await failure(applyDepartment(page, null, { log }));

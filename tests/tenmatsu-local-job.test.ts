@@ -411,6 +411,38 @@ describe("止める・画面へ伝える", () => {
 
 });
 
+describe("部門を選べずに止まったとき", () => {
+  it("★符号と「選べる部門」を画面へ渡す（画面が選択肢を直せるように）", async () => {
+    const s = setup();
+    const available = [
+      { code: "1800", label: "アフターメンテナンス課(1800)" },
+      { code: "1900", label: "架空の課(1900)" },
+    ];
+    const { status } = await run(s, {
+      scan: new RakurakuApiError("DEPT_NOT_AVAILABLE", "部門「1800」は選べません", false, false, available),
+    });
+    expect(status.state).toBe("error");
+    expect(status.error_code).toBe("DEPT_NOT_AVAILABLE");
+    expect(status.error_departments).toEqual(available);
+  });
+
+  it("選べる部門が分からない失敗には、余計な項目を付けない", async () => {
+    const s = setup();
+    const { status } = await run(s, {
+      scan: new RakurakuApiError("DEPT_SELECT_MISSING", "部門の切り替えが見つかりません"),
+    });
+    expect(status.error_code).toBe("DEPT_SELECT_MISSING");
+    expect(status.error_departments).toBeUndefined();
+  });
+
+  it("楽楽精算と関係のない失敗には符号を付けない（古いサーバーと同じ形）", async () => {
+    const s = setup();
+    const { status } = await run(s, { scan: new Error("なにかの不具合") });
+    expect(status.state).toBe("error");
+    expect(status.error_code).toBeUndefined();
+  });
+});
+
 describe("混み合っているとき", () => {
   it("★Folio のサーバーが混み合っていたら、少し待ってやり直す（楽楽精算には触っていないので安全）", async () => {
     const s = setup();

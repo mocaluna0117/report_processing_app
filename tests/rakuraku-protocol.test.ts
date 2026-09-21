@@ -7,6 +7,7 @@ import {
   parseFetchRequest,
   parseScanRequest,
   parseSurveyRequest,
+  normalizeDepartmentsResponse,
   readNdjson,
 } from "@/lib/rakuraku/protocol";
 
@@ -112,6 +113,34 @@ describe("/survey の本文を確かめる", () => {
   it("sessionToken が無ければ断る・部門の値の形も見る", () => {
     expect(parseSurveyRequest({ deptCode: null }).ok).toBe(false);
     expect(parseSurveyRequest({ sessionToken: "a.b.c", deptCode: "1900; drop" }).ok).toBe(false);
+  });
+});
+
+describe("/departments の応答", () => {
+  const after = { code: "1800", label: "アフターメンテナンス課(1800)" };
+
+  it("プルダウンの有無をそのまま読む", () => {
+    expect(normalizeDepartmentsResponse({ departments: [after], current: after, hasDepartmentSelect: true })).toEqual({
+      departments: [after],
+      current: after,
+      hasDepartmentSelect: true,
+    });
+    expect(normalizeDepartmentsResponse({ departments: [], current: null, hasDepartmentSelect: false })).toMatchObject({
+      hasDepartmentSelect: false,
+    });
+  });
+
+  it("★古いサーバー（この項目が無い）は、選択肢があればプルダウンも有ったとみなす", () => {
+    expect(normalizeDepartmentsResponse({ departments: [after], current: after }).hasDepartmentSelect).toBe(true);
+    // 空を「選択肢が空」と誤判定しない（古いサーバーは、プルダウンが無いときは失敗を返していた）
+    expect(normalizeDepartmentsResponse({ departments: [], current: null }).hasDepartmentSelect).toBe(false);
+  });
+
+  it("形の壊れた選択肢は落とす", () => {
+    expect(
+      normalizeDepartmentsResponse({ departments: [after, { code: 1 }, null, "x"], current: "x" }),
+    ).toEqual({ departments: [after], current: null, hasDepartmentSelect: true });
+    expect(normalizeDepartmentsResponse(null)).toEqual({ departments: [], current: null, hasDepartmentSelect: false });
   });
 });
 

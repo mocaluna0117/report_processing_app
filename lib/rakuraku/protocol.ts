@@ -97,6 +97,37 @@ export interface DepartmentOption {
   label: string;
 }
 
+/** `/api/rakuraku/departments` の応答（ブラウザ側で使う形に直したもの） */
+export interface DepartmentsResponse {
+  departments: DepartmentOption[];
+  current: DepartmentOption | null;
+  /**
+   * 部門のプルダウンがあったか。
+   * ★**無い＝失敗ではない**（「閲覧」タブが無いアカウントには切り替えが無い）。部門を指定せずに取得する。
+   * ★プルダウンはあるのに選択肢が空、という別の状態と見分けるためにこの項目がある。
+   */
+  hasDepartmentSelect: boolean;
+}
+
+const isOption = (v: unknown): v is DepartmentOption =>
+  isObject(v) && typeof v.code === "string" && typeof v.label === "string";
+
+/**
+ * `/departments` の応答を読む。
+ * ★古いサーバーは hasDepartmentSelect を返さない（プルダウンが無いときは失敗を返していた）。
+ *   そのときは「選択肢があればプルダウンも有った」とみなす（空を「選択肢が空」と誤判定しない）。
+ */
+export function normalizeDepartmentsResponse(raw: unknown): DepartmentsResponse {
+  const body = isObject(raw) ? raw : {};
+  const departments = Array.isArray(body.departments) ? body.departments.filter(isOption) : [];
+  return {
+    departments,
+    current: isOption(body.current) ? body.current : null,
+    hasDepartmentSelect:
+      typeof body.hasDepartmentSelect === "boolean" ? body.hasDepartmentSelect : departments.length > 0,
+  };
+}
+
 /** 進み具合の段階（画面の「いま何をしているか」に出す） */
 export type ProgressStage =
   | "open"

@@ -2,6 +2,7 @@ import type { Browser } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   currentDepartment,
+  departmentsBody,
   ensureDepartment,
   listDepartments,
 } from "@/lib/rakuraku/department";
@@ -31,6 +32,26 @@ async function open(path: string) {
   await page.goto(`${server!.url}/${path}`, { waitUntil: "load" });
   return page;
 }
+
+describe("応答の形（プルダウンが無いのは失敗ではない）", () => {
+  const quality = { code: QUALITY, label: "品質管理部(1900)" };
+
+  it("★プルダウンが無いアカウントは、空の一覧＋「切り替え無し」として返す", () => {
+    expect(departmentsBody(null, null)).toEqual({ departments: [], hasDepartmentSelect: false, current: null });
+  });
+
+  it("★プルダウンはあるが選択肢が空、とは分けて返す", () => {
+    expect(departmentsBody([], null)).toEqual({ departments: [], hasDepartmentSelect: true, current: null });
+  });
+
+  it("選べる部門はそのまま返す", () => {
+    expect(departmentsBody([quality], quality)).toEqual({
+      departments: [quality],
+      hasDepartmentSelect: true,
+      current: quality,
+    });
+  });
+});
 
 describe.skipIf(!browser)("部門の選択", () => {
     it("選べる部門を読める", async () => {
@@ -74,6 +95,14 @@ describe.skipIf(!browser)("部門の選択", () => {
       }
       // 画面は触られていない
       expect(await page.locator("#cur").innerText()).toBe("品質管理部(1900)");
+      await page.close();
+    });
+
+    it("★選択肢が空のプルダウンは [] を返す（プルダウンが無いのと混ぜない）", async () => {
+      const page = await open("dept-select-empty.html");
+      expect(await listDepartments(page)).toEqual([]);
+      expect(await currentDepartment(page)).toBeNull();
+      expect(await ensureDepartment(page, QUALITY)).toEqual({ kind: "not-available", available: [] });
       await page.close();
     });
 

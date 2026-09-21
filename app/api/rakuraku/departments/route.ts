@@ -1,21 +1,26 @@
 import { NextResponse } from "next/server";
 import type { BrowserContextOptions } from "playwright-core";
 import { launchBrowser } from "@/lib/rakuraku/browser";
-import { currentDepartment, listDepartments } from "@/lib/rakuraku/department";
-import { DEPT_SELECT_MISSING_TEXT, RakurakuError } from "@/lib/rakuraku/errors";
-import { assertTenantUrl } from "@/lib/rakuraku/config";
-import { GuardError, assertEnabled, assertSameOrigin } from "@/lib/rakuraku/guard";
-import { isLoginScreen } from "@/lib/rakuraku/login";
+import { currentDepartment, departmentsBody, listDepartments } from "@/lib/rakuraku/department";
+import { assertEnabled, assertSameOrigin } from "@/lib/rakuraku/guard";
 import { log } from "@/lib/rakuraku/log";
-import { SessionError, reseal, unseal } from "@/lib/rakuraku/session";
+import { openHome } from "@/lib/rakuraku/navigation";
+import { reseal, unseal } from "@/lib/rakuraku/session";
+import { toErrorEvent } from "@/lib/rakuraku/stream";
 
 /**
  * このアカウントで**実際に選べる部門**を楽楽精算から読む。
  *
  * ★ 部門名を設定に持たない理由がここにある。アカウントによって選べるものが違うので、
  *   決め打ちにすると「選べない部門を指定したまま、別部門の伝票を黙って取る」ことが起こる。
- * ★ プルダウンが無いのは画面が変わったからではなく、**権限が無い**ことが多い。
- *   その区別が付く符号（DEPT_SELECT_MISSING）で返す。
+ * ★ **プルダウンが無いのは失敗ではない**（「閲覧」タブが無いアカウントには切り替えが無い）。
+ *   hasDepartmentSelect を添えて成功として返し、画面はそのまま「部門を指定せず」に進める。
+ *   部門を指定したのにプルダウンが無いとき（取得時）は、今までどおり DEPT_SELECT_MISSING で止める。
+ * ★ **ここでは開き直し（やり直し）をしない。** 実際に起きた失敗は Chromium の処理そのものが
+ *   消えたときのもので、同じブラウザで開き直しても成功しようがない。作り直すと空き枠の取り合い
+ *   （最大30秒待ち）と立ち上げ直しで持ち時間（60秒）を使い切り、原因になったメモリも余計に使う。
+ *   やり直しはブラウザ側（lib/tenmatsu/local/departments.ts）で行う。新しい呼び出しになるので
+ *   空き枠もメモリも取り直しになり、しかも順番に1回ずつなので重ならない。
  */
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -30,8 +35,8 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     tenant = assertEnabled();
   } catch (e) {
-    const code = e instanceof GuardError ? e.code : "INTERNAL";
-    return json({ ok: false, code, message: (e as Error).message });
+    const { type: _type, ...body } = toErrorEvent(e);
+    return json({ ok: false, ...body });
   }
 
   let sessionToken = "";
@@ -46,51 +51,39 @@ export async function POST(request: Request) {
   let launched;
   try {
     const session = unseal(sessionToken);
-    const { state, home } = session;
-    // ★ ログイン画面の URL を開いてはいけない。ログイン済みでもフォームが出るので、
-    //   「パスワード欄があるか」で見ると必ず「切れている」と誤判定する。
-    const target = assertTenantUrl(home, tenant).toString();
     launched = await launchBrowser();
     const context = await launched.browser.newContext({
-      storageState: JSON.parse(state) as BrowserContextOptions["storageState"],
+      storageState: JSON.parse(session.state) as BrowserContextOptions["storageState"],
     });
     const page = await context.newPage();
-    await page.goto(target, { waitUntil: "load", timeout: 30_000 });
+    // ★ ログイン画面の URL を開いてはいけない。ログイン済みでもフォームが出るので、
+    //   「パスワード欄があるか」で見ると必ず「切れている」と誤判定する。
+    //   openHome はテナントの中かを確かめ、繋がらなければ TENANT_UNREACHABLE（やり直してよい失敗）、
+    //   ログインが切れていれば SESSION_EXPIRED にしてくれる。
+    await openHome(page, tenant, session.home);
 
-    if (await isLoginScreen(page)) {
-      log("list", { ok: false, code: "SESSION_EXPIRED" });
-      return json({
-        ok: false,
-        code: "SESSION_EXPIRED",
-        message: "ログインし直してください",
-      });
-    }
-
-    const departments = await listDepartments(page);
-    if (!departments) {
-      log("list", { ok: false, code: "DEPT_SELECT_MISSING" });
-      return json({ ok: false, code: "DEPT_SELECT_MISSING", message: DEPT_SELECT_MISSING_TEXT });
-    }
-
-    const current = await currentDepartment(page);
-    log("list", { ok: true, n_departments: departments.length, ms_total: Date.now() - started });
+    const list = await listDepartments(page);
+    const body = departmentsBody(list, list === null ? null : await currentDepartment(page));
+    log("list", {
+      ok: true,
+      n_departments: body.departments.length,
+      n_dept_select: body.hasDepartmentSelect ? 1 : 0,
+      ms_total: Date.now() - started,
+    });
     return json({
       ok: true,
-      departments,
-      current,
-      // ★期限と一覧のURLは引き継ぐ (以前はここで期限が延び、lists が落ちていた)
+      ...body,
+      // ★期限と覚えた経路は引き継ぐ (以前はここで期限が延び、覚えた分が落ちていた)
       sessionToken: reseal(session, JSON.stringify(await context.storageState())),
       expiresAt: session.exp,
       totalMs: Date.now() - started,
     });
   } catch (e) {
-    const code = e instanceof RakurakuError ? e.code : e instanceof SessionError ? "SESSION_EXPIRED" : "INTERNAL";
-    log("list", { ok: false, code });
-    return json({
-      ok: false,
-      code,
-      message: e instanceof Error ? e.message.split("\n")[0].slice(0, 200) : "失敗しました",
-    });
+    // ★失敗の種類（やり直してよいか・ログインし直しが要るか）もそのまま返す。
+    //   ブラウザ側はこれを見て、一時的な失敗のときだけ1回やり直す
+    const { type: _type, ...body } = toErrorEvent(e);
+    log("list", { ok: false, code: body.code });
+    return json({ ok: false, ...body });
   } finally {
     await launched?.close();
   }

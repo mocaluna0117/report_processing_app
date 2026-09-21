@@ -154,6 +154,43 @@ describe("Folio のサーバーを呼ぶ", () => {
   });
 });
 
+describe("部門を読む", () => {
+  it("プルダウンが無いアカウントも成功として受け取る", async () => {
+    const { impl } = fakeFetch({
+      "/api/rakuraku/departments": () =>
+        Response.json({ ok: true, departments: [], current: null, hasDepartmentSelect: false, sessionToken: "s2" }),
+    });
+    expect(await createRakurakuApi({ fetchImpl: impl }).departments("s1")).toEqual({
+      departments: [],
+      current: null,
+      hasDepartmentSelect: false,
+      sessionToken: "s2",
+      expiresAt: null,
+    });
+  });
+
+  it("★やり直してよい失敗かどうかを、サーバーの言うとおりに受け取る", async () => {
+    const { impl } = fakeFetch({
+      "/api/rakuraku/departments": () =>
+        Response.json({ ok: false, code: "TENANT_UNREACHABLE", message: "繋がりません", retryable: true, sessionLost: false }),
+    });
+    const error = await createRakurakuApi({ fetchImpl: impl })
+      .departments("s1")
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: "TENANT_UNREACHABLE", retryable: true, sessionLost: false });
+  });
+
+  it("古いサーバー（この項目が無い）でも、ログインし直しが要るかは今までどおり分かる", async () => {
+    const { impl } = fakeFetch({
+      "/api/rakuraku/departments": () => Response.json({ ok: false, code: "SESSION_EXPIRED", message: "切れました" }),
+    });
+    const error = await createRakurakuApi({ fetchImpl: impl })
+      .departments("s1")
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: "SESSION_EXPIRED", sessionLost: true, retryable: false });
+  });
+});
+
 describe("一覧の経路と画面の下見", () => {
   it("★どの経路で一覧を開いたかを受け取る（ほかの行と混ざらない）", async () => {
     const { impl } = fakeFetch({

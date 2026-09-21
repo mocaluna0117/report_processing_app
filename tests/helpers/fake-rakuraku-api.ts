@@ -21,7 +21,8 @@ export type FetchScript = FetchResult | RakurakuApiError | ((request: FetchReque
 export interface FakeApiScript {
   /** ログインの結果。省略すると成功（トークンは token-1, token-2 … と増える） */
   login?: (userId: string, password: string, count: number) => RakurakuApiError | null;
-  scan?: ScanResult | RakurakuApiError | ((request: ScanRequest, count: number) => ScanResult | RakurakuApiError);
+  /** Error を返すとその場で投げる（楽楽精算と関係のない不具合を真似るときは素の Error） */
+  scan?: ScanResult | Error | ((request: ScanRequest, count: number) => ScanResult | Error);
   /** 伝票No.ごとの答え。配列なら呼ばれるたびに先頭から使う */
   fetch?: Record<string, FetchScript | FetchScript[]>;
   attachment?: (request: AttachmentRequest) => ReceivedFile | RakurakuApiError;
@@ -85,7 +86,8 @@ export function createFakeApi(script: FakeApiScript): FakeApi {
     },
     departments: async () => {
       calls.push({ method: "departments" });
-      return { departments: [], current: null, sessionToken: "token-d", expiresAt: null };
+      // 部門の切り替えが無いアカウント（「閲覧」タブが無い人）を既定にする
+      return { departments: [], current: null, hasDepartmentSelect: false, sessionToken: "token-d", expiresAt: null };
     },
     survey: async (request, handlers) => {
       calls.push({ method: "survey", request });
@@ -97,7 +99,7 @@ export function createFakeApi(script: FakeApiScript): FakeApi {
       scans += 1;
       calls.push({ method: "scan", request });
       const answer = typeof script.scan === "function" ? script.scan(request, scans) : (script.scan ?? scanOf([]));
-      if (answer instanceof RakurakuApiError) throw answer;
+      if (answer instanceof Error) throw answer;
       emit(handlers);
       return answer;
     },

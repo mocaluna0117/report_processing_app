@@ -6,7 +6,7 @@
 // "potentially trustworthy" 扱いだから (混在コンテンツにはならない)。
 //
 // fetch は引数で受け取れるようにしてある (テストがグローバルに触らずに済むように)。
-import type { RouteHow, RouteScope } from "@/lib/rakuraku/protocol";
+import type { DepartmentOption, RouteHow, RouteScope } from "@/lib/rakuraku/protocol";
 
 /** ローカルサーバーの状態。done は次の実行かサーバー再起動まで done のまま残る */
 export type JobState = "idle" | "running" | "done" | "error";
@@ -106,6 +106,13 @@ export interface StatusPayload {
   error: string | null;
   /** 失敗したときの、PC上のログのパス */
   error_file: string | null;
+  /** 失敗の符号 (RakurakuCode)。無い＝この項目に未対応の古いサーバー */
+  error_code?: string | null;
+  /**
+   * 部門を選べずに止まったとき、このアカウントで**選べる部門**。
+   * ★画面の選択肢をこれで直して、同じ失敗を繰り返させない（「部門を指定せず」で始めたときの戻り道）。
+   */
+  error_departments?: DepartmentOption[] | null;
   /** 完了時の保存件数 (実行中はずっと 0) */
   processed: number;
   /** 1回あたりの上限で今回は見送った件数。0 でなければ必ず画面に出す (黙って切り捨てない) */

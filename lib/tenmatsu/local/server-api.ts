@@ -10,6 +10,7 @@ import {
   type AttachmentRequest,
   type ComposeEvent,
   type DepartmentOption,
+  type DepartmentsResponse,
   type ErrorEvent,
   type FetchRequest,
   FileAssembler,
@@ -24,6 +25,7 @@ import {
   type ScanRequest,
   type ScanTarget,
   type SurveyReport,
+  normalizeDepartmentsResponse,
   type SurveyRequest,
   readNdjson,
 } from "@/lib/rakuraku/protocol";
@@ -110,7 +112,7 @@ export interface RakurakuApi {
   login(userId: string, password: string): Promise<{ sessionToken: string; expiresAt: number | null }>;
   departments(
     sessionToken: string,
-  ): Promise<{ departments: DepartmentOption[]; current: DepartmentOption | null; sessionToken: string; expiresAt: number | null }>;
+  ): Promise<DepartmentsResponse & { sessionToken: string; expiresAt: number | null }>;
   scan(request: ScanRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<ScanResult>;
   fetch(request: FetchRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<FetchResult>;
   attachment(request: AttachmentRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<ReceivedFile>;
@@ -155,7 +157,15 @@ export function createRakurakuApi(options: { fetchImpl?: typeof fetch; baseUrl?:
     if (!parsed) throw new RakurakuApiError("INTERNAL", "Folio のサーバーからの応答を読めませんでした", true);
     if (parsed.ok !== true) {
       const code = parsed.code ?? "INTERNAL";
-      throw new RakurakuApiError(code, parsed.message ?? "失敗しました", false, code === "SESSION_EXPIRED");
+      // ★やり直してよいか・ログインし直しが要るかはサーバーの言うとおりにする
+      //   （古いサーバーは返さないので、今までどおり符号から決める）
+      const body = parsed as { retryable?: unknown; sessionLost?: unknown };
+      throw new RakurakuApiError(
+        code,
+        parsed.message ?? "失敗しました",
+        body.retryable === true,
+        typeof body.sessionLost === "boolean" ? body.sessionLost : code === "SESSION_EXPIRED",
+      );
     }
     return parsed;
   };
@@ -221,13 +231,12 @@ export function createRakurakuApi(options: { fetchImpl?: typeof fetch; baseUrl?:
     },
 
     departments: async (sessionToken) => {
-      const res = await json<{
-        departments: DepartmentOption[];
-        current: DepartmentOption | null;
-        sessionToken: string;
-        expiresAt?: number;
-      }>("departments", { sessionToken });
-      return { ...res, expiresAt: typeof res.expiresAt === "number" ? res.expiresAt : null };
+      const res = await json<{ sessionToken: string; expiresAt?: number }>("departments", { sessionToken });
+      return {
+        ...normalizeDepartmentsResponse(res),
+        sessionToken: res.sessionToken,
+        expiresAt: typeof res.expiresAt === "number" ? res.expiresAt : null,
+      };
     },
 
     scan: async (request, handlers = {}, signal) => {
