@@ -12,7 +12,9 @@ import { FallbackTsvDialog } from "@/components/fallback-tsv-dialog";
 import { MailDialog } from "@/components/mail-dialog";
 import { ReportDialog } from "@/components/report-dialog";
 import { ResultsTable } from "@/components/results-table";
+import { MoreDetails } from "@/components/more-details";
 import { StorageBanner } from "@/components/storage-banner";
+import { AFTER_SAVE_NOTE, SAVE_PAUSED_TEXT } from "@/lib/privacy-notes";
 import { createAfterCase } from "@/lib/after/case";
 import { applyEdits, effectiveFields, needsReview, resetEdits } from "@/lib/after/customer";
 import { type AfterFlowInput, afterFlow, isFreshAfter } from "@/lib/after/flow";
@@ -348,15 +350,13 @@ export function AfterPage() {
   return (
     <main>
       <p className="mt-4 text-sm text-slate-600">
-        お問い合わせを受けた補修の受付です。お客様を選び、コールセンターの受付内容を貼り付けると、
-        Excel転記用の行・メール文・完了報告書を作れます。
+        お客様を選び、コールセンターの受付内容を貼り付けると、Excel転記用の行・メール文・完了報告書を作れます。
       </p>
 
       <FlowSteps
         plan={afterFlow(flowInput)}
         ariaLabel="アフターメンテナンス受付の手順"
         expanded={isFreshAfter(flowInput)}
-        intro="顧客データと受付一覧はこのブラウザ内にだけ保存されます。要約のためにGemini APIへ送るのは、氏名・電話番号・住所を伏せ字にした受付内容だけです。"
         helpHref="/help#help-after"
       />
 
@@ -424,10 +424,6 @@ export function AfterPage() {
             >
               一覧・消去
             </button>
-            <span>
-              受付一覧の「この書き方を学習」で覚えた文体を、次の要約の手本として送ります
-              (伏せ字にした本文だけ。キー未設定時の定型要約には使われません)
-            </span>
           </div>
         )}
       </div>
@@ -569,12 +565,23 @@ export function AfterPage() {
         />
       )}
 
-      {(customers.length > 0 || cases.length > 0 || examples.length > 0 || storage.fontInfo) && (
+      {/* ★保存と送信の説明は、この欄だけに出す（前書き・受付欄・フッターの繰り返しはやめた）。
+          そのため、まだ何も取り込んでいない画面でも必ず出す */}
+      {storage.restored && (
         <StorageBanner
           description={
-            storage.canPersist
-              ? "顧客データと受付一覧はこのブラウザ内に保存され、再読み込みしても残ります (サーバーには送信されません)。顧客データは定期点検の「保存データを消去」では消えません。学習した書き方は伏せ字にした本文だけを保存し、「受付一覧を消去」では消えません。"
-              : "このタブでは保存を停止しています (再読み込みすると復元を試み直せます)。"
+            storage.canPersist ? (
+              <>
+                {AFTER_SAVE_NOTE.summary}
+                <MoreDetails size="xs" summary="くわしく (保存する中身と Gemini へ送るもの)">
+                  {AFTER_SAVE_NOTE.details.map((text) => (
+                    <p key={text}>{text}</p>
+                  ))}
+                </MoreDetails>
+              </>
+            ) : (
+              SAVE_PAUSED_TEXT
+            )
           }
           detail={`顧客データ ${summary.total.toLocaleString()}件 / 受付 ${cases.length}件 / 学習した書き方 ${examples.length}件`}
           usageBytes={storage.usageBytes}
@@ -595,11 +602,6 @@ export function AfterPage() {
         />
       )}
 
-      <footer className="mt-10 border-t border-slate-200 pt-4 text-xs text-slate-400">
-        顧客データの取り込み・完了報告書 (Excel・PDF) の作成はすべてブラウザ内で行われます。Gemini
-        APIへ送るのは、お客様の氏名・電話番号・住所・メールアドレスを伏せ字にした受付内容だけです
-        (キー未設定時は定型の要約になります)。学習した書き方 (伏せ字済み) も手本として一緒に送ります。
-      </footer>
     </main>
   );
 }

@@ -65,13 +65,8 @@ export function AfterIntake({
       />
 
       <div className="mt-2 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs text-slate-500">
-            要約のためにGemini APIへ送るのは、お客様の氏名・電話番号・住所を伏せ字にした受付内容だけです
-          </p>
-          {/* ★押せない理由を見える文字で（お客様が未選択のときは上に出ているので重ねない） */}
-          <BlockedReason reason={blocked} className="mt-1" />
-        </div>
+        {/* ★押せない理由を見える文字で（お客様が未選択のときは上に出ているので重ねない） */}
+        <BlockedReason reason={blocked} className="mt-1" />
         <button
           type="button"
           onClick={onSubmit}

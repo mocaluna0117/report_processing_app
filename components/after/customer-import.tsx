@@ -98,13 +98,8 @@ export function CustomerImport({
           accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           pattern={/\.(xlsx|csv)$/i}
           title={importing ? "取り込み中…" : "顧客情報のファイル (xlsx / csv) をドロップ"}
-          description={
-            <>
-              助っ人クラウド・点検保守台帳のどちらの形式かは自動で判定します。
-              <br />
-              取り込んだ顧客データはこのブラウザ内にだけ保存されます。
-            </>
-          }
+          // ★保存の話は画面のいちばん下（保存の欄）へまとめた
+          description="助っ人クラウド・点検保守台帳のどちらの形式かは自動で判定します。"
         />
       </div>
 
