@@ -15,6 +15,7 @@ import {
   tenmatsuFlow,
   tenmatsuStepDefs,
 } from "@/lib/tenmatsu/local/flow";
+import { RAKURAKU_CHIP_ID } from "@/lib/rakuraku-login-dialog";
 
 /** 何も始めていない画面（読み込みは終わっている） */
 const fresh = (kind: DocKind, over: Partial<TenmatsuFlowInput> = {}): TenmatsuFlowInput => ({
@@ -128,7 +129,11 @@ describe.each(DOC_KINDS)("$label の手順", (kind) => {
 
   it("段の飛び先は種類ごとに分かれていて、重なっていない", () => {
     const defs = tenmatsuStepDefs(kind);
-    expect(defs.every((d) => d.targetId.startsWith(`${kind.id}-`))).toBe(true);
+    // ★ログインだけは例外。入力欄はモーダルに移したので、行き先はどの画面にもある
+    //   ヘッダーの表示になる（種類で分かれない）。ほかの段は必ず自分の種類の欄を指す
+    const login = defs.find((d) => d.id === "login")!;
+    expect(login.targetId).toBe(RAKURAKU_CHIP_ID);
+    expect(defs.filter((d) => d.id !== "login").every((d) => d.targetId.startsWith(`${kind.id}-`))).toBe(true);
     expect(new Set(defs.map((d) => d.id)).size).toBe(defs.length);
   });
 
@@ -253,7 +258,9 @@ describe("★押せない理由と、押せるかの判定が食い違わない"
 
   it("理由を直せる欄へ案内する", () => {
     expect(runBlockedReason(ready(TENMATSU, { connected: false }))?.targetId).toBe("tenmatsu-folder");
-    expect(runBlockedReason(ready(TENMATSU, { loggedIn: false }))?.targetId).toBe("tenmatsu-rakuraku");
+    // ★ログインはモーダルなので、案内先はヘッダーの表示（押すとモーダルが開く）
+    expect(runBlockedReason(ready(TENMATSU, { loggedIn: false }))?.targetId).toBe(RAKURAKU_CHIP_ID);
+    expect(runBlockedReason(ready(TENMATSU, { loggedIn: false }))?.targetLabel).toBe("ログイン");
     // 同じ欄の中にあるものは案内しない
     expect(runBlockedReason(ready(TENMATSU, { deptLabel: null }))?.targetId).toBeNull();
   });

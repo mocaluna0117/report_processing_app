@@ -327,10 +327,11 @@ export const RECIPES: readonly Recipe[] = [
     // ★未ログインで開くとログインの画面が出て写真を覆うので、出さない設定で撮る
     dismissLogin: true,
     hide: ['nav[aria-label="顛末書の手順"] > div:last-child'],
-    clip: ["#tenmatsu-folder", "#tenmatsu-rakuraku"],
+    // ★ログインの欄は画面から無くしたので、ヘッダーの表示まで入れて撮る
+    clip: ["header", "#tenmatsu-folder"],
     hotspots: [
+      { at: "#rakuraku-login" },
       { at: '#tenmatsu-folder button:has-text("保存先フォルダーを選ぶ")' },
-      { at: '#tenmatsu-rakuraku button:has-text("ログイン")' },
     ],
   },
   {

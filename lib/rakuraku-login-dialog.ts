@@ -38,6 +38,13 @@ export interface LoginDialogState {
  */
 export const LOGIN_DISMISSED_KEY = "folio:rakuraku:login-dismissed";
 
+/**
+ * ヘッダーの楽楽精算の表示に付ける目印。
+ * ★手順バーの②と「→ ログイン」の行き先。入力欄は画面から無くしてモーダルに移したので、
+ *   行き先は**どの画面にもあるヘッダーの表示**になる（押すとモーダルも開く）。
+ */
+export const RAKURAKU_CHIP_ID = "rakuraku-login";
+
 let state: LoginDialogState = { open: false, reason: null, kind: null };
 const listeners = new Set<(state: LoginDialogState) => void>();
 

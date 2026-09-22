@@ -9,7 +9,12 @@ import { SIGNED_IN_COOKIE } from "@/lib/auth";
 import { HELP_SECTIONS } from "@/lib/help";
 import { getHelpDialogState, openHelp, subscribeHelpDialog } from "@/lib/help-dialog";
 import { getNavigationGuard } from "@/lib/navigation-guard";
-import { openLoginDialog, rakurakuChip, subscribeLoginDialog } from "@/lib/rakuraku-login-dialog";
+import {
+  RAKURAKU_CHIP_ID,
+  openLoginDialog,
+  rakurakuChip,
+  subscribeLoginDialog,
+} from "@/lib/rakuraku-login-dialog";
 import { DOC_KINDS } from "@/lib/tenmatsu/kinds";
 import {
   getLoginUserId,
@@ -117,6 +122,7 @@ export function ModeNav() {
       {/* ★楽楽精算のログイン（Folio 自体のログインとは別物）。どの画面からでも開けるよう
           ここに1つだけ置く。定期点検・アフターでは自分から開かない（楽楽精算を使わないため） */}
       <button
+        id={RAKURAKU_CHIP_ID}
         type="button"
         onClick={() => openLoginDialog("manual", currentKind)}
         aria-haspopup="dialog"

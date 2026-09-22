@@ -99,10 +99,10 @@ export const HELP_SHOTS: Readonly<Record<string, readonly HelpShot[]>> = {
     {
       id: "tenmatsu-folder",
       caption: "開いたところ。保存先フォルダーとログインが要ります。",
-      alt: "保存先フォルダーの欄と、楽楽精算の欄",
+      alt: "ヘッダーの楽楽精算の表示と、保存先フォルダーの欄",
       hotspots: [
+        { text: "楽楽精算のログイン状態。押すとログインの画面が開きます" },
         { text: "PDFを置くフォルダーを選び、ブラウザに聞かれたら「許可」を選びます" },
-        { text: "押すとログインの画面が開きます（右上の「楽楽精算」からも開けます）" },
       ],
     },
     {

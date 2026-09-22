@@ -35,8 +35,8 @@ export const HELP_SHOT_GEOMETRY: Readonly<Record<string, HelpShotGeometry>> = {
   },
   "tenmatsu-folder": {
     width: 2496,
-    height: 464,
-    hotspots: [{ x: 90.3, y: 18.5 }, { x: 94.2, y: 74.6 }],
+    height: 640,
+    hotspots: [{ x: 93.9, y: 8.8 }, { x: 90.3, y: 72.8 }],
   },
   "tenmatsu-login": {
     width: 1024,
@@ -50,8 +50,8 @@ export const HELP_SHOT_GEOMETRY: Readonly<Record<string, HelpShotGeometry>> = {
   },
   "senketsu-run": {
     width: 2496,
-    height: 436,
-    hotspots: [{ x: 14.3, y: 49.1 }, { x: 74.9, y: 49.1 }, { x: 90.7, y: 49.1 }],
+    height: 552,
+    hotspots: [{ x: 14.3, y: 38.8 }, { x: 74.9, y: 38.8 }, { x: 90.7, y: 38.8 }],
   },
   "senketsu-list": {
     width: 2496,
@@ -60,8 +60,8 @@ export const HELP_SHOT_GEOMETRY: Readonly<Record<string, HelpShotGeometry>> = {
   },
   "natsuin-run": {
     width: 2496,
-    height: 492,
-    hotspots: [{ x: 51.5, y: 43.5 }, { x: 50, y: 67.9 }],
+    height: 608,
+    hotspots: [{ x: 51.5, y: 35.2 }, { x: 50, y: 54.9 }],
   },
   "natsuin-list": {
     width: 2496,

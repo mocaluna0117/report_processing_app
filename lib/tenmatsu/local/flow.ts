@@ -8,6 +8,7 @@
  *   食い違うと「押せないのに理由が出ない」に戻るので、tests/tenmatsu-flow.test.ts で総当たりに確かめる。
  */
 import { type FlowPlan, type FlowStepDef, type StepEval, resolveFlow } from "@/lib/flow-steps";
+import { RAKURAKU_CHIP_ID } from "@/lib/rakuraku-login-dialog";
 import type { DocKind, DocKindId } from "@/lib/tenmatsu/kinds";
 import { LOCAL_KINDS } from "@/lib/tenmatsu/local/kind-config";
 import { FOLDER_UNSUPPORTED_TEXT } from "@/lib/tenmatsu/local/folder-handle";
@@ -64,7 +65,8 @@ export function tenmatsuStepDefs(kind: DocKind): FlowStepDef[] {
       label: "楽楽精算にログイン",
       description:
         "ご自分の楽楽精算のログインIDとパスワードを入れます。失敗しても自動でやり直しません (アカウントがロックされるため)。",
-      targetId: `${kind.id}-rakuraku`,
+      // ★入力欄はモーダルに移したので、行き先は画面の欄ではなくヘッダーの表示（押すとモーダルが開く）
+      targetId: RAKURAKU_CHIP_ID,
     },
     {
       id: "dept",
@@ -156,7 +158,7 @@ export interface BlockedReasonText {
  */
 export function runBlockedReason(input: TenmatsuFlowInput): BlockedReasonText | null {
   const folder = { targetId: `${input.kind.id}-folder`, targetLabel: "保存先フォルダーへ" };
-  const rakuraku = { targetId: `${input.kind.id}-rakuraku`, targetLabel: "楽楽精算へ" };
+  const rakuraku = { targetId: RAKURAKU_CHIP_ID, targetLabel: "ログイン" };
   const here = { targetId: null, targetLabel: null };
   if (input.running) return null; // ボタン自身が進み具合を出している
   if (!input.restored) return { text: "前回の内容を読み込んでいます…", ...here };

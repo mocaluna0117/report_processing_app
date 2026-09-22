@@ -71,9 +71,9 @@ import {
 } from "@/lib/tenmatsu/local/flow";
 import { LOCAL_KINDS, RUN_LIMITS } from "@/lib/tenmatsu/local/kind-config";
 import {
+  RAKURAKU_CHIP_ID,
   getLoginDialogState,
   isLoginDismissedInTab,
-  markLoginDismissedInTab,
   openLoginDialog,
   shouldAutoOpenLogin,
   shouldPromptOnSessionLost,
@@ -191,7 +191,6 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   /** ログインIDをこのブラウザに保存してあるか（入力しただけでは消去の導線を出さない） */
   const [userIdSaved, setUserIdSaved] = useState(false);
   const [loggedIn, setLoggedIn] = useState(getSessionToken() !== null);
-  const [hasPassword, setHasPassword] = useState(getPassword() !== null);
   const [departments, setDepartments] = useState<DepartmentOption[] | null>(kept.departments);
   const [deptCode, setDeptCode] = useState<string | null>(kept.deptCode);
   /** ★部門の失敗はログインの失敗と分ける。混ぜると、やり直しの導線まで隠れて行き止まりになる */
@@ -232,7 +231,6 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     const sync = () => {
       const token = getSessionToken();
       setLoggedIn(token !== null);
-      setHasPassword(getPassword() !== null);
       // 「閲覧」タブの有無も揃える（再読み込みで戻したとき・別の種類のタブでログインしたとき）
       setViewTab(getViewTab());
       // ログインの画面で入れたIDを写す（取得のときの auth.userId と、登録を消す導線に使う）
@@ -848,11 +846,12 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   const steps = tenmatsuStepDefs(kind);
   const sectionId = (id: string) => steps.find((s) => s.id === id)?.targetId;
   /**
-   * 手順②や「→ 楽楽精算へ」を押したとき、まだログインしていなければログインの画面を開く。
-   * ★入力欄はこの画面に無いので、欄へ動かすだけだと行き止まりになる。開くだけでログインはしない。
+   * 手順②や「→ ログイン」を押したときに、ログインの画面を開く。
+   * ★楽楽精算の欄はこの画面から無くしたので、行き先はヘッダーの表示とこの画面だけ。
+   *   ログイン済みでも開く（ログイン状態の確認とログアウトができる）。開くだけでログインはしない。
    */
-  const openLoginIfNeeded = (targetId: string) => {
-    if (!loggedIn && targetId === sectionId("login")) openLoginDialog("manual", kind.id);
+  const openLoginFor = (targetId: string) => {
+    if (targetId === RAKURAKU_CHIP_ID) openLoginDialog("manual", kind.id);
   };
 
   const preview = previewNo ? (items.find((i) => i.denpyo_no === previewNo) ?? null) : null;
@@ -876,7 +875,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
         ariaLabel={`${kind.label}の手順`}
         expanded={isFreshTenmatsu(flowInput)}
         helpSlug={kind.id}
-        onStepClick={(step) => openLoginIfNeeded(step.targetId)}
+        onStepClick={(step) => openLoginFor(step.targetId)}
       />
 
       {storage.storageError && <p className={WARN_CLASS}>{storage.storageError}</p>}
@@ -957,74 +956,6 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
                   ),
                 );
               }}
-            />
-          )}
-        </section>
-
-        {/* ---------- 楽楽精算 ---------- */}
-        {/* ★入力欄はヘッダーのログインの画面（モーダル）に移した（2026-09-22）。
-            ここは残す: 手順②の行き先・このアカウントの経路・「画面の下見」の置き場所 */}
-        <section id={sectionId("login")} tabIndex={-1} className={`${SECTION_CLASS} scroll-mt-4`}>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold">
-                楽楽精算
-                <span className={SUBTITLE_CLASS}>
-                  ご自分のログインIDとパスワードでログインします（3つの書類で共通です）
-                </span>
-              </h2>
-              <p className="mt-1 text-sm text-slate-600">
-                {loggedIn ? (
-                  <>
-                    <span className="font-medium text-emerald-700">ログインしています</span>
-                    {userId && <span className="ml-2 text-xs text-slate-500">ID: {userId}</span>}
-                  </>
-                ) : (
-                  "まだログインしていません"
-                )}
-              </p>
-              {/* ★ログインした時点で分かる「閲覧」タブの有無。一覧の経路はこれで決まるので、
-                  選ばせるのではなく、決まった結果を伝える（取れる伝票の範囲が変わるため） */}
-              {loggedIn && accountRoute && <p className="mt-1 text-xs text-slate-500">{accountRoute}</p>}
-              {loggedIn && !hasPassword && (
-                <p className="mt-1 text-xs text-slate-500">
-                  取得の途中でログインが切れたときは、パスワードを入れ直していただく必要があります。
-                </p>
-              )}
-            </div>
-            {loggedIn ? (
-              <button
-                type="button"
-                onClick={() => {
-                  forgetLogin();
-                  setDepartments(null);
-                  // 押した直後にログインの画面が出てこないように（自分で開けばいつでも出せる）
-                  markLoginDismissedInTab();
-                }}
-                disabled={running}
-                className={SECONDARY_BUTTON_CLASS}
-              >
-                ログアウト (パスワードを忘れる)
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => openLoginDialog("manual", kind.id)}
-                className={PRIMARY_BUTTON_CLASS}
-              >
-                ログイン
-              </button>
-            )}
-          </div>
-
-          {loggedIn && (
-            <TenmatsuSurvey
-              api={api}
-              sessionToken={getSessionToken()}
-              deptCode={deptCode}
-              onSession={(token) => setLogin({ sessionToken: token })}
-              disabled={running || otherRunning}
-              disabledReason={running || otherRunning ? "取得が終わってから実行してください" : undefined}
             />
           )}
         </section>
@@ -1123,6 +1054,9 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
             </div>
           </div>
 
+          {/* ★ログインした時点で分かる「閲覧」タブの有無。一覧の経路はこれで決まり、
+              **取れる伝票の範囲が変わる**ので、取得を押す場所のすぐ近くに出す */}
+          {loggedIn && accountRoute && <p className="mt-2 text-xs text-slate-500">{accountRoute}</p>}
           {loggedIn && departments !== null && departments.length === 0 && (
             <p className="mt-2 text-xs text-slate-500">このアカウントには部門の切り替えが無いので、部門を指定せずに取得します。</p>
           )}
@@ -1186,12 +1120,24 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
             reason={!canRun && !running ? (runBlocked?.text ?? null) : null}
             targetId={runBlocked?.targetId}
             targetLabel={runBlocked?.targetLabel}
-            onTarget={openLoginIfNeeded}
+            onTarget={openLoginFor}
             className="mt-2"
           />
 
           {/* この種類だけの進み方（捺印決裁書は取得しただけでは終わらない） */}
           {kind.text.flowNote && <p className="mt-2 text-sm text-slate-600">{kind.text.flowNote}</p>}
+
+          {/* ★一覧をどの経路でも開けないときの手当て。畳んであるので普段は目に入らない */}
+          {loggedIn && (
+            <TenmatsuSurvey
+              api={api}
+              sessionToken={getSessionToken()}
+              deptCode={deptCode}
+              onSession={(token) => setLogin({ sessionToken: token })}
+              disabled={running || otherRunning}
+              disabledReason={running || otherRunning ? "取得が終わってから実行してください" : undefined}
+            />
+          )}
 
           {/* ★何を1つのPDFにするかは1文だけ。保留・動画・保護のかかったPDFの話は「くわしく」に入れる
               （以前は5文が常に並んでいて読み飛ばされていた）。文は lib/tenmatsu/local/flow.ts にある */}
