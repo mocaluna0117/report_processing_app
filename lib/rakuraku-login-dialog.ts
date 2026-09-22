@@ -169,32 +169,49 @@ export function shouldAutoCloseLogin(input: {
   return input.open && input.loggedIn && input.reason !== "manual";
 }
 
-export type ChipTone = "unknown" | "off" | "on";
+export type ChipTone =
+  /** まだ分からない（サーバーで描いた直後）。静かに出す */
+  | "unknown"
+  /** 未ログイン。**その画面で要る**ので目立たせる */
+  | "alert"
+  /** 未ログイン。ただしその画面では使わないので静かに出す */
+  | "off"
+  | "on";
 
 export interface ChipView {
   text: string;
   tone: ChipTone;
   title: string;
+  /** 状態の点を出すか（読み上げには出さない飾り） */
+  dot: boolean;
 }
 
 /**
  * ヘッダーに出す楽楽精算の状態。
+ *
  * ★`known` が false のあいだ（サーバーで描いた直後）は「楽楽精算」とだけ出す。
  *   ここで sessionStorage を読むと、サーバーの描画と食い違う。
+ * ★未ログインを目立たせるのは**楽楽精算を使う画面**（顛末書・専決決裁書・捺印決裁書）だけ。
+ *   定期点検・アフターでは使わないので、そこで気を引くと邪魔なだけになる。
  */
 export function rakurakuChip(input: {
   known: boolean;
   loggedIn: boolean;
   userId: string | null;
+  /** いま見ているのが楽楽精算を使う画面か（顛末書系なら true） */
+  onDocPage: boolean;
 }): ChipView {
   if (!input.known) {
-    return { text: "楽楽精算", tone: "unknown", title: "楽楽精算のログイン" };
+    return { text: "楽楽精算", tone: "unknown", title: "楽楽精算のログイン", dot: false };
   }
   if (!input.loggedIn) {
     return {
       text: "楽楽精算: 未ログイン",
-      tone: "off",
-      title: "押すと楽楽精算のログインの画面が開きます（顛末書・専決決裁書・捺印決裁書で使います）",
+      tone: input.onDocPage ? "alert" : "off",
+      title: input.onDocPage
+        ? "この画面の取得には楽楽精算のログインが要ります。押すとログインの画面が開きます"
+        : "押すと楽楽精算のログインの画面が開きます（顛末書・専決決裁書・捺印決裁書で使います）",
+      dot: input.onDocPage,
     };
   }
   return {
@@ -203,8 +220,18 @@ export function rakurakuChip(input: {
     title: input.userId
       ? `ID: ${input.userId}。押すとログインの画面が開きます（ログアウトもできます）`
       : "押すとログインの画面が開きます（ログアウトもできます）",
+    dot: true,
   };
 }
+
+/**
+ * ヘッダーの「ログアウト」の文言。
+ * ★楽楽精算のログアウト（「ログアウト (パスワードを忘れる)」）と取り違えられていたので、
+ *   どちらのログアウトかを名前に入れる。
+ */
+export const FOLIO_LOGOUT_LABEL = "Folio からログアウト";
+export const FOLIO_LOGOUT_TITLE =
+  "Folio 自体のログインを解除します（楽楽精算のログアウトは「楽楽精算」の表示から）。共有の端末では作業後に押してください";
 
 /** 押す前に知っておくこと。★「ロック」と「やり直しません」を落とさない */
 export const LOGIN_RULE_TEXT =

@@ -9,7 +9,10 @@ import { SIGNED_IN_COOKIE } from "@/lib/auth";
 import { HELP_SECTIONS } from "@/lib/help";
 import { getHelpDialogState, openHelp, subscribeHelpDialog } from "@/lib/help-dialog";
 import { getNavigationGuard } from "@/lib/navigation-guard";
+import type { ChipTone } from "@/lib/rakuraku-login-dialog";
 import {
+  FOLIO_LOGOUT_LABEL,
+  FOLIO_LOGOUT_TITLE,
   RAKURAKU_CHIP_ID,
   openLoginDialog,
   rakurakuChip,
@@ -27,6 +30,18 @@ import {
  * 画面 (処理の種類)。扱うデータが別なのでURLも分ける。
  * 顛末書と専決決裁書は同じ作りなので、種類の設定から並べる。
  */
+/**
+ * 楽楽精算の表示の見た目。
+ * ★**未ログイン（alert）はいちばん目立たせる**。ほかのボタンと同じ灰色だと気づかれなかった。
+ * ★楽楽精算を使わない画面（定期点検・アフター）では静かにする（off）。
+ */
+const CHIP_CLASS: Record<ChipTone, string> = {
+  alert: "border border-amber-400 bg-amber-100 font-semibold text-amber-900 shadow-sm hover:bg-amber-200",
+  on: "border border-emerald-300 bg-emerald-50 font-medium text-emerald-800 hover:bg-emerald-100",
+  off: "border border-slate-300 bg-white font-medium text-slate-600 hover:bg-slate-50",
+  unknown: "border border-slate-300 bg-white font-medium text-slate-600 hover:bg-slate-50",
+};
+
 export const MODES: readonly { href: string; label: string }[] = [
   { href: "/", label: "定期点検" },
   { href: "/after", label: "アフターメンテナンス" },
@@ -65,11 +80,11 @@ export function ModeNav() {
   }, []);
   const [loginOpen, setLoginOpen] = useState(false);
   useEffect(() => subscribeLoginDialog((s) => setLoginOpen(s.open)), []);
-  const chip = rakurakuChip(rakuraku);
   /** いま見ている画面の使い方を、開いたときの既定タブにする */
   const currentSlug = HELP_SECTIONS.find((s) => s.href === pathname)?.slug ?? null;
-  /** いま見ているのが顛末書系ならその種類（モーダルの文言に使う）。ほかは null */
+  /** いま見ているのが顛末書系ならその種類（楽楽精算を使う画面か）。ほかは null */
   const currentKind = DOC_KINDS.find((k) => k.route === pathname)?.id ?? null;
+  const chip = rakurakuChip({ ...rakuraku, onDocPage: currentKind !== null });
 
   // ログイン画面では画面の切り替えを出さない (押しても戻されるだけなので)
   if (pathname === "/login") return null;
@@ -128,26 +143,32 @@ export function ModeNav() {
         aria-haspopup="dialog"
         aria-pressed={loginOpen}
         title={chip.title}
-        className={
-          chip.tone === "on"
-            ? "cursor-pointer rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
-            : "cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
-        }
+        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1 text-xs ${CHIP_CLASS[chip.tone]}`}
       >
+        {chip.dot && (
+          <span
+            aria-hidden
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${chip.tone === "on" ? "bg-emerald-500" : "bg-amber-500"}`}
+          />
+        )}
         {chip.text}
       </button>
       <HelpDialog />
       <RakurakuLoginDialog />
       {signedIn && (
-        <form method="post" action="/api/logout">
-          <button
-            type="submit"
-            title="このブラウザのログインを解除します (共有の端末では作業後に押してください)"
-            className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
-          >
-            ログアウト
-          </button>
-        </form>
+        <>
+          {/* ★楽楽精算のログアウトと取り違えないよう、間に区切りを入れて名前も分ける */}
+          <span aria-hidden className="h-4 w-px shrink-0 bg-slate-300" />
+          <form method="post" action="/api/logout">
+            <button
+              type="submit"
+              title={FOLIO_LOGOUT_TITLE}
+              className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+            >
+              {FOLIO_LOGOUT_LABEL}
+            </button>
+          </form>
+        </>
       )}
     </div>
   );

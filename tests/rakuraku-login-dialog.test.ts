@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  FOLIO_LOGOUT_LABEL,
+  FOLIO_LOGOUT_TITLE,
   LOGIN_DISMISSED_KEY,
   LOGIN_RULE_TEXT,
   clearLoginDismissal,
@@ -185,26 +187,60 @@ describe("ほかの場所でログインできたとき", () => {
 });
 
 describe("ヘッダーの表示", () => {
+  const chip = (over: Parameters<typeof rakurakuChip>[0]) => rakurakuChip(over);
+
   it("★分かる前は「楽楽精算」だけ（サーバーで描いた中身と食い違わせない）", () => {
-    const chip = rakurakuChip({ known: false, loggedIn: false, userId: "17xxxx" });
-    expect(chip.text).toBe("楽楽精算");
-    expect(chip.tone).toBe("unknown");
-    expect(chip.title).not.toContain("17xxxx");
+    const view = chip({ known: false, loggedIn: false, userId: "17xxxx", onDocPage: true });
+    expect(view.text).toBe("楽楽精算");
+    expect(view.tone).toBe("unknown");
+    expect(view.dot).toBe(false);
+    expect(view.title).not.toContain("17xxxx");
   });
 
-  it("未ログインなら、そう出して押せることも伝える", () => {
-    const chip = rakurakuChip({ known: true, loggedIn: false, userId: null });
-    expect(chip.text).toBe("楽楽精算: 未ログイン");
-    expect(chip.tone).toBe("off");
-    expect(chip.title).toContain("開きます");
+  it("★楽楽精算を使う画面で未ログインなら、いちばん目立たせる", () => {
+    const view = chip({ known: true, loggedIn: false, userId: null, onDocPage: true });
+    expect(view.text).toBe("楽楽精算: 未ログイン");
+    expect(view.tone).toBe("alert");
+    expect(view.dot).toBe(true);
+    expect(view.title).toContain("この画面の取得には");
+  });
+
+  it("★使わない画面（定期点検・アフター）では静かにする", () => {
+    const view = chip({ known: true, loggedIn: false, userId: null, onDocPage: false });
+    expect(view.text).toBe("楽楽精算: 未ログイン");
+    expect(view.tone).toBe("off");
+    expect(view.dot).toBe(false);
   });
 
   it("ログイン中は ID を添える（画面の文字には出さない）", () => {
-    const chip = rakurakuChip({ known: true, loggedIn: true, userId: "ID-1" });
-    expect(chip.text).toBe("楽楽精算: ログイン中");
-    expect(chip.tone).toBe("on");
-    expect(chip.title).toContain("ID-1");
-    expect(chip.text).not.toContain("ID-1");
+    const view = chip({ known: true, loggedIn: true, userId: "ID-1", onDocPage: true });
+    expect(view.text).toBe("楽楽精算: ログイン中");
+    expect(view.tone).toBe("on");
+    expect(view.dot).toBe(true);
+    expect(view.title).toContain("ID-1");
+    expect(view.text).not.toContain("ID-1");
+  });
+
+  it("ログイン中の見た目は、どの画面でも同じ", () => {
+    const a = chip({ known: true, loggedIn: true, userId: null, onDocPage: true });
+    const b = chip({ known: true, loggedIn: true, userId: null, onDocPage: false });
+    expect(a).toEqual(b);
+  });
+});
+
+describe("Folio 自体のログアウト", () => {
+  it("★どちらのログアウトか、名前で分かるようにする", () => {
+    expect(FOLIO_LOGOUT_LABEL).toContain("Folio");
+    expect(FOLIO_LOGOUT_LABEL).toContain("ログアウト");
+  });
+
+  it("楽楽精算のログアウトの場所も添える", () => {
+    expect(FOLIO_LOGOUT_TITLE).toContain("楽楽精算");
+    expect(FOLIO_LOGOUT_TITLE).toContain("共有の端末");
+  });
+
+  it("★楽楽精算側の文言とは別物（取り違えない）", () => {
+    expect(FOLIO_LOGOUT_LABEL).not.toContain("パスワードを忘れる");
   });
 });
 
