@@ -20,6 +20,13 @@ import type { BrowserDirHandle } from "./folder-handle";
 // ---------------------------------------------------------------------------
 
 let password: string | null = null;
+/**
+ * ログインに使ったID。**メモリだけ**（控えには書かない）。
+ * ★取得の途中でログインが切れたときの入り直し（lib/tenmatsu/local/job.ts）が、
+ *   IndexedDB への保存を待たずに使えるようにするために持つ。
+ *   ブラウザに覚えるIDは別（lib/storage.ts の `rakuraku:userId`）。
+ */
+let loginUserId: string | null = null;
 let sessionToken: string | null = null;
 /** sessionToken の期限（ミリ秒）。サーバーが教えてくれなかったら null（期限を見ない） */
 let expiresAt: number | null = null;
@@ -119,6 +126,11 @@ export function getPassword(): string | null {
   return password;
 }
 
+/** ログインに使ったID（メモリだけ。まだログインしていなければ null） */
+export function getLoginUserId(): string | null {
+  return loginUserId;
+}
+
 export function getSessionToken(): string | null {
   return sessionToken;
 }
@@ -138,11 +150,14 @@ const notify = () => {
  */
 export function setLogin(next: {
   password?: string | null;
+  /** ★控えには書かない（メモリだけ） */
+  userId?: string | null;
   sessionToken?: string | null;
   expiresAt?: number | null;
   viewTab?: boolean | null;
 }): void {
   if (next.password !== undefined) password = next.password;
+  if (next.userId !== undefined) loginUserId = next.userId;
   if (next.sessionToken !== undefined) {
     sessionToken = next.sessionToken;
     if (next.sessionToken === null) {
@@ -160,6 +175,7 @@ export function setLogin(next: {
 /** パスワードとログイン状態を忘れる（「パスワードを忘れる」ボタン・ログインIDを変えたとき） */
 export function forgetLogin(): void {
   password = null;
+  loginUserId = null;
   sessionToken = null;
   expiresAt = null;
   viewTab = null;
@@ -277,6 +293,7 @@ export function keepFolderSession(kind: DocKindId, next: Omit<FolderSession, "hy
 export function resetFolderSessions(): void {
   sessions.clear();
   password = null;
+  loginUserId = null;
   sessionToken = null;
   expiresAt = null;
   viewTab = null;

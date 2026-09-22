@@ -26,6 +26,11 @@ export interface Recipe {
   seed?: SeedData;
   /** 楽楽精算にログイン済みに見せる（部門も入れておくと読みに行かない） */
   login?: { departments?: { code: string; label: string }[]; deptCode?: string; kind?: string };
+  /**
+   * 楽楽精算のログインの画面（モーダル）を自動で出さない。
+   * ★未ログインのまま顛末書系の画面を撮るときに要る（出したままだと写真を覆う）。
+   */
+  dismissLogin?: boolean;
   /** 撮る前の操作（押しても外へ出ない操作だけ） */
   act?: (page: Page) => Promise<void>;
   /** 撮る前に隠す要素（「使い方」ページに同じ文章が載っている部分など） */

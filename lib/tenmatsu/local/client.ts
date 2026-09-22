@@ -26,6 +26,7 @@ import {
   RUN_COUNT_FORMAT_MESSAGE,
   TenmatsuError,
 } from "@/lib/tenmatsu/client";
+import { currentActiveRun, hasActiveRun, setActiveRun } from "./active-run";
 import { createHashMemo } from "./fingerprint";
 import { FolderError, type FolderStore } from "./fs";
 import { ImportError, type ImportSummary, importRecords, previewImport } from "./import";
@@ -50,24 +51,11 @@ import {
 import { RecordNotFoundError, RecordsCorruptError, pendingDirPath, readRecords, retryPending, setFlags } from "./records";
 import type { RakurakuApi } from "./server-api";
 
-/** このページの中で走っている取得（種類をまたいで1本） */
-let activeRun: { kind: KindId; handle: RunHandle } | null = null;
-
-/** このページの中で取得が走っているか（種類を渡すとその種類だけ） */
-export function hasActiveRun(kind?: KindId): boolean {
-  if (!activeRun || activeRun.handle.snapshot().state !== "running") return false;
-  return kind === undefined || activeRun.kind === kind;
-}
-
-/** 走っている取得の種類（無ければ null） */
-export function activeRunKind(): KindId | null {
-  return hasActiveRun() ? activeRun!.kind : null;
-}
-
-/** テスト用。走っている取得の控えを消す */
-export function resetActiveRun(): void {
-  activeRun = null;
-}
+/**
+ * 走っている取得の控えは ./active-run.ts に置いてある（ヘッダーから軽く読めるように切り出した）。
+ * 呼び元が変わらないよう、ここから今までどおり出す。
+ */
+export { activeRunKind, hasActiveRun, resetActiveRun } from "./active-run";
 
 export interface LocalFolderClientOptions {
   kind: KindId;
@@ -170,8 +158,11 @@ export function createLocalFolderClient(options: LocalFolderClientOptions): Loca
   const { store } = options;
   const cache = options.statsCache ?? memoryStatsCache();
 
-  const mine = () => (activeRun?.kind === options.kind ? activeRun.handle : null);
-  const running = () => activeRun !== null && activeRun.handle.snapshot().state === "running";
+  const mine = () => {
+    const run = currentActiveRun();
+    return run?.kind === options.kind ? run.handle : null;
+  };
+  const running = () => hasActiveRun();
 
   /** 取得中は、記録と部品を書き換える操作を断る */
   const refuseWhileRunning = () => {
@@ -224,8 +215,8 @@ export function createLocalFolderClient(options: LocalFolderClientOptions): Loca
           service: "folio-folder",
           version: 1,
           save_dir: store.name,
-          job_state: activeRun?.handle.snapshot().state ?? "idle",
-          job_kind: activeRun?.kind ?? null,
+          job_state: currentActiveRun()?.handle.snapshot().state ?? "idle",
+          job_kind: currentActiveRun()?.kind ?? null,
           kind: options.kind,
           max_per_run: RUN_LIMITS.value,
           max_per_run_min: RUN_LIMITS.min,
@@ -255,7 +246,7 @@ export function createLocalFolderClient(options: LocalFolderClientOptions): Loca
         throw new TenmatsuError("badRequest", null, `1回に取る件数は ${RUN_LIMITS.min}〜${RUN_LIMITS.max} で指定してください`);
       }
       if (running()) {
-        return { started: false, status: activeRun!.handle.snapshot(), maxPerRun: null, headless: null };
+        return { started: false, status: currentActiveRun()!.handle.snapshot(), maxPerRun: null, headless: null };
       }
       // 始める前にフォルダーが使えるか確かめる（許可が無いまま楽楽精算に触らない）
       await guard(() => store.probe());
@@ -273,7 +264,7 @@ export function createLocalFolderClient(options: LocalFolderClientOptions): Loca
         },
         { limit },
       );
-      activeRun = { kind: options.kind, handle };
+      setActiveRun({ kind: options.kind, handle });
       return { started: true, status: handle.snapshot(), maxPerRun: limit, headless: true };
     },
 

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   LOGIN_STORAGE_KEY,
   forgetLogin,
+  getLoginUserId,
   getPassword,
   getSessionToken,
   rememberDepartments,
@@ -131,5 +132,26 @@ describe("楽楽精算のログインをタブに残す", () => {
     setLogin({ sessionToken: "sealed-1", expiresAt: null });
     reload();
     expect(restoreLogin()).toBe(true);
+  });
+});
+
+describe("ログインに使ったID", () => {
+  it("取得の途中の入り直しに使えるよう、メモリに覚える", () => {
+    setLogin({ userId: "ID-1", password: "secret-pass", sessionToken: "sealed-1" });
+    expect(getLoginUserId()).toBe("ID-1");
+  });
+
+  it("★タブの控えには入れない (再読み込みすると消える)", () => {
+    setLogin({ userId: "ID-1", sessionToken: "sealed-1", expiresAt: Date.now() + 60_000 });
+    expect(storage.getItem(LOGIN_STORAGE_KEY)).not.toContain("ID-1");
+    reload();
+    restoreLogin();
+    expect(getLoginUserId()).toBeNull();
+  });
+
+  it("ログアウトすると消える", () => {
+    setLogin({ userId: "ID-1", password: "secret-pass", sessionToken: "sealed-1" });
+    forgetLogin();
+    expect(getLoginUserId()).toBeNull();
   });
 });
