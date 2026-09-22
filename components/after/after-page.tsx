@@ -112,7 +112,10 @@ export function AfterPage() {
   const shared = useSharedFolder({
     storage,
     onSynced: async (report) => {
-      if (report.customers.applied > 0) setCustomers(await loadCustomers());
+      // ★共有フォルダーの顧客ファイルを取り込んだときも読み直す（件数と一覧が古いままになる）
+      if (report.customers.applied > 0 || report.ledger.imported.length > 0) {
+        setCustomers(await loadCustomers());
+      }
       await learningRef.current?.restore();
     },
   });

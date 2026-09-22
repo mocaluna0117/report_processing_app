@@ -63,7 +63,7 @@ export function SharedFolderPanel({
               台帳の取り込み値そのもの・受付一覧・受付メモの原文・定期点検のPDFと抽出結果は置きません。閲覧できる人は、そのフォルダーの権限どおりです。
             </p>
             <p>
-              2人が<strong>同じ顧客ファイル</strong>を取り込んでいると手直しが結び付きます。顧客のxlsxも同じフォルダーに置いて、両方の端末で取り込んでください。
+              共有フォルダーに顧客データの xlsx / csv を置いておくと、<strong>この画面が自分で取り込みます</strong>（ファイルが変わったときだけ）。2人が同じファイルから作るので、手直しが確実に結び付きます。手で取り込む（下の「顧客データ」の枠にドロップする）道も今までどおり使えます。
             </p>
           </MoreDetails>
         </div>
@@ -105,13 +105,27 @@ export function SharedFolderPanel({
         </div>
       </div>
 
+      {view.ledgerReplace && (
+        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p>{view.ledgerReplace}</p>
+          <button
+            type="button"
+            disabled={shared.syncing}
+            onClick={() => void shared.sync({ allowLedgerReplace: true })}
+            className="mt-2 rounded-md border border-amber-400 bg-white px-3 py-1.5 text-sm font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+          >
+            共有フォルダーの顧客ファイルを取り込む
+          </button>
+        </div>
+      )}
+
       {view.firstWrite && (
         <div className="mt-3 rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900">
           <p>{view.firstWrite}</p>
           <button
             type="button"
             disabled={shared.syncing}
-            onClick={() => void shared.sync(true)}
+            onClick={() => void shared.sync({ allowFirstWrite: true })}
             className="mt-2 rounded-md border border-sky-400 bg-white px-3 py-1.5 text-sm font-semibold text-sky-800 hover:bg-sky-100 disabled:opacity-50"
           >
             このフォルダーへ書き出す

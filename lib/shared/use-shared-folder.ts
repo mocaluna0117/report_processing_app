@@ -44,8 +44,8 @@ export interface SharedFolderHook {
   choose: () => Promise<void>;
   /** 前回のフォルダーに、許可をもらってつなぐ */
   connect: () => Promise<void>;
-  /** いま同期する。初回の書き出しを許すときだけ allowFirstWrite */
-  sync: (allowFirstWrite?: boolean) => Promise<void>;
+  /** いま同期する。初回の書き出しや、顧客ファイルの入れ替えを許すときだけ true を渡す */
+  sync: (options?: { allowFirstWrite?: boolean; allowLedgerReplace?: boolean }) => Promise<void>;
   /** 手直し・学習のあとに呼ぶ（まとめて少し後に同期する） */
   scheduleSync: () => void;
   /** 登録を消す（★フォルダーの中のファイルは消さない） */
@@ -89,12 +89,12 @@ export function useSharedFolder({
   );
 
   /** 1回分の同期。フォルダーそのものが使えないときだけ state を error にする */
-  const runSync = useCallback(async (folder: SharedFolder, allowFirstWrite: boolean) => {
+  const runSync = useCallback(async (folder: SharedFolder, allow: { allowFirstWrite?: boolean; allowLedgerReplace?: boolean }) => {
     if (!canPersistRef.current || busyRef.current) return;
     busyRef.current = true;
     setSyncing(true);
     try {
-      const next = await syncShared(folder, { allowFirstWrite });
+      const next = await syncShared(folder, allow);
       setReport(next);
       setLastSync(await loadLastSync());
       setError(null);
@@ -118,7 +118,7 @@ export function useSharedFolder({
         await folder.probe();
         folderRef.current = folder;
         setState("connected");
-        await runSync(folder, false);
+        await runSync(folder, {});
       } catch (e) {
         folderRef.current = null;
         setState("error");
@@ -181,10 +181,10 @@ export function useSharedFolder({
       if (handle) await open(handle, true);
     },
 
-    sync: async (allowFirstWrite = false) => {
+    sync: async (options = {}) => {
       const folder = folderRef.current;
       if (!folder) return;
-      await runSync(folder, allowFirstWrite);
+      await runSync(folder, options);
       storage.refreshUsage();
     },
 
@@ -193,8 +193,8 @@ export function useSharedFolder({
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
         const folder = folderRef.current;
-        // ★初回の書き出しはここでは許さない（利用者がボタンで確かめてから）
-        if (folder) void runSync(folder, false);
+        // ★初回の書き出しと顧客ファイルの入れ替えは、ここでは許さない（ボタンで確かめてから）
+        if (folder) void runSync(folder, {});
       }, SYNC_DEBOUNCE_MS);
     },
 

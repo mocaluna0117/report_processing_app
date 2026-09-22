@@ -104,12 +104,15 @@ export const SETTING_KEY_RAKURAKU_USER_ID = "rakuraku:userId";
  * - `shared:deviceId` … この端末の目印（乱数。氏名やPC名は入れない）
  * - `shared:lastSync` … 最後に同期できた日時
  * - `shared:examplesDeleted:<種類>` … 消した手本の印（消したことを相手へ伝えるため）
+ * - `shared:customerFiles` … 共有フォルダーの顧客ファイルを取り込んだときの目印
+ *   （大きさと更新時刻。変わっていないファイルを取り込み直さないため）
  * ★いずれも設定なので「保存データを消去」では消さない（専用のボタンで消す）。
  * ★顧客の個人情報はここには置かない（共有フォルダー側のファイルと、customers ストアにある）。
  */
 export const SETTING_KEY_SHARED_FOLDER = "shared:folder";
 export const SETTING_KEY_SHARED_DEVICE_ID = "shared:deviceId";
 export const SETTING_KEY_SHARED_LAST_SYNC = "shared:lastSync";
+export const SETTING_KEY_SHARED_CUSTOMER_FILES = "shared:customerFiles";
 export const sharedExamplesDeletedKey = (kind: string): string => `shared:examplesDeleted:${kind}`;
 
 export function isStorageAvailable(): boolean {

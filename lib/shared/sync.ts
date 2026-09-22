@@ -13,10 +13,25 @@
 // ★まだ1つもファイルが無いフォルダーへは、**尋ねずに書き出さない**
 //   （別のフォルダーを選んでしまったときに、いきなり中身を作らないため）。
 import {
+  type ImportReport,
   type SharedMergeReport,
+  countCustomers,
   loadSharedCustomerEdits,
   mergeSharedCustomerEdits,
+  saveImport,
 } from "@/lib/after/customer-store";
+import { type ParsedImport, parseCustomerFile } from "@/lib/after/import";
+import type { CustomerSource } from "@/lib/after/types";
+import {
+  type FolderFile,
+  type SeenCustomerFiles,
+  decideLedgerImport,
+  fileChanged,
+  keepMarks,
+  ledgerImportedText,
+  markOf,
+  pickCustomerFiles,
+} from "@/lib/shared/customer-files";
 import {
   type ExampleKind,
   loadSharedExamples,
@@ -39,7 +54,7 @@ import {
   pickSharedExamples,
 } from "@/lib/shared/examples";
 import { type SharedFolder, sharedErrorText } from "@/lib/shared/folder";
-import { saveLastSync } from "@/lib/shared/store";
+import { loadSeenCustomerFiles, saveLastSync, saveSeenCustomerFiles } from "@/lib/shared/store";
 
 /** 学習した書き方の種類 → 共有フォルダーのファイル */
 export const EXAMPLE_DATASETS: Readonly<Record<ExampleKind, SharedDatasetId>> = {
@@ -56,6 +71,12 @@ export interface SyncDeps {
   loadExamples: (kind: ExampleKind) => Promise<SharedExamples>;
   mergeExamples: (kind: ExampleKind, incoming: SharedExamples) => Promise<SharedExamples>;
   saveLastSync: (at: number) => Promise<void>;
+  /** 取り込み元ごとの、この端末の顧客の数（減らしていないかを見るため） */
+  countBySource: () => Promise<Record<CustomerSource, number>>;
+  /** ファイルを取り込んでブラウザへ保存する */
+  saveImport: (parsed: ParsedImport) => Promise<ImportReport>;
+  loadSeenCustomerFiles: () => Promise<SeenCustomerFiles>;
+  saveSeenCustomerFiles: (seen: SeenCustomerFiles) => Promise<void>;
 }
 
 export const DEFAULT_SYNC_DEPS: SyncDeps = {
@@ -64,12 +85,26 @@ export const DEFAULT_SYNC_DEPS: SyncDeps = {
   loadExamples: loadSharedExamples,
   mergeExamples: mergeSharedStoredExamples,
   saveLastSync,
+  countBySource: async () => (await countCustomers()).bySource,
+  saveImport,
+  loadSeenCustomerFiles,
+  saveSeenCustomerFiles,
 };
 
 /** この端末にあって、まだフォルダーに出していないかもしれない分の件数（初回の確認に出す） */
 export interface SharedPending {
   customers: number;
   examples: Record<ExampleKind, number>;
+}
+
+/** 共有フォルダーの顧客ファイルを取り込んだ結果 */
+export interface LedgerReport {
+  /** 取り込めたファイルの1行（画面にそのまま出す） */
+  imported: string[];
+  /** 減るので確かめてもらうもの。ボタンを押すと取り込む */
+  pending: { file: string; text: string }[];
+  /** 顧客データとして読めなかったファイル（ほかのファイルが置いてあるだけのことが多い） */
+  skipped: { file: string; message: string }[];
 }
 
 export interface SyncFailure {
@@ -89,6 +124,8 @@ export interface SyncReport {
   pending: SharedPending;
   customers: { applied: number; unmatched: number; written: boolean };
   examples: Record<ExampleKind, { count: number; written: boolean }>;
+  /** 共有フォルダーに置いた顧客データのファイル */
+  ledger: LedgerReport;
   /** 読めなかった・書けなかったデータ（ほかは進めている） */
   failures: SyncFailure[];
 }
@@ -100,6 +137,11 @@ export interface SyncOptions {
    * ★既定は false（利用者がボタンで確かめてから書く）。
    */
   allowFirstWrite?: boolean;
+  /**
+   * 共有フォルダーの顧客ファイルを取り込むと件数が減る場合でも、取り込んでよいか。
+   * ★既定は false（利用者がボタンで確かめてから入れ替える）。
+   */
+  allowLedgerReplace?: boolean;
   deps?: SyncDeps;
 }
 
@@ -127,6 +169,9 @@ export async function syncShared(
   // ★フォルダーそのものが使えるか。ここで落ちたら、以降は全部落ちるので投げる
   await folder.probe();
 
+  // ★台帳を先に取り込む。手直しはそのあとで当てる（新しい台帳の上に乗せるため）
+  const ledger = await importLedgerFiles(folder, deps, options.allowLedgerReplace ?? false);
+
   const [mineCustomers, mineExamples] = await Promise.all([
     deps.loadCustomerEdits(),
     Promise.all(EXAMPLE_KINDS.map((kind) => deps.loadExamples(kind))),
@@ -147,6 +192,7 @@ export async function syncShared(
     pending,
     customers: { applied: 0, unmatched: 0, written: false },
     examples: emptyExamples(() => ({ count: 0, written: false })),
+    ledger,
     failures: [],
   };
 
@@ -204,4 +250,72 @@ export async function syncShared(
   // ★1つでも通っていれば「同期できた」として日時を残す（全部だめなら残さない）
   if (report.failures.length < SHARED_DATASET_IDS.length) await deps.saveLastSync(now);
   return report;
+}
+
+/**
+ * 共有フォルダーに置いた顧客データのファイルを取り込む（**読むだけ。フォルダーには書かない**）。
+ *
+ * ★2人目が同じ xlsx を手で取り込まなくて済むようにするための段。
+ *   手で取り込む道（ドラッグ＆ドロップ）は今までどおり残っている。
+ * ★変わっていないファイルは読まない（数千件の取り込みは重い）。
+ * ★顧客データでないファイルが置いてあっても、飛ばして先へ進む。
+ */
+async function importLedgerFiles(
+  folder: SharedFolder,
+  deps: SyncDeps,
+  allowReplace: boolean,
+): Promise<LedgerReport> {
+  const out: LedgerReport = { imported: [], pending: [], skipped: [] };
+  let files: FolderFile[];
+  try {
+    files = pickCustomerFiles(await folder.store.listFiles([]));
+  } catch {
+    // 一覧を読めないときは、この段を飛ばす（手直しの同期は続ける）
+    return out;
+  }
+  const seen = await deps.loadSeenCustomerFiles();
+  // ★フォルダーから消えたファイルの印は落とす。顧客は消さない
+  let next = keepMarks(seen, files);
+  const changed = files.filter((file) => fileChanged(seen, file));
+  if (changed.length === 0) {
+    if (Object.keys(next).length !== Object.keys(seen).length) await deps.saveSeenCustomerFiles(next);
+    return out;
+  }
+
+  const bySource = await deps.countBySource();
+  for (const file of changed) {
+    let parsed: ParsedImport;
+    try {
+      parsed = parseCustomerFile(await folder.store.readBytes([file.name]), file.name);
+    } catch (e) {
+      // 顧客データでないファイル（ほかの書類が置いてあるだけ）。印は付けずに飛ばす
+      out.skipped.push({ file: file.name, message: e instanceof Error ? e.message : String(e) });
+      continue;
+    }
+    const decision = decideLedgerImport({
+      source: parsed.source,
+      fileName: file.name,
+      existing: bySource[parsed.source] ?? 0,
+      incoming: parsed.customers.length,
+      confirmed: allowReplace,
+    });
+    if (decision.kind === "ask") {
+      out.pending.push({ file: file.name, text: decision.text });
+      continue;
+    }
+    const report = await deps.saveImport(parsed);
+    bySource[parsed.source] = report.added + report.updated + Math.max(0, (bySource[parsed.source] ?? 0) - report.removed);
+    out.imported.push(
+      ledgerImportedText({
+        fileName: file.name,
+        source: parsed.source,
+        added: report.added,
+        updated: report.updated,
+        removed: report.removed,
+      }),
+    );
+    next = { ...next, [file.name]: markOf(file) };
+  }
+  await deps.saveSeenCustomerFiles(next);
+  return out;
 }

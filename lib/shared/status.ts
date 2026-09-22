@@ -38,6 +38,11 @@ export interface SharedStatusView {
   notes: string[];
   /** 「このフォルダーへ書き出す」の確認文（要らなければ null） */
   firstWrite: string | null;
+  /**
+   * 共有フォルダーの顧客ファイルを取り込むと件数が減るので、確かめてもらう文（要らなければ null）。
+   * ★ボタンを押すまで入れ替えない。
+   */
+  ledgerReplace: string | null;
   /** 「共有フォルダーと同期」を押せるか */
   canSync: boolean;
   /** 押せない理由・押すと何が起きるか（title に出す） */
@@ -142,6 +147,19 @@ export function sharedStatus(input: SharedStatusInput): SharedStatusView {
   const firstWrite =
     state === "connected" && report?.awaitingFirstWrite ? firstWriteText(folderName, report.pending) : null;
 
+  // 共有フォルダーの顧客ファイルの結果は、書き出しの確認中でも出す（読むだけなので先に動いている）
+  if (report) {
+    for (const line of report.ledger.imported) notes.push(line);
+    for (const skipped of report.ledger.skipped) {
+      notes.push(`「${skipped.file}」は顧客データとして読めないので飛ばしました（${skipped.message}）`);
+    }
+  }
+  const ledgerReplace =
+    state === "connected" && report && report.ledger.pending.length > 0
+      ? `${report.ledger.pending.map((p) => p.text).join(" ")}よろしければ「共有フォルダーの顧客ファイルを取り込む」を押してください。`
+      : null;
+  if (ledgerReplace && tone !== "warn") tone = "warn";
+
   if (report && !report.awaitingFirstWrite) {
     if (state === "connected") notes.push(syncResultText(report));
     const unmatched = unmatchedText(report.customers.unmatched);
@@ -171,6 +189,7 @@ export function sharedStatus(input: SharedStatusInput): SharedStatusView {
     headline,
     notes,
     firstWrite,
+    ledgerReplace,
     canSync: state === "connected" && !input.syncing && input.canPersist,
     syncReason,
     tone,

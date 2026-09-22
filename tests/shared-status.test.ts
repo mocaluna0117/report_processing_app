@@ -23,6 +23,7 @@ const report = (over: Partial<SyncReport> = {}): SyncReport => ({
   pending: { customers: 3, examples: { inquiry: 8, inspection: 4 } },
   customers: { applied: 2, unmatched: 0, written: true },
   examples: { inquiry: { count: 8, written: false }, inspection: { count: 4, written: false } },
+  ledger: { imported: [], pending: [], skipped: [] },
   failures: [],
   ...over,
 });
@@ -172,5 +173,45 @@ describe("学習した書き方の消去", () => {
     const text = clearExamplesConfirmText(12, false);
     expect(text).toContain("12件");
     expect(text).not.toContain("相手");
+  });
+});
+
+describe("共有フォルダーの顧客ファイル", () => {
+  it("取り込めたら、その1行を出す", () => {
+    const view = sharedStatus(
+      input({ report: report({ ledger: { imported: ["「台帳.csv」を取り込みました"], pending: [], skipped: [] } }) }),
+    );
+    expect(view.notes.join()).toContain("「台帳.csv」を取り込みました");
+    expect(view.ledgerReplace).toBeNull();
+  });
+
+  it("★減るときは、押すまで入れ替えないと分かる形で出す", () => {
+    const view = sharedStatus(
+      input({
+        report: report({
+          ledger: { imported: [], pending: [{ file: "助っ人.csv", text: "3,000件 が 12件 に置き換わります。" }], skipped: [] },
+        }),
+      }),
+    );
+    expect(view.ledgerReplace).toContain("3,000件");
+    expect(view.ledgerReplace).toContain("共有フォルダーの顧客ファイルを取り込む");
+    expect(view.tone).toBe("warn");
+  });
+
+  it("顧客データでないファイルは、飛ばしたと書くだけ", () => {
+    const view = sharedStatus(
+      input({ report: report({ ledger: { imported: [], pending: [], skipped: [{ file: "メモ.csv", message: "判定できません" }] } }) }),
+    );
+    expect(view.notes.join()).toContain("「メモ.csv」は顧客データとして読めない");
+  });
+
+  it("書き出しの確認中でも、取り込みの結果は出す（読むだけなので先に動いている）", () => {
+    const view = sharedStatus(
+      input({
+        report: report({ awaitingFirstWrite: true, ledger: { imported: ["取り込みました"], pending: [], skipped: [] } }),
+      }),
+    );
+    expect(view.firstWrite).not.toBeNull();
+    expect(view.notes.join()).toContain("取り込みました");
   });
 });

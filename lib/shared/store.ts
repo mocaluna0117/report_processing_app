@@ -9,6 +9,7 @@
 // ★顧客の個人情報はここに置かない（共有フォルダーの中のファイルと customers ストアにある）。
 // ★「保存データを消去」（定期点検）では消えない。消すのは「共有フォルダーの登録を消す」だけ。
 import {
+  SETTING_KEY_SHARED_CUSTOMER_FILES,
   SETTING_KEY_SHARED_DEVICE_ID,
   SETTING_KEY_SHARED_FOLDER,
   SETTING_KEY_SHARED_LAST_SYNC,
@@ -16,6 +17,7 @@ import {
   loadMeta,
   saveMeta,
 } from "@/lib/storage";
+import { type SeenCustomerFiles, isSeenCustomerFiles } from "@/lib/shared/customer-files";
 import type { BrowserDirHandle } from "@/lib/tenmatsu/local/folder-handle";
 
 /** 前回選んだ共有フォルダー。選んでいなければ null */
@@ -38,6 +40,8 @@ export async function saveSharedFolderHandle(handle: BrowserDirHandle): Promise<
 export async function clearSharedFolder(): Promise<void> {
   await deleteMeta(SETTING_KEY_SHARED_FOLDER);
   await deleteMeta(SETTING_KEY_SHARED_LAST_SYNC);
+  // ★取り込んだ目印も消す（つなぎ直したら読み直す）。顧客データそのものは消さない
+  await deleteMeta(SETTING_KEY_SHARED_CUSTOMER_FILES);
 }
 
 /**
@@ -69,4 +73,21 @@ export async function loadLastSync(): Promise<number | null> {
 
 export async function saveLastSync(at: number): Promise<void> {
   await saveMeta(SETTING_KEY_SHARED_LAST_SYNC, at);
+}
+
+/**
+ * 共有フォルダーの顧客ファイルを取り込んだときの目印（名前 → 大きさと更新時刻）。
+ * ★変わっていないファイルを取り込み直さないために持つ。顧客データそのものは customers ストアにある。
+ */
+export async function loadSeenCustomerFiles(): Promise<SeenCustomerFiles> {
+  const raw = await loadMeta<unknown>(SETTING_KEY_SHARED_CUSTOMER_FILES);
+  return isSeenCustomerFiles(raw) ? raw : {};
+}
+
+export async function saveSeenCustomerFiles(seen: SeenCustomerFiles): Promise<void> {
+  if (Object.keys(seen).length === 0) {
+    await deleteMeta(SETTING_KEY_SHARED_CUSTOMER_FILES);
+    return;
+  }
+  await saveMeta(SETTING_KEY_SHARED_CUSTOMER_FILES, seen);
 }
