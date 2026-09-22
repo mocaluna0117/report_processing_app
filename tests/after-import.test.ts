@@ -526,6 +526,72 @@ describe("顧客の編集", () => {
   });
 });
 
+// 共有フォルダーで2台の手直しを突き合わせるための、項目ごとの時刻（2026-09-22）。
+// ★レコード単位の editedAt だけだと、別々の項目を直したときに片方が黙って消える。
+describe("項目ごとの手直しの時刻（editStamps）", () => {
+  const load = () =>
+    parseCustomerFile(
+      dxFile([dxRow({ bukken: "4101230101", property: "(仮称)架空　太郎様邸新築工事" })]),
+      "DX.xlsx",
+      1,
+    ).customers[0];
+
+  it("直した項目にだけ印が付く（触っていない項目には付かない）", () => {
+    const edited = applyEdits(load(), { developer: "大和ハウス工業" }, 2);
+    expect(edited.editStamps).toEqual({ developer: 2 });
+  });
+
+  it("★取り込み値に戻して修正から外したときも印を押す（戻したことを相手へ伝えるため）", () => {
+    const customer = load();
+    const edited = applyEdits(customer, { propertyName: "変更" }, 2);
+    const back = applyEdits(edited, { propertyName: customer.imported.propertyName }, 5);
+    expect(back.edits).toEqual({});
+    // edits に無いキーの印＝「取り込み値に戻した」
+    expect(back.editStamps).toEqual({ propertyName: 5 });
+  });
+
+  it("別の項目を直すと、前の印はそのまま残る", () => {
+    const first = applyEdits(load(), { developer: "大和ハウス工業" }, 2);
+    const second = applyEdits(first, { memo: "架空のメモ" }, 7);
+    expect(second.editStamps).toEqual({ developer: 2, memo: 7 });
+  });
+
+  it("取り込み値に戻すと、それまで直していた全項目に印が付く", () => {
+    const edited = applyEdits(applyEdits(load(), { developer: "大和" }, 2), { memo: "め" }, 3);
+    const reset = resetEdits(edited, 9);
+    expect(reset.edits).toEqual({});
+    expect(reset.editStamps).toEqual({ developer: 9, memo: 9 });
+  });
+
+  it("★再取込では印を押し直さない（台帳が追いついて外れた項目の印は元の時刻のまま）", () => {
+    const customer = load();
+    const edited = applyEdits(customer, { developer: "大和ハウス工業" }, 2);
+    const incoming = { ...customer, imported: { ...customer.imported, developer: "大和ハウス工業" } };
+    const merged = mergeImported(edited, incoming);
+    expect(merged.edits).toEqual({});
+    // now で押し直すと、同じ手直しを持つ相手の分まで「戻した」と読まれて消えてしまう
+    expect(merged.editStamps).toEqual({ developer: 2 });
+  });
+
+  it("再取込で手直しが残るときも、印はそのまま引き継ぐ", () => {
+    const edited = applyEdits(load(), { developer: "大和ハウス工業" }, 2);
+    expect(mergeImported(edited, load()).editStamps).toEqual({ developer: 2 });
+  });
+
+  it("印の無い古い保存データを読んでも壊れない（印は付かないまま）", () => {
+    const { editStamps: _drop, ...old } = applyEdits(load(), { developer: "大和" }, 2);
+    expect("editStamps" in old).toBe(false);
+    const edited = applyEdits(old, { memo: "追記" }, 8);
+    expect(edited.editStamps).toEqual({ memo: 8 });
+    expect(edited.edits).toEqual({ developer: "大和", memo: "追記" });
+  });
+
+  it("何も直していない顧客には、空の器を持たせない", () => {
+    expect(load().editStamps).toBeUndefined();
+    expect(resetEdits(load(), 3).editStamps).toBeUndefined();
+  });
+});
+
 describe("searchCustomers", () => {
   const customers = parseCustomerFile(
     dxFile([

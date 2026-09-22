@@ -82,6 +82,26 @@ export function withSupplements(customer: Customer, values: Partial<CustomerFiel
 }
 
 /**
+ * 手を入れた項目に時刻の印を付ける。
+ * ★値を入れたときも、取り込み値に戻して修正から外したときも押す（外したことも「手直し」なので、
+ *   共有フォルダーで突き合わせるときに相手の古い修正を正しく消せる）。
+ */
+function withStamps(
+  next: Customer,
+  keys: readonly (keyof CustomerFields)[],
+  now: number,
+): Customer {
+  const stamps = { ...next.editStamps };
+  for (const key of keys) stamps[key] = now;
+  // 空のときは持たせない（supplements と同じ流儀。保存データに空の器を増やさない）
+  if (Object.keys(stamps).length === 0) {
+    const { editStamps: _drop, ...rest } = next;
+    return rest;
+  }
+  return { ...next, editStamps: stamps };
+}
+
+/**
  * 利用者の修正を反映する。
  * 取り込み値 (補完を含む) と同じに戻した項目は修正から外す (再取込で最新の値を受け取れるように)。
  */
@@ -92,11 +112,12 @@ export function applyEdits(
 ): Customer {
   const base = baseFields(customer);
   const edits: Partial<CustomerFields> = { ...customer.edits };
+  const keys = Object.keys(patch) as (keyof CustomerFields)[];
   for (const [key, value] of Object.entries(patch) as [keyof CustomerFields, unknown][]) {
     if (sameValue(value, base[key])) delete edits[key];
     else Object.assign(edits, { [key]: value });
   }
-  const next: Customer = { ...customer, edits, editedAt: now };
+  const next = withStamps({ ...customer, edits, editedAt: now }, keys, now);
   return { ...next, searchKey: buildSearchKey(effectiveFields(next)) };
 }
 
@@ -154,7 +175,7 @@ export function revertTenmatsuStaff(
 ): Customer {
   const edits: Partial<CustomerFields> = { ...customer.edits };
   for (const field of fields) delete edits[field];
-  const next: Customer = { ...customer, edits, editedAt: now };
+  const next = withStamps({ ...customer, edits, editedAt: now }, fields, now);
   delete next.tenmatsuSync;
   return { ...next, searchKey: buildSearchKey(effectiveFields(next)) };
 }
@@ -169,12 +190,10 @@ export function isReportHandover(customer: Customer): boolean {
 
 /** 取り込み値 (補完を含む) に戻す (修正をすべて捨てる) */
 export function resetEdits(customer: Customer, now: number): Customer {
-  return {
-    ...customer,
-    edits: {},
-    editedAt: now,
-    searchKey: buildSearchKey(baseFields(customer)),
-  };
+  // ★捨てたキーにも印を押す（共有しているとき、相手の古い修正もこれで消える）
+  const keys = Object.keys(customer.edits) as (keyof CustomerFields)[];
+  const next = withStamps({ ...customer, edits: {}, editedAt: now }, keys, now);
+  return { ...next, searchKey: buildSearchKey(baseFields(customer)) };
 }
 
 /**
@@ -192,6 +211,9 @@ export function mergeImported(previous: Customer, incoming: Customer): Customer 
   const merged: Customer = {
     ...supplemented,
     edits,
+    // ★印は押し直さない。台帳が追いついて edits から落ちたキーの印を now にすると、
+    //   同じ手直しを持っている相手の分まで「戻した」と読まれて消えてしまう
+    ...(previous.editStamps ? { editStamps: previous.editStamps } : {}),
     editedAt: previous.editedAt,
     // 出どころ (報告書から引渡日 / 顛末書から監督・営業) は取り込み直しても残す
     reportSync: previous.reportSync,

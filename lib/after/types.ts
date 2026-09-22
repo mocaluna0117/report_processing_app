@@ -53,6 +53,15 @@ export interface Customer {
   supplements?: Partial<CustomerFields>;
   /** 利用者の修正 (再取込でも残す) */
   edits: Partial<CustomerFields>;
+  /**
+   * 項目ごとに「最後に手を入れた時刻」。**共有フォルダーで2台の手直しを突き合わせるために持つ**
+   * （レコード単位の editedAt だけだと、別々の項目を直したときに片方が黙って消える）。
+   * ★edits に無いキーの印＝「取り込み値に戻した」という意思表示（削除の印）。
+   * ★再取込で台帳が追いついて edits から落ちたキーの印は、そのときの時刻のまま置く
+   *   （now で押し直すと、同じ手直しを持つ相手の分まで消してしまう）。
+   * 古い保存データには無いので任意。無いときは editedAt を全キーの印とみなす。
+   */
+  editStamps?: Partial<Record<keyof CustomerFields, number>>;
   issues: CustomerIssue[];
   corporate: boolean;
   /** 検索用に正規化した文字列 */
