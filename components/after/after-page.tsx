@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AfterIntake } from "@/components/after/after-intake";
 import { BlockedReason } from "@/components/blocked-reason";
 import { FlowSteps } from "@/components/flow-steps";
 import { CustomerCard } from "@/components/after/customer-card";
 import { CustomerImport, type CustomerSummary } from "@/components/after/customer-import";
 import { CustomerSearch } from "@/components/after/customer-search";
+import { SharedFolderPanel } from "@/components/after/shared-folder";
 import { ExamplesDialog } from "@/components/examples-dialog";
 import { FallbackTsvDialog } from "@/components/fallback-tsv-dialog";
 import { MailDialog } from "@/components/mail-dialog";
@@ -38,7 +39,8 @@ import { prefetchReportAssets } from "@/lib/report/assets";
 import { dropColumns, expandResultRow } from "@/lib/rows";
 import { recordSummary } from "@/lib/summary";
 import type { InquiryExample } from "@/lib/summarize/examples";
-import { useExamples } from "@/lib/use-examples";
+import { useSharedFolder } from "@/lib/shared/use-shared-folder";
+import { type Examples, useExamples } from "@/lib/use-examples";
 import {
   clearAfterCases,
   isStorageAvailable,
@@ -91,9 +93,28 @@ export function AfterPage() {
       } catch (e) {
         partialErrors.push(`学習した書き方: ${e instanceof Error ? e.message : String(e)}`);
       }
+      try {
+        // ★つなぐのは restore のあと（許可が生きていれば shared 側の効果が自分でつなぐ）
+        await shared.restore();
+      } catch (e) {
+        partialErrors.push(`共有フォルダー: ${e instanceof Error ? e.message : String(e)}`);
+      }
       return { partialErrors };
     },
     hasSaved: async () => (await loadAfterCases()).length > 0,
+  });
+  /**
+   * 共有フォルダー（Box Drive などで見えるフォルダー）。
+   * ★同期でこの端末の保存が変わるので、終わったら画面の写しを読み直す。
+   *   learning はこの下で作るので、控え（ref）越しに呼ぶ。
+   */
+  const learningRef = useRef<Examples<AfterCase> | null>(null);
+  const shared = useSharedFolder({
+    storage,
+    onSynced: async (report) => {
+      if (report.customers.applied > 0) setCustomers(await loadCustomers());
+      await learningRef.current?.restore();
+    },
   });
   /** 学習した書き方 (伏せ字済みの受付メモ → 利用者が書いた本文) */
   const learning = useExamples<AfterCase>({
@@ -101,7 +122,9 @@ export function AfterPage() {
     inputOf: redactedInquiryOf,
     outputLabel: "アフター受付内容",
     storage,
+    scheduleSync: shared.scheduleSync,
   });
+  learningRef.current = learning;
   const examples = learning.examples;
   const copyState = useExcelCopy();
   const editors = useRowEditors<AfterCase>((pairId, fn) => {
@@ -158,6 +181,8 @@ export function AfterPage() {
       setImportReport(report);
       setCustomers(await loadCustomers());
       storage.refreshUsage();
+      // ★取り込みで id が結び付き直すことがあるので、共有フォルダーの手直しを当て直す
+      shared.scheduleSync();
     } catch (e) {
       setImportError(
         `顧客データを取り込めませんでした (${e instanceof Error ? e.message : String(e)})`,
@@ -174,6 +199,7 @@ export function AfterPage() {
     setCustomers((prev) => prev.map((c) => (c.id === next.id ? next : c)));
     try {
       await saveCustomerEdits(selected.id, patch);
+      shared.scheduleSync();
     } catch (e) {
       storage.setStorageError(
         `顧客データの手直しを保存できませんでした (${e instanceof Error ? e.message : String(e)})`,
@@ -209,6 +235,7 @@ export function AfterPage() {
     setTimeout(() => setStaffSavedId((prev) => (prev === row.pairId ? null : prev)), 2500);
     try {
       await saveCustomerEdits(customer.id, plan.patch);
+      shared.scheduleSync();
     } catch (e) {
       storage.setStorageError(
         `監督・営業を顧客データに保存できませんでした (${e instanceof Error ? e.message : String(e)})`,
@@ -230,6 +257,7 @@ export function AfterPage() {
           ]),
         ) as Partial<CustomerFields>,
       );
+      shared.scheduleSync();
     } catch {
       // 保存できなくても画面上は戻す (次回の手直しで書き直せる)
     }
@@ -380,6 +408,8 @@ export function AfterPage() {
             setQuery("");
           }}
         />
+
+        <SharedFolderPanel id="after-shared" shared={shared} canPersist={storage.canPersist} />
 
         {customers.length > 0 && (
           <div id="after-search" tabIndex={-1} className="grid scroll-mt-4 gap-4 lg:grid-cols-2">

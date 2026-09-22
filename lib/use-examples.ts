@@ -13,6 +13,8 @@ import {
   upsertStoredExample,
 } from "@/lib/examples-store";
 import type { ResultRow } from "@/lib/process";
+import { clearExamplesConfirmText } from "@/lib/shared/status";
+import { loadSharedFolderHandle } from "@/lib/shared/store";
 import { isStorageAvailable } from "@/lib/storage";
 import { buildExample, type InquiryExample, upsertExample } from "@/lib/summarize/examples";
 import { recordSummary, withoutSupplements } from "@/lib/summary";
@@ -43,6 +45,7 @@ export function useExamples<R extends ResultRow>({
   inputOf,
   outputLabel,
   storage,
+  scheduleSync,
 }: {
   kind: ExampleKind;
   /** その行の入力 (伏せ字前でよい。buildExample が伏せ字にする) */
@@ -50,9 +53,17 @@ export function useExamples<R extends ResultRow>({
   /** 出力の呼び名 (点検内容 / アフター受付内容)。ボタンの説明に使う */
   outputLabel: string;
   storage: { setStorageError: (value: string | null) => void; refreshUsage: () => void };
+  /** 共有フォルダーへ知らせる (無い画面では省略してよい) */
+  scheduleSync?: () => void;
 }): Examples<R> {
   const [examples, setExamples] = useState<InquiryExample[]>([]);
   const [open, setOpen] = useState(false);
+  /**
+   * 共有フォルダーを登録しているか。
+   * ★「すべて消去」は共有していると**相手の端末からも消える**ので、確認文を変える。
+   *   この画面に共有フォルダーの欄が無くても、印は押されて次の同期で伝わる。
+   */
+  const [shared, setShared] = useState(false);
   const exampleById = useMemo(() => new Map(examples.map((e) => [e.id, e])), [examples]);
 
   /**
@@ -73,6 +84,7 @@ export function useExamples<R extends ResultRow>({
     try {
       setExamples(await run());
       storage.refreshUsage();
+      scheduleSync?.();
     } catch (e) {
       storage.setStorageError(
         `学習した書き方を保存できませんでした (${e instanceof Error ? e.message : String(e)})`,
@@ -86,6 +98,7 @@ export function useExamples<R extends ResultRow>({
     setOpen,
     restore: async () => {
       setExamples(await loadExamples(kind));
+      setShared((await loadSharedFolderHandle()) !== null);
     },
     learn: async (row) => {
       const { input, output } = exampleOf(row);
@@ -146,9 +159,7 @@ export function useExamples<R extends ResultRow>({
       );
     },
     clearExamples: async () => {
-      if (!confirm(`学習した書き方 ${examples.length}件 をすべて消去します。よろしいですか？`)) {
-        return;
-      }
+      if (!confirm(clearExamplesConfirmText(examples.length, shared))) return;
       try {
         await clearStoredExamples(kind);
       } catch {
@@ -157,6 +168,7 @@ export function useExamples<R extends ResultRow>({
       setExamples([]);
       setOpen(false);
       storage.refreshUsage();
+      scheduleSync?.();
     },
   };
 }
