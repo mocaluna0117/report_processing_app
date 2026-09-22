@@ -324,11 +324,26 @@ export const RECIPES: readonly Recipe[] = [
   {
     id: "tenmatsu-folder",
     path: "/tenmatsu",
+    // ★未ログインで開くとログインの画面が出て写真を覆うので、出さない設定で撮る
+    dismissLogin: true,
     hide: ['nav[aria-label="顛末書の手順"] > div:last-child'],
     clip: ["#tenmatsu-folder", "#tenmatsu-rakuraku"],
     hotspots: [
       { at: '#tenmatsu-folder button:has-text("保存先フォルダーを選ぶ")' },
-      { at: "#tenmatsu-rakuraku form" },
+      { at: '#tenmatsu-rakuraku button:has-text("ログイン")' },
+    ],
+  },
+  {
+    id: "tenmatsu-login",
+    path: "/tenmatsu",
+    // ★未ログインで開くと自分から出る。その画面をそのまま撮る
+    clip: ['[role="dialog"][aria-label="楽楽精算にログイン"]'],
+    // ★余白を足すと後ろの画面の文字が切れて写る。小窓だけを切り取る
+    pad: 0,
+    hotspots: [
+      { at: '[role="dialog"] input[type="text"]' },
+      { at: '[role="dialog"] input[type="password"]' },
+      { at: '[role="dialog"] button[type="submit"]' },
     ],
   },
   {
