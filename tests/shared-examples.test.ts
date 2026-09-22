@@ -6,6 +6,7 @@ import {
   mergeSharedExamples,
   pickSharedExamples,
   toSharedExamples,
+  withDeletedMark,
 } from "@/lib/shared/examples";
 import type { InquiryExample } from "@/lib/summarize/examples";
 
@@ -126,5 +127,30 @@ describe("読み方・作り方", () => {
     made.items.push(ex("c-9", "追加", 1));
     expect(items).toHaveLength(1);
     expect(made.deleted).toEqual({ "c-2": 5 });
+  });
+});
+
+describe("消した印を押す", () => {
+  it("消した id と時刻を足す（元の印は残る）", () => {
+    expect(withDeletedMark({ "c-1": 5 }, ["c-2", "c-3"], 20)).toEqual({
+      "c-1": 5,
+      "c-2": 20,
+      "c-3": 20,
+    });
+  });
+
+  it("同じ id を押し直すと、新しい方の時刻になる", () => {
+    expect(withDeletedMark({ "c-1": 20 }, ["c-1"], 5)).toEqual({ "c-1": 20 });
+    expect(withDeletedMark({ "c-1": 5 }, ["c-1"], 20)).toEqual({ "c-1": 20 });
+  });
+
+  it("★印が増えすぎたら古い順に落とす（共有ファイルが際限なく伸びないように）", () => {
+    let deleted: Record<string, number> = {};
+    for (let i = 0; i < EXAMPLES_DELETED_MAX + 10; i++) {
+      deleted = withDeletedMark(deleted, [`c-${i}`], i + 1);
+    }
+    expect(Object.keys(deleted)).toHaveLength(EXAMPLES_DELETED_MAX);
+    expect(deleted["c-0"]).toBeUndefined();
+    expect(deleted[`c-${EXAMPLES_DELETED_MAX + 9}`]).toBe(EXAMPLES_DELETED_MAX + 10);
   });
 });

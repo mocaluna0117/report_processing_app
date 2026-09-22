@@ -227,6 +227,8 @@ export interface ApplySharedResult {
 
 /**
  * 手直しの束を顧客一覧に当てる。
+ * ★**置き換えではなく重ねる**: ファイルを読んでから当てるまでの間にこの端末で直した分を
+ *   消さないため（同期は何秒かかかる）。項目ごとの印で新しい方が残る。
  * ★見つからない手直しは**捨てずに数える**（同じ xlsx を取り込めば結び付くので、
  *   ファイルからは消さない。助っ人クラウドの id は取り込み内容で変わるため）。
  */
@@ -234,13 +236,15 @@ export function applySharedCustomerEdits(
   customers: readonly Customer[],
   shared: SharedCustomerEdits,
 ): ApplySharedResult {
+  const mine = extractCustomerEdits(customers);
   const seen = new Set<string>();
   let changed = 0;
   const next = customers.map((customer) => {
-    const entry = shared[customer.id];
-    if (!entry) return customer;
+    const incoming = shared[customer.id];
+    if (!incoming) return customer;
     seen.add(customer.id);
-    const applied = withSharedEntry(customer, entry);
+    const local = mine[customer.id];
+    const applied = withSharedEntry(customer, local ? mergeCustomerEntry(local, incoming) : incoming);
     if (applied !== customer) changed += 1;
     return applied;
   });

@@ -5,7 +5,6 @@
  * ★許可を尋ねる（requestPermission）のは、**利用者がボタンを押した処理の中だけ**。
  *   読み込み直後に尋ねるとブラウザが断る。尋ねずに今の許可を見る（queryPermission）のはいつでもよい。
  */
-import type { DocKindId } from "@/lib/tenmatsu/kinds";
 import { type DirHandleLike, FolderError } from "./fs";
 
 type PermissionMode = { mode: "readwrite" };
@@ -33,13 +32,14 @@ export const FOLDER_UNSUPPORTED_TEXT =
 
 /**
  * フォルダーを選んでもらう。やめたら null。
- * 前回の場所を種類ごとに覚えさせる（顛末書・専決決裁書で別のフォルダーを選ぶため）。
+ * 前回の場所を**用途ごとに**覚えさせる（顛末書・専決決裁書・共有フォルダーで別の場所を選ぶため）。
+ * `use` は覚えさせる用途の名前（顛末書系は種類のID、共有フォルダーは "shared"）。
  */
-export async function pickFolder(kind: DocKindId): Promise<BrowserDirHandle | null> {
+export async function pickFolder(use: string): Promise<BrowserDirHandle | null> {
   const picker = (window as unknown as PickerWindow).showDirectoryPicker;
   if (!picker) throw new FolderError("unknown", FOLDER_UNSUPPORTED_TEXT);
   try {
-    return await picker.call(window, { id: `folio-${kind}`, mode: "readwrite", startIn: "documents" });
+    return await picker.call(window, { id: `folio-${use}`, mode: "readwrite", startIn: "documents" });
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") return null; // 選ぶのをやめた
     if (e instanceof DOMException && e.name === "SecurityError") {

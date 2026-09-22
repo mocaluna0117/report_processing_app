@@ -16,6 +16,11 @@ import {
 import { resolveDuplicates, withDuplicateIssue } from "@/lib/after/dedup";
 import type { ParsedImport, SkippedGroup } from "@/lib/after/import";
 import type { Customer, CustomerFields, CustomerSource } from "@/lib/after/types";
+import {
+  type SharedCustomerEdits,
+  applySharedCustomerEdits,
+  extractCustomerEdits,
+} from "@/lib/shared/customer-edits";
 import { STORE_CUSTOMERS, request, withStore } from "@/lib/storage";
 
 export interface ImportReport {
@@ -261,6 +266,44 @@ export async function clearTenmatsuStaff(
     store.put(next);
   });
   return next;
+}
+
+/** 共有フォルダーに載せる形で、この端末の手直しを取り出す */
+export async function loadSharedCustomerEdits(): Promise<SharedCustomerEdits> {
+  return extractCustomerEdits(await loadCustomers());
+}
+
+export interface SharedMergeReport {
+  /** 手直しが変わった顧客の件数 */
+  applied: number;
+  /** この端末の顧客データに見つからなかった手直しの id（同じ xlsx を取り込むと結び付く） */
+  unmatched: string[];
+}
+
+/**
+ * 共有フォルダーから読んだ手直しを、この端末の顧客データへ重ねる（同期の「ファイル → 写し」側）。
+ *
+ * ★1トランザクションの中で読み直して重ねる。ファイルを読んでからここへ来るまでの間に
+ *   この端末で直した分（項目ごとの印が新しい方）を消さないため。
+ * ★変わった顧客だけ書く（顧客は数千件あるので、全件の書き戻しは重い）。
+ * ★見つからない手直しは**捨てない**（数だけ返して画面に出す）。
+ */
+export async function mergeSharedCustomerEdits(
+  shared: SharedCustomerEdits,
+): Promise<SharedMergeReport> {
+  let report: SharedMergeReport = { applied: 0, unmatched: Object.keys(shared) };
+  if (Object.keys(shared).length === 0) return { applied: 0, unmatched: [] };
+  await withStore(STORE_CUSTOMERS, "readwrite", async (store) => {
+    const existing = ((await request(store.getAll())) as Customer[])
+      .filter((c) => c && typeof c.id === "string")
+      .map(normalizeStoredCustomer);
+    const result = applySharedCustomerEdits(existing, shared);
+    result.customers.forEach((customer, i) => {
+      if (customer !== existing[i]) store.put(customer);
+    });
+    report = { applied: result.changed, unmatched: result.unmatched };
+  });
+  return report;
 }
 
 /** 顧客データをまるごと消す (「顧客データを削除」ボタン) */

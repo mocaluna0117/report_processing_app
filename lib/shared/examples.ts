@@ -64,6 +64,20 @@ function mergeDeleted(
 }
 
 /**
+ * 消した印を足す（多すぎたら古い順に落とす）。「すべて消去」でまとめて押すので複数を受ける。
+ * ★この端末で消したときに必ず押す。押さないと、次の同期で相手のファイルから戻ってくる。
+ */
+export function withDeletedMark(
+  deleted: Record<string, number>,
+  ids: readonly string[],
+  at: number,
+): Record<string, number> {
+  const added: Record<string, number> = {};
+  for (const id of ids) added[id] = at;
+  return mergeDeleted(deleted, added);
+}
+
+/**
  * 2つの束を突き合わせる（可換・冪等）。
  * 消した印と同じか古い手本は落とす（印より新しく学習し直したものは残る）。
  */
