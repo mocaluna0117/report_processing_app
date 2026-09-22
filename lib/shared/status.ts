@@ -153,6 +153,11 @@ export function sharedStatus(input: SharedStatusInput): SharedStatusView {
     for (const skipped of report.ledger.skipped) {
       notes.push(`「${skipped.file}」は顧客データとして読めないので飛ばしました（${skipped.message}）`);
     }
+    // ★どれを使うか決められないときは、取り込まずに知らせる（黙って片方を選ばない）
+    for (const conflict of report.ledger.conflicts) {
+      notes.push(conflict);
+      tone = "warn";
+    }
   }
   const ledgerReplace =
     state === "connected" && report && report.ledger.pending.length > 0

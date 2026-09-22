@@ -166,3 +166,67 @@ describe("助っ人クラウドは丸ごと入れ替わるので、減るとき�
     expect((await countCustomers()).bySource.suketto).toBe(2);
   });
 });
+
+describe("同じ取り込み元のファイルが2つあるとき", () => {
+  const SUKET_HEADER = [
+    "管理ID", "施主名(姓)", "施主名(名)", "施主名かな(姓)", "施主名かな(名)",
+    "住宅名(物件名)(区画番号)など", "建築地都道府県", "建築地市区町村番地", "建築地郵便番号",
+    "現住所郵便番号", "建築地電話番号", "建築地携帯電話番号", "引渡日", "担当支店",
+  ];
+  const suketRow = (id: string) =>
+    [id, "架空", "花子", "カクウ", "ハナコ", `架空台1丁目 ${id}号棟`, "東京都", "架空区北町1-2-3",
+     "123-4567", "", "03-0000-1234", "090-0000-1234", "2025/09/26", "架空支店"];
+  const suketCsv = (ids: string[]) =>
+    [SUKET_HEADER.join(","), ...ids.map((id) => suketRow(id).join(","))].join("\n");
+
+  it("★助っ人クラウドが2つあれば、1つも取り込まずに知らせる", async () => {
+    const { folder } = setup({
+      "助っ人_9月.csv": suketCsv(["A1", "A2"]),
+      "助っ人_10月.csv": suketCsv(["A1", "A2", "A3"]),
+    });
+    const report = await syncShared(folder, { now: 100, allowFirstWrite: true });
+
+    expect(report.ledger.imported).toEqual([]);
+    expect(report.ledger.conflicts).toHaveLength(1);
+    expect(report.ledger.conflicts[0]).toContain("助っ人_9月.csv");
+    expect(report.ledger.conflicts[0]).toContain("助っ人_10月.csv");
+    // ★どちらも取り込まない（名前の順で勝手に決めない）
+    expect((await countCustomers()).total).toBe(0);
+  });
+
+  it("点検保守台帳は2つあっても、両方とも取り込む", async () => {
+    const { folder } = setup({
+      "台帳_9月.csv": dxCsv(["2101230101"]),
+      "台帳_10月.csv": dxCsv(["2101230201"]),
+    });
+    const report = await syncShared(folder, { now: 100, allowFirstWrite: true });
+    expect(report.ledger.conflicts).toEqual([]);
+    expect(report.ledger.imported).toHaveLength(2);
+    expect((await countCustomers()).total).toBe(2);
+  });
+
+  it("★1つに減らせば取り込める", async () => {
+    const { fs, folder } = setup({
+      "助っ人_9月.csv": suketCsv(["A1", "A2"]),
+      "助っ人_10月.csv": suketCsv(["A1", "A2", "A3"]),
+    });
+    await syncShared(folder, { now: 100, allowFirstWrite: true });
+    await fs.root.removeEntry("助っ人_9月.csv");
+
+    const again = await syncShared(folder, { now: 200 });
+    expect(again.ledger.conflicts).toEqual([]);
+    expect((await countCustomers()).bySource.suketto).toBe(3);
+  });
+
+  it("★取り込み済みのファイルが1つあるところへ2つ目を置いても止まる（読み直さずに気づく）", async () => {
+    const { fs, folder } = setup({ "助っ人_9月.csv": suketCsv(["A1", "A2"]) });
+    await syncShared(folder, { now: 100, allowFirstWrite: true });
+    expect((await countCustomers()).bySource.suketto).toBe(2);
+
+    fs.put("助っ人_10月.csv", suketCsv(["A1"]));
+    const again = await syncShared(folder, { now: 200 });
+    expect(again.ledger.conflicts).toHaveLength(1);
+    expect(again.ledger.imported).toEqual([]);
+    expect((await countCustomers()).bySource.suketto).toBe(2);
+  });
+});

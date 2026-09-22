@@ -25,9 +25,11 @@ import type { CustomerSource } from "@/lib/after/types";
 import {
   type FolderFile,
   type SeenCustomerFiles,
+  conflictingSources,
   decideLedgerImport,
   fileChanged,
   keepMarks,
+  ledgerConflictText,
   ledgerImportedText,
   markOf,
   pickCustomerFiles,
@@ -105,6 +107,8 @@ export interface LedgerReport {
   pending: { file: string; text: string }[];
   /** 顧客データとして読めなかったファイル（ほかのファイルが置いてあるだけのことが多い） */
   skipped: { file: string; message: string }[];
+  /** 同じ取り込み元のファイルが2つ以上あって、どれを使うか決められない */
+  conflicts: string[];
 }
 
 export interface SyncFailure {
@@ -265,7 +269,7 @@ async function importLedgerFiles(
   deps: SyncDeps,
   allowReplace: boolean,
 ): Promise<LedgerReport> {
-  const out: LedgerReport = { imported: [], pending: [], skipped: [] };
+  const out: LedgerReport = { imported: [], pending: [], skipped: [], conflicts: [] };
   let files: FolderFile[];
   try {
     files = pickCustomerFiles(await folder.store.listFiles([]));
@@ -282,16 +286,33 @@ async function importLedgerFiles(
     return out;
   }
 
-  const bySource = await deps.countBySource();
+  // ★先に全部読んで、取り込み元を出しそろえる。**同じ取り込み元が2つ**あるまま
+  //   取り込むと、名前の順でどちらが勝つかが決まってしまい、置き間違いに気づけない
+  const ready: { file: FolderFile; parsed: ParsedImport }[] = [];
   for (const file of changed) {
-    let parsed: ParsedImport;
     try {
-      parsed = parseCustomerFile(await folder.store.readBytes([file.name]), file.name);
+      ready.push({ file, parsed: parseCustomerFile(await folder.store.readBytes([file.name]), file.name) });
     } catch (e) {
       // 顧客データでないファイル（ほかの書類が置いてあるだけ）。印は付けずに飛ばす
       out.skipped.push({ file: file.name, message: e instanceof Error ? e.message : String(e) });
-      continue;
     }
+  }
+  // 変わっていないファイルの取り込み元は、前に取り込んだときの印から分かる（読み直さない）
+  const known = files
+    .map((file) => ({ name: file.name, source: seen[file.name]?.source }))
+    .filter((e): e is { name: string; source: CustomerSource } => e.source !== undefined)
+    .filter((e) => !ready.some((r) => r.file.name === e.name));
+  const conflicts = conflictingSources([
+    ...known,
+    ...ready.map((r) => ({ name: r.file.name, source: r.parsed.source })),
+  ]);
+  const blocked = new Set(conflicts.map((c) => c.source));
+  for (const conflict of conflicts) out.conflicts.push(ledgerConflictText(conflict.source, conflict.files));
+
+  const bySource = await deps.countBySource();
+  for (const { file, parsed } of ready) {
+    // ★どれを使うか決められない取り込み元は、1つも取り込まない（黙って片方を選ばない）
+    if (blocked.has(parsed.source)) continue;
     const decision = decideLedgerImport({
       source: parsed.source,
       fileName: file.name,
@@ -314,7 +335,7 @@ async function importLedgerFiles(
         removed: report.removed,
       }),
     );
-    next = { ...next, [file.name]: markOf(file) };
+    next = { ...next, [file.name]: markOf(file, parsed.source, seen[file.name]?.mine) };
   }
   await deps.saveSeenCustomerFiles(next);
   return out;

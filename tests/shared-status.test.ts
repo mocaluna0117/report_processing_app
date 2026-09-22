@@ -23,7 +23,7 @@ const report = (over: Partial<SyncReport> = {}): SyncReport => ({
   pending: { customers: 3, examples: { inquiry: 8, inspection: 4 } },
   customers: { applied: 2, unmatched: 0, written: true },
   examples: { inquiry: { count: 8, written: false }, inspection: { count: 4, written: false } },
-  ledger: { imported: [], pending: [], skipped: [] },
+  ledger: { imported: [], pending: [], skipped: [] , conflicts: [] },
   failures: [],
   ...over,
 });
@@ -179,7 +179,7 @@ describe("学習した書き方の消去", () => {
 describe("共有フォルダーの顧客ファイル", () => {
   it("取り込めたら、その1行を出す", () => {
     const view = sharedStatus(
-      input({ report: report({ ledger: { imported: ["「台帳.csv」を取り込みました"], pending: [], skipped: [] } }) }),
+      input({ report: report({ ledger: { imported: ["「台帳.csv」を取り込みました"], pending: [], skipped: [] , conflicts: [] } }) }),
     );
     expect(view.notes.join()).toContain("「台帳.csv」を取り込みました");
     expect(view.ledgerReplace).toBeNull();
@@ -189,7 +189,7 @@ describe("共有フォルダーの顧客ファイル", () => {
     const view = sharedStatus(
       input({
         report: report({
-          ledger: { imported: [], pending: [{ file: "助っ人.csv", text: "3,000件 が 12件 に置き換わります。" }], skipped: [] },
+          ledger: { imported: [], pending: [{ file: "助っ人.csv", text: "3,000件 が 12件 に置き換わります。" }], skipped: [] , conflicts: [] },
         }),
       }),
     );
@@ -200,7 +200,7 @@ describe("共有フォルダーの顧客ファイル", () => {
 
   it("顧客データでないファイルは、飛ばしたと書くだけ", () => {
     const view = sharedStatus(
-      input({ report: report({ ledger: { imported: [], pending: [], skipped: [{ file: "メモ.csv", message: "判定できません" }] } }) }),
+      input({ report: report({ ledger: { imported: [], pending: [], skipped: [{ file: "メモ.csv", message: "判定できません" }] , conflicts: [] } }) }),
     );
     expect(view.notes.join()).toContain("「メモ.csv」は顧客データとして読めない");
   });
@@ -208,7 +208,7 @@ describe("共有フォルダーの顧客ファイル", () => {
   it("書き出しの確認中でも、取り込みの結果は出す（読むだけなので先に動いている）", () => {
     const view = sharedStatus(
       input({
-        report: report({ awaitingFirstWrite: true, ledger: { imported: ["取り込みました"], pending: [], skipped: [] } }),
+        report: report({ awaitingFirstWrite: true, ledger: { imported: ["取り込みました"], pending: [], skipped: [] , conflicts: [] } }),
       }),
     );
     expect(view.firstWrite).not.toBeNull();

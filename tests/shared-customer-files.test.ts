@@ -3,12 +3,16 @@ import {
   type FolderFile,
   type SeenCustomerFiles,
   decideLedgerImport,
+  conflictingSources,
   fileChanged,
   isSeenCustomerFiles,
+  ledgerConflictText,
+  ledgerPutText,
   keepMarks,
   ledgerImportedText,
   markOf,
   pickCustomerFiles,
+  staleWrittenFiles,
 } from "@/lib/shared/customer-files";
 
 // 共有フォルダーに置いた顧客データのファイルを、2人目も自動で取り込めるようにする（2026-09-23）。
@@ -77,6 +81,15 @@ describe("前に取り込んだときから変わったか", () => {
   it("印はファイルの大きさと更新時刻だけを持つ", () => {
     expect(markOf(file("台帳.xlsx", 5, 7))).toEqual({ size: 5, lastModified: 7 });
   });
+
+  it("取り込み元と、自分で置いたかも覚えられる", () => {
+    expect(markOf(file("台帳.xlsx", 5, 7), "dx", true)).toEqual({
+      size: 5,
+      lastModified: 7,
+      source: "dx",
+      mine: true,
+    });
+  });
 });
 
 describe("フォルダーから消えたファイルの印", () => {
@@ -142,5 +155,63 @@ describe("取り込めたときの1行", () => {
   it("消えた件数は、あるときだけ出す", () => {
     const text = ledgerImportedText({ fileName: "台帳.xlsx", source: "suketto", added: 0, updated: 0, removed: 3 });
     expect(text).toContain("削除 3件");
+  });
+});
+
+describe("同じ取り込み元のファイルが2つ以上あるとき", () => {
+  it("★助っ人クラウドが2つあれば、どれを使うか決められないとみなす", () => {
+    const found = conflictingSources([
+      { name: "助っ人_9月.csv", source: "suketto" },
+      { name: "助っ人_10月.csv", source: "suketto" },
+      { name: "台帳.csv", source: "dx" },
+    ]);
+    expect(found).toEqual([{ source: "suketto", files: ["助っ人_10月.csv", "助っ人_9月.csv"] }]);
+  });
+
+  it("★点検保守台帳は何個あってもよい（物件番号で足し込むだけ）", () => {
+    const found = conflictingSources([
+      { name: "台帳_9月.csv", source: "dx" },
+      { name: "台帳_10月.csv", source: "dx" },
+    ]);
+    expect(found).toEqual([]);
+  });
+
+  it("1つなら何も言わない", () => {
+    expect(conflictingSources([{ name: "助っ人.csv", source: "suketto" }])).toEqual([]);
+  });
+
+  it("どう直せばよいかまで書く", () => {
+    const text = ledgerConflictText("suketto", ["助っ人_9月.csv", "助っ人_10月.csv"]);
+    expect(text).toContain("助っ人クラウド");
+    expect(text).toContain("助っ人_9月.csv");
+    expect(text).toContain("1つだけを残して");
+    expect(text).toContain("取り込みは止めています");
+  });
+});
+
+describe("自分で置いた古いファイルの片付け", () => {
+  const seen = {
+    "助っ人_9月.csv": { size: 1, lastModified: 1, source: "suketto" as const, mine: true },
+    "助っ人_10月.csv": { size: 2, lastModified: 2, source: "suketto" as const, mine: true },
+    "台帳.csv": { size: 3, lastModified: 3, source: "dx" as const, mine: true },
+    "誰かが置いた助っ人.csv": { size: 4, lastModified: 4, source: "suketto" as const },
+  };
+
+  it("同じ取り込み元で、いま置いたもの以外を挙げる", () => {
+    expect(staleWrittenFiles(seen, "suketto", "助っ人_10月.csv")).toEqual(["助っ人_9月.csv"]);
+  });
+
+  it("★利用者が手で置いたファイルには触らない", () => {
+    expect(staleWrittenFiles(seen, "suketto", "新しい助っ人.csv")).not.toContain("誰かが置いた助っ人.csv");
+  });
+
+  it("取り込み元が違うものは片付けない", () => {
+    expect(staleWrittenFiles(seen, "dx", "新しい台帳.csv")).toEqual(["台帳.csv"]);
+  });
+
+  it("置けたときは、片付けた分も書く", () => {
+    expect(ledgerPutText("助っ人_10月.csv", ["助っ人_9月.csv"])).toContain("古い助っ人_9月.csvは外しました");
+    expect(ledgerPutText("台帳.csv", [])).not.toContain("外しました");
+    expect(ledgerPutText("台帳.csv", [])).toContain("もう1台でも同じ台帳になります");
   });
 });

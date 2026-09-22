@@ -28,6 +28,10 @@ export interface FolderFile {
 export interface FileMark {
   size: number;
   lastModified: number;
+  /** どの取り込み元だったか。★読み直さずに「同じ取り込み元が2つ」を見つけるために持つ */
+  source?: CustomerSource;
+  /** Folio がこの端末から置いたファイルか（置き換えるとき、古い方を片付けてよい印） */
+  mine?: boolean;
 }
 
 /** 名前 → 取り込んだときの見分け */
@@ -55,9 +59,15 @@ export function fileChanged(seen: SeenCustomerFiles, file: FolderFile): boolean 
   return before.size !== file.size || before.lastModified !== file.lastModified;
 }
 
-export const markOf = (file: FolderFile): FileMark => ({
+export const markOf = (
+  file: FolderFile,
+  source?: CustomerSource,
+  mine?: boolean,
+): FileMark => ({
   size: file.size,
   lastModified: file.lastModified,
+  ...(source ? { source } : {}),
+  ...(mine ? { mine: true } : {}),
 });
 
 /**
@@ -83,6 +93,55 @@ export function isSeenCustomerFiles(value: unknown): value is SeenCustomerFiles 
       typeof (m as FileMark).size === "number" &&
       typeof (m as FileMark).lastModified === "number",
   );
+}
+
+/**
+ * ★**丸ごと入れ替える取り込み元。**同じ取り込み元のファイルが2つあると、
+ *   どちらが勝つかを名前の順で決めることになり、置き間違いに気づけない。
+ *   点検保守台帳は物件番号で足し込むだけなので、何個あってもよい。
+ */
+export const REPLACING_SOURCES: readonly CustomerSource[] = ["suketto"];
+
+/** 同じ取り込み元のファイルが2つ以上あるもの（丸ごと入れ替える取り込み元だけ見る） */
+export function conflictingSources(
+  entries: readonly { name: string; source: CustomerSource }[],
+): { source: CustomerSource; files: string[] }[] {
+  const out: { source: CustomerSource; files: string[] }[] = [];
+  for (const source of REPLACING_SOURCES) {
+    const files = entries
+      .filter((e) => e.source === source)
+      .map((e) => e.name)
+      .sort();
+    if (files.length > 1) out.push({ source, files });
+  }
+  return out;
+}
+
+/** どれを使うか決められないときの文（取り込まずに知らせる） */
+export function ledgerConflictText(source: CustomerSource, files: readonly string[]): string {
+  return (
+    `共有フォルダーに${SOURCE_LABEL[source]}のファイルが ${files.length}つ あります（${files.join("・")}）。` +
+    `${SOURCE_LABEL[source]}は取り込むと丸ごと入れ替わるので、どれを使うか決められません。` +
+    "いちばん新しいもの1つだけを残して、ほかは共有フォルダーから外してください（取り込みは止めています）。"
+  );
+}
+
+/** Folio がこの端末から置いた、同じ取り込み元の古いファイル（置き換えたら片付ける） */
+export function staleWrittenFiles(
+  seen: SeenCustomerFiles,
+  source: CustomerSource,
+  keepName: string,
+): string[] {
+  return Object.entries(seen)
+    .filter(([name, mark]) => mark.mine === true && mark.source === source && name !== keepName)
+    .map(([name]) => name)
+    .sort();
+}
+
+/** 取り込んだファイルを共有フォルダーにも置けたときの1行 */
+export function ledgerPutText(fileName: string, removed: readonly string[]): string {
+  const tidy = removed.length > 0 ? `（古い${removed.join("・")}は外しました）` : "";
+  return `共有フォルダーに「${fileName}」を置きました${tidy}。もう1台でも同じ台帳になります。`;
 }
 
 export type LedgerDecision =

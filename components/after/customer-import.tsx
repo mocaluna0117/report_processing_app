@@ -35,6 +35,7 @@ export function CustomerImport({
   report,
   importing,
   error,
+  sharedNote,
   onImport,
   onDelete,
   onShowReview,
@@ -43,6 +44,8 @@ export function CustomerImport({
   report: ImportReport | null;
   importing: boolean;
   error: string | null;
+  /** 取り込んだファイルを共有フォルダーにも置けたときの1行（つないでいなければ null） */
+  sharedNote?: string | null;
   onImport: (file: File) => void;
   onDelete: () => void;
   onShowReview: () => void;
@@ -134,6 +137,9 @@ export function CustomerImport({
               )}
             </div>
           )}
+          {/* ★共有フォルダーにつないでいれば、同じファイルを置いたことをここで伝える
+              （コピーし忘れると、もう1台だけ古い台帳のままになる） */}
+          {sharedNote && <p className="mt-1 text-slate-700">{sharedNote}</p>}
           {report.dedupUncertain > 0 && (
             <p className="mt-1">
               重複か判断できなかった {SOURCE_LABEL.suketto} {report.dedupUncertain}件 は、消さずに要確認にしました

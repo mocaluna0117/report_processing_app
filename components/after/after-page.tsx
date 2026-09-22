@@ -69,6 +69,8 @@ export function AfterPage() {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
+  /** 取り込んだファイルを共有フォルダーにも置けたか（つないでいなければ null） */
+  const [importShared, setImportShared] = useState<string | null>(null);
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [registerNotice, setRegisterNotice] = useState<string | null>(null);
@@ -167,6 +169,7 @@ export function AfterPage() {
     setImporting(true);
     setImportError(null);
     setImportReport(null);
+    setImportShared(null);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const parsed = parseCustomerFile(bytes, file.name);
@@ -184,6 +187,9 @@ export function AfterPage() {
       setImportReport(report);
       setCustomers(await loadCustomers());
       storage.refreshUsage();
+      // ★同じファイルを共有フォルダーにも置く。もう1台が手で取り込まなくて済む
+      //   （コピーし忘れると、相手だけ古い台帳のままになる）
+      setImportShared(await shared.putCustomerFile(file.name, bytes, parsed.source));
       // ★取り込みで id が結び付き直すことがあるので、共有フォルダーの手直しを当て直す
       shared.scheduleSync();
     } catch (e) {
@@ -407,6 +413,7 @@ export function AfterPage() {
           report={importReport}
           importing={importing}
           error={importError}
+          sharedNote={importShared}
           onImport={importFile}
           onDelete={deleteCustomers}
           onShowReview={() => {

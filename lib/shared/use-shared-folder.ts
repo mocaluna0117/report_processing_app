@@ -7,13 +7,17 @@
 //   読み込み直後は尋ねずに今の許可を見て、生きていればそのままつなぐ（顛末書の画面と同じ）。
 // ★同期は storage.canPersist（復元できた）まで走らせない。
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { CustomerSource } from "@/lib/after/types";
+import { ledgerPutText, markOf, staleWrittenFiles } from "@/lib/shared/customer-files";
 import type { SharedFolderState } from "@/lib/shared/status";
 import { SharedFolder, sharedErrorText } from "@/lib/shared/folder";
 import {
   clearSharedFolder,
   loadDeviceId,
   loadLastSync,
+  loadSeenCustomerFiles,
   loadSharedFolderHandle,
+  saveSeenCustomerFiles,
   saveSharedFolderHandle,
 } from "@/lib/shared/store";
 import { type SyncReport, syncShared } from "@/lib/shared/sync";
@@ -48,6 +52,15 @@ export interface SharedFolderHook {
   sync: (options?: { allowFirstWrite?: boolean; allowLedgerReplace?: boolean }) => Promise<void>;
   /** 手直し・学習のあとに呼ぶ（まとめて少し後に同期する） */
   scheduleSync: () => void;
+  /**
+   * 手で取り込んだ顧客データのファイルを、共有フォルダーにも置く。
+   * つないでいなければ何もしない（null）。置けたら画面に出す1行を返す。
+   */
+  putCustomerFile: (
+    name: string,
+    bytes: Uint8Array,
+    source: CustomerSource,
+  ) => Promise<string | null>;
   /** 登録を消す（★フォルダーの中のファイルは消さない） */
   forget: () => Promise<void>;
 }
@@ -196,6 +209,32 @@ export function useSharedFolder({
         // ★初回の書き出しと顧客ファイルの入れ替えは、ここでは許さない（ボタンで確かめてから）
         if (folder) void runSync(folder, {});
       }, SYNC_DEBOUNCE_MS);
+    },
+
+    putCustomerFile: async (name, bytes, source) => {
+      const folder = folderRef.current;
+      if (!folder) return null;
+      try {
+        await folder.store.writeBytes([name], bytes);
+        const seen = await loadSeenCustomerFiles();
+        // ★Folio がこの端末から置いた、同じ取り込み元の古いファイルだけ片付ける
+        //   （利用者が手で置いたファイルには触らない）。放っておくと
+        //   「同じ取り込み元が2つ」になって、どちらを使うか決められなくなる
+        const stale = staleWrittenFiles(seen, source, name);
+        for (const old of stale) await folder.store.remove([old]).catch(() => undefined);
+        const next = { ...seen };
+        for (const old of stale) delete next[old];
+        const stat = await folder.store.stat([name]);
+        if (stat?.kind === "file") {
+          // ★自分で置いたファイルは、次の同期で取り込み直さなくてよい（もう取り込んである）
+          next[name] = markOf({ name, size: stat.size, lastModified: stat.lastModified }, source, true);
+        }
+        await saveSeenCustomerFiles(next);
+        return ledgerPutText(name, stale);
+      } catch (e) {
+        // ★置けなくても、この端末の取り込みは済んでいる。知らせるだけ
+        return `共有フォルダーに「${name}」を置けませんでした（${sharedErrorText(e)}）。あとで「共有フォルダーと同期」を押すか、手でコピーしてください`;
+      }
     },
 
     forget: async () => {
