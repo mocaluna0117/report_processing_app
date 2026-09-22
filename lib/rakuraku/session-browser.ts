@@ -29,17 +29,8 @@ export async function withSessionPage(
   session: SessionPayload,
   run: (ctx: SessionPageRun) => Promise<SessionPageOutcome | void>,
 ): Promise<void> {
-  let launched: LaunchedBrowser;
-  try {
-    launched = await launchBrowser();
-  } catch (e) {
-    if (e instanceof RakurakuError) throw e; // 混み合っている（BROWSER_BUSY）
-    throw new RakurakuError(
-      "BROWSER_LAUNCH_FAILED",
-      `ブラウザを起動できませんでした（${e instanceof Error ? e.name : "Error"}）`,
-      { retryable: true },
-    );
-  }
+  // ★launchBrowser が失敗を分類して投げる（BROWSER_BUSY / BROWSER_LAUNCH_FAILED）
+  const launched: LaunchedBrowser = await launchBrowser();
   // ★閉じるのは1回だけ（中断で閉じたあと、finally でもう一度閉じない）
   let closed = false;
   const closeOnce = async () => {
