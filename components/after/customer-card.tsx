@@ -74,7 +74,7 @@ export function CustomerCard({
         <h2 className="text-lg font-semibold">
           お客様の情報
           <span className="ml-2 text-xs font-normal text-slate-500">
-            直した内容はこの端末に保存され、顧客データを取り込み直しても残ります
+            直した内容は保存され、顧客データを取り込み直しても残ります
           </span>
         </h2>
         {Object.keys(customer.edits).length > 0 && (

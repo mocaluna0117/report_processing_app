@@ -15,7 +15,7 @@ import { ReportDialog } from "@/components/report-dialog";
 import { ResultsTable } from "@/components/results-table";
 import { MoreDetails } from "@/components/more-details";
 import { StorageBanner } from "@/components/storage-banner";
-import { AFTER_SAVE_NOTE, SAVE_PAUSED_TEXT } from "@/lib/privacy-notes";
+import { AFTER_SAVE_NOTE, AFTER_SHARED_SAVE_NOTE, SAVE_PAUSED_TEXT } from "@/lib/privacy-notes";
 import { createAfterCase } from "@/lib/after/case";
 import { applyEdits, effectiveFields, needsReview, resetEdits } from "@/lib/after/customer";
 import { type AfterFlowInput, afterFlow, isFreshAfter } from "@/lib/after/flow";
@@ -364,6 +364,9 @@ export function AfterPage() {
   const mailRow = mailCaseId ? (cases.find((c) => c.pairId === mailCaseId) ?? null) : null;
   const reportRow = reportCaseId ? (cases.find((c) => c.pairId === reportCaseId) ?? null) : null;
 
+  /** 保存の説明。共有フォルダーにつないでいるときだけ差し替える */
+  const saveNote = shared.connected ? AFTER_SHARED_SAVE_NOTE : AFTER_SAVE_NOTE;
+
   /** 手順バーのもと。規則は lib/after/flow.ts にまとめてある */
   const flowInput: AfterFlowInput = {
     restored: storage.restored,
@@ -596,15 +599,17 @@ export function AfterPage() {
       )}
 
       {/* ★保存と送信の説明は、この欄だけに出す（前書き・受付欄・フッターの繰り返しはやめた）。
-          そのため、まだ何も取り込んでいない画面でも必ず出す */}
+          そのため、まだ何も取り込んでいない画面でも必ず出す。
+          ★共有フォルダーにつないでいるときだけ、共有のことを書いた文に差し替える
+          （つないでいなければ「このブラウザの中だけ」が依然正しい） */}
       {storage.restored && (
         <StorageBanner
           description={
             storage.canPersist ? (
               <>
-                {AFTER_SAVE_NOTE.summary}
+                {saveNote.summary}
                 <MoreDetails size="xs" summary="くわしく (保存する中身と Gemini へ送るもの)">
-                  {AFTER_SAVE_NOTE.details.map((text) => (
+                  {saveNote.details.map((text) => (
                     <p key={text}>{text}</p>
                   ))}
                 </MoreDetails>

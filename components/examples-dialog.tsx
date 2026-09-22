@@ -178,7 +178,7 @@ export function ExamplesDialog({
             }}
           />
           <span className="text-[11px] text-slate-400">
-            別の端末・ブラウザへ移すときに使います
+            共有フォルダーを使わずに、別の端末・ブラウザへ移すときに使います
           </span>
         </div>
         <button

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AFTER_SAVE_NOTE,
+  AFTER_SHARED_SAVE_NOTE,
   INSPECTION_SAVE_NOTE,
   LEARNING_SEND_NOTE,
   SAVE_PAUSED_TEXT,
@@ -13,6 +14,7 @@ import {
 const notes: [string, SafetyNote][] = [
   ["定期点検", INSPECTION_SAVE_NOTE],
   ["アフターメンテナンス", AFTER_SAVE_NOTE],
+  ["アフターメンテナンス（共有フォルダーあり）", AFTER_SHARED_SAVE_NOTE],
 ];
 
 describe.each(notes)("%s の保存の説明", (_label, note) => {
@@ -56,6 +58,41 @@ describe("送るものを畳んで隠さない", () => {
   it("消えないものの説明を残す（取り込み直し・別の画面の消去）", () => {
     expect(INSPECTION_SAVE_NOTE.details.join("")).toContain("取り消せません");
     expect(AFTER_SAVE_NOTE.details.join("")).toContain("消えません");
+  });
+});
+
+describe("共有フォルダーを登録しているとき", () => {
+  it("★1文だけで「共有フォルダーにも置く」と分かる", () => {
+    expect(AFTER_SHARED_SAVE_NOTE.summary).toContain("共有フォルダー");
+    // ★folio のサーバーへは共有しても何も送らないので、この約束は変えない
+    expect(AFTER_SHARED_SAVE_NOTE.summary).toContain("サーバーには送りません");
+  });
+
+  it("★置くものと置かないものを、どちらも書く", () => {
+    const details = AFTER_SHARED_SAVE_NOTE.details.join("");
+    expect(details).toContain("手直し");
+    expect(details).toContain("学習した書き方");
+    expect(details).toContain("置きません");
+    expect(details).toContain("受付一覧");
+    // 氏名・電話を直したときはその値が入ることを隠さない
+    expect(details).toContain("氏名・電話番号を直した場合はその値を含みます");
+  });
+
+  it("★誰が見られるかを書く（アプリが守るのではなくフォルダーの権限が守る）", () => {
+    expect(AFTER_SHARED_SAVE_NOTE.details.join("")).toContain("フォルダーの権限どおり");
+  });
+
+  it("★消したときに相手からも消えることを書く", () => {
+    expect(AFTER_SHARED_SAVE_NOTE.details.join("")).toContain("相手の端末からも消えます");
+  });
+
+  it("共有フォルダーを登録していないときの文は今までどおり", () => {
+    expect(AFTER_SAVE_NOTE.summary).toContain("このブラウザの中だけ");
+    expect(AFTER_SAVE_NOTE.summary).not.toContain("共有フォルダー");
+  });
+
+  it("定期点検の「くわしく」にも、学習が共有フォルダーへ出ることが載っている", () => {
+    expect(INSPECTION_SAVE_NOTE.details.join("")).toContain("共有フォルダー");
   });
 });
 
