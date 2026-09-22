@@ -4,11 +4,19 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { HelpDialog } from "@/components/help-dialog";
+import { RakurakuLoginDialog } from "@/components/rakuraku-login-dialog";
 import { SIGNED_IN_COOKIE } from "@/lib/auth";
 import { HELP_SECTIONS } from "@/lib/help";
 import { getHelpDialogState, openHelp, subscribeHelpDialog } from "@/lib/help-dialog";
 import { getNavigationGuard } from "@/lib/navigation-guard";
+import { openLoginDialog, rakurakuChip, subscribeLoginDialog } from "@/lib/rakuraku-login-dialog";
 import { DOC_KINDS } from "@/lib/tenmatsu/kinds";
+import {
+  getLoginUserId,
+  getSessionToken,
+  restoreLogin,
+  subscribeLogin,
+} from "@/lib/tenmatsu/local/session";
 
 /**
  * 画面 (処理の種類)。扱うデータが別なのでURLも分ける。
@@ -34,8 +42,29 @@ export function ModeNav() {
   // ヘッダーの「使い方」がいま選んだ状態に見えるように（開いていなくても、モーダルの表示と揃える）
   const [helpOpen, setHelpOpen] = useState(false);
   useEffect(() => subscribeHelpDialog((s) => setHelpOpen(s.open)), []);
+
+  /**
+   * 楽楽精算のログイン状態。
+   * ★初期値は sessionStorage を読まない（サーバーで描いた中身と食い違わせない）。
+   *   読むのはマウント後。known が false のあいだは「楽楽精算」とだけ出す。
+   */
+  const [rakuraku, setRakuraku] = useState({ known: false, loggedIn: false, userId: null as string | null });
+  useEffect(() => {
+    const sync = () =>
+      setRakuraku({ known: true, loggedIn: getSessionToken() !== null, userId: getLoginUserId() });
+    const stop = subscribeLogin(sync);
+    // ★restoreLogin は一度しか戻さない。先にマウントしたこちらが使い切るので、必ず後で読み直す
+    restoreLogin();
+    sync();
+    return stop;
+  }, []);
+  const [loginOpen, setLoginOpen] = useState(false);
+  useEffect(() => subscribeLoginDialog((s) => setLoginOpen(s.open)), []);
+  const chip = rakurakuChip(rakuraku);
   /** いま見ている画面の使い方を、開いたときの既定タブにする */
   const currentSlug = HELP_SECTIONS.find((s) => s.href === pathname)?.slug ?? null;
+  /** いま見ているのが顛末書系ならその種類（モーダルの文言に使う）。ほかは null */
+  const currentKind = DOC_KINDS.find((k) => k.route === pathname)?.id ?? null;
 
   // ログイン画面では画面の切り替えを出さない (押しても戻されるだけなので)
   if (pathname === "/login") return null;
@@ -85,7 +114,24 @@ export function ModeNav() {
       >
         使い方
       </button>
+      {/* ★楽楽精算のログイン（Folio 自体のログインとは別物）。どの画面からでも開けるよう
+          ここに1つだけ置く。定期点検・アフターでは自分から開かない（楽楽精算を使わないため） */}
+      <button
+        type="button"
+        onClick={() => openLoginDialog("manual", currentKind)}
+        aria-haspopup="dialog"
+        aria-pressed={loginOpen}
+        title={chip.title}
+        className={
+          chip.tone === "on"
+            ? "cursor-pointer rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+            : "cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+        }
+      >
+        {chip.text}
+      </button>
       <HelpDialog />
+      <RakurakuLoginDialog />
       {signedIn && (
         <form method="post" action="/api/logout">
           <button

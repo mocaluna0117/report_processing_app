@@ -208,6 +208,35 @@ describe("ヘッダーの表示", () => {
   });
 });
 
+describe("★ログインを勝手に呼ばない（画面のテスト基盤が無いので、中身を読んで見張る）", () => {
+  const source = readFileSync("components/rakuraku-login-dialog.tsx", "utf8");
+
+  it("ログインを呼ぶのは1か所だけ", () => {
+    expect(source.split("api.login(").length - 1).toBe(1);
+  });
+
+  it("そこは利用者が押したとき（フォームの送信）で、effect の中ではない", () => {
+    // submit 関数の中にだけあること。useEffect の塊に login の呼び出しが無いこと
+    for (const block of source.split("useEffect(").slice(1)) {
+      const body = block.slice(0, block.indexOf("}, ["));
+      expect(body).not.toContain("api.login");
+      expect(body).not.toContain("submit(");
+    }
+    expect(source).toContain("onSubmit=");
+  });
+
+  it("やり直しの仕掛け（タイマー）を持たない", () => {
+    expect(source).not.toContain("setTimeout");
+    expect(source).not.toContain("setInterval");
+  });
+
+  it("ヘッダーはモーダルを1つだけ置く", () => {
+    const nav = readFileSync("components/mode-nav.tsx", "utf8");
+    expect(nav.split("<RakurakuLoginDialog />").length - 1).toBe(1);
+    expect(nav).not.toContain("api.login");
+  });
+});
+
 describe("モーダルの文言", () => {
   it("★押す前の説明から「ロック」と「やり直しません」を落とさない", () => {
     expect(LOGIN_RULE_TEXT).toContain("ロック");
