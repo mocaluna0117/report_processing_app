@@ -86,12 +86,15 @@ export function formatEnvelope<T>(
 
 /**
  * ファイルの文字列を読む。
- * 中身の形は種類ごとの `isItems` で確かめる（合わない中身は受け取らない）。
+ *
+ * 中身の取り出しは種類ごとの `pick` に任せる。
+ * ★`pick` は「読めたら中身、まるごと形が違えば null」を返す。
+ *   1件だけ形が違うようなものは `pick` の中で落とす（1件の不備で全部を捨てない）。
  */
 export function parseEnvelope<T>(
   dataset: SharedDataset,
   text: string,
-  isItems: (value: unknown) => value is T,
+  pick: (value: unknown) => T | null,
 ): SharedEnvelope<T> {
   // ほかのアプリが保存し直していても読めるように、先頭の目印（BOM）を落とす
   const body = text.replace(/^﻿/, "").trim();
@@ -128,7 +131,8 @@ export function parseEnvelope<T>(
         "この端末の Folio を新しくしてください（古いままでは書き換えません）",
     );
   }
-  if (!isItems(envelope.items)) {
+  const items = pick(envelope.items);
+  if (items === null) {
     throw new SharedCorruptError(dataset.file, `${dataset.file} の中身の形が違います`);
   }
   return {
@@ -136,6 +140,6 @@ export function parseEnvelope<T>(
     kind: dataset.kind,
     updatedAt: typeof envelope.updatedAt === "string" ? envelope.updatedAt : "",
     writer: typeof envelope.writer === "string" ? envelope.writer : "",
-    items: envelope.items,
+    items,
   };
 }

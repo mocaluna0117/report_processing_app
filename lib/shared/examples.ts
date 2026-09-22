@@ -28,19 +28,13 @@ export const emptySharedExamples = (): SharedExamples => ({ items: [], deleted: 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
-export function isSharedExamples(v: unknown): v is SharedExamples {
-  if (!isRecord(v)) return false;
-  return (
-    Array.isArray(v.items) &&
-    v.items.every(isInquiryExampleLike) &&
-    isRecord(v.deleted) &&
-    Object.values(v.deleted).every((n) => typeof n === "number" && Number.isFinite(n))
-  );
-}
-
-/** 形の違う手本を落として読む（1件の不備で全部を捨てないため） */
-export function pickSharedExamples(v: unknown): SharedExamples {
-  if (!isRecord(v)) return emptySharedExamples();
+/**
+ * ファイルの中身を読む。
+ * ★まるごと形が違えば null（＝読めないファイルとして止める）。
+ *   1件だけ形が違う手本は落として、ほかは活かす。
+ */
+export function pickSharedExamples(v: unknown): SharedExamples | null {
+  if (!isRecord(v)) return null;
   const items = Array.isArray(v.items) ? v.items.filter(isInquiryExampleLike) : [];
   const deleted: Record<string, number> = {};
   if (isRecord(v.deleted)) {

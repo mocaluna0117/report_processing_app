@@ -65,14 +65,13 @@ export function isSharedCustomerEntry(v: unknown): v is SharedCustomerEntry {
   );
 }
 
-/** ファイルの中身の形か（1件ずつ確かめ、形の違うものは落とす） */
-export function isSharedCustomerEdits(v: unknown): v is SharedCustomerEdits {
-  return isRecord(v) && Object.values(v).every(isSharedCustomerEntry);
-}
-
-/** 形の違う1件を落として読む（1件の不備で全部を捨てないため） */
-export function pickSharedCustomerEdits(v: unknown): SharedCustomerEdits {
-  if (!isRecord(v)) return {};
+/**
+ * ファイルの中身を読む。
+ * ★まるごと形が違えば null（＝読めないファイルとして止める）。
+ *   1件だけ形が違うものは落として、ほかの手直しは活かす。
+ */
+export function pickSharedCustomerEdits(v: unknown): SharedCustomerEdits | null {
+  if (!isRecord(v)) return null;
   const out: SharedCustomerEdits = {};
   for (const [id, entry] of Object.entries(v)) {
     if (isSharedCustomerEntry(entry)) out[id] = entry;

@@ -229,17 +229,18 @@ describe("一覧に当てる", () => {
 });
 
 describe("形の違うファイルの読み方", () => {
-  it("形の違う1件だけを落として、ほかは読む", () => {
+  it("形の違う1件だけを落として、ほかは読む（1件の不備で全部を捨てない）", () => {
     const raw = {
       "dx:2101230101": entry({ edits: { memo: "生きている" }, editStamps: { memo: 5 }, editedAt: 5 }),
       "dx:bad": { edits: "文字列" },
       "dx:bad2": null,
     };
-    expect(Object.keys(pickSharedCustomerEdits(raw))).toEqual(["dx:2101230101"]);
+    expect(Object.keys(pickSharedCustomerEdits(raw) ?? {})).toEqual(["dx:2101230101"]);
   });
 
-  it("そもそも形が違えば空として読む", () => {
-    expect(pickSharedCustomerEdits(null)).toEqual({});
-    expect(pickSharedCustomerEdits([1, 2])).toEqual({});
+  it("★まるごと形が違えば null（読めないファイルとして止める）", () => {
+    expect(pickSharedCustomerEdits(null)).toBeNull();
+    expect(pickSharedCustomerEdits([1, 2])).toBeNull();
+    expect(pickSharedCustomerEdits("文字列")).toBeNull();
   });
 });

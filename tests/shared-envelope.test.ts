@@ -13,7 +13,8 @@ import {
 // ★「変わっていないなら書かない」ための同じ形の整え方と、壊れた・別の種類・新しい版の見分け。
 
 const DATASET = SHARED_DATASETS["customer-edits"];
-const isAny = (_v: unknown): _v is Record<string, unknown> => true;
+/** 中身は何でも受け取る（封筒そのものの確かめに使う） */
+const pickAny = (v: unknown): unknown => v;
 
 describe("同じ形に整える", () => {
   it("★キーの順番が違っても同じ文字列になる（変わっていないかを文字列で見るため）", () => {
@@ -47,7 +48,7 @@ describe("封筒を書く", () => {
   it("書いたものをそのまま読み返せる", () => {
     const items = { "dx:2101230101": { memo: "架空のメモ" } };
     const text = formatEnvelope(DATASET, items, "device-1", 1);
-    expect(parseEnvelope(DATASET, text, isAny).items).toEqual(items);
+    expect(parseEnvelope(DATASET, text, pickAny).items).toEqual(items);
   });
 
   it("控えのファイル名は .bak を足したもの（1世代だけ）", () => {
@@ -58,7 +59,7 @@ describe("封筒を書く", () => {
 describe("読めないファイルは止める（自分で直さない）", () => {
   const fail = (text: string) => {
     try {
-      parseEnvelope(DATASET, text, isAny);
+      parseEnvelope(DATASET, text, pickAny);
     } catch (e) {
       return e;
     }
@@ -88,14 +89,14 @@ describe("読めないファイルは止める（自分で直さない）", () =
   });
 
   it("中身の形が違えば読まない", () => {
-    const isNumber = (v: unknown): v is number => typeof v === "number";
-    expect(() => parseEnvelope(DATASET, formatEnvelope(DATASET, {}, "d", 1), isNumber)).toThrow(
+    const pickNumber = (v: unknown): number | null => (typeof v === "number" ? v : null);
+    expect(() => parseEnvelope(DATASET, formatEnvelope(DATASET, {}, "d", 1), pickNumber)).toThrow(
       SharedCorruptError,
     );
   });
 
   it("先頭に目印（BOM）が付いていても読める（ほかのアプリが保存し直した場合）", () => {
     const text = `﻿${formatEnvelope(DATASET, { a: 1 }, "d", 1)}`;
-    expect(parseEnvelope(DATASET, text, isAny).items).toEqual({ a: 1 });
+    expect(parseEnvelope(DATASET, text, pickAny).items).toEqual({ a: 1 });
   });
 });

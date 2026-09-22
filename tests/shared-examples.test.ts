@@ -108,16 +108,16 @@ describe("際限なく伸びないようにする", () => {
 });
 
 describe("読み方・作り方", () => {
-  it("形の違う手本だけを落として読む", () => {
+  it("形の違う手本だけを落として読む（1件の不備で全部を捨てない）", () => {
     const raw = { items: [ex("c-1", "生きている", 10), { id: "c-2" }, null], deleted: { "c-3": 5, "c-4": "文字列" } };
-    const picked = pickSharedExamples(raw);
+    const picked = pickSharedExamples(raw)!;
     expect(picked.items.map((i) => i.id)).toEqual(["c-1"]);
     expect(picked.deleted).toEqual({ "c-3": 5 });
   });
 
-  it("そもそも形が違えば空として読む", () => {
-    expect(pickSharedExamples(null)).toEqual(emptySharedExamples());
-    expect(pickSharedExamples([1])).toEqual(emptySharedExamples());
+  it("★まるごと形が違えば null（読めないファイルとして止める）", () => {
+    expect(pickSharedExamples(null)).toBeNull();
+    expect(pickSharedExamples([1])).toBeNull();
   });
 
   it("この端末の一覧と印から共有の形を作る（元の配列は変えない）", () => {
