@@ -70,11 +70,20 @@ import {
   tenmatsuStepDefs,
 } from "@/lib/tenmatsu/local/flow";
 import { LOCAL_KINDS, RUN_LIMITS } from "@/lib/tenmatsu/local/kind-config";
+import {
+  getLoginDialogState,
+  isLoginDismissedInTab,
+  markLoginDismissedInTab,
+  openLoginDialog,
+  shouldAutoOpenLogin,
+  shouldPromptOnSessionLost,
+} from "@/lib/rakuraku-login-dialog";
 import { createRakurakuApi, RakurakuApiError } from "@/lib/tenmatsu/local/server-api";
 import {
   type FolderConnection,
   forgetLogin,
   getFolderSession,
+  getLoginUserId,
   getPassword,
   getSessionToken,
   getViewTab,
@@ -104,7 +113,6 @@ import {
   saveFolderList,
   saveMaxPerRun,
   saveRoutePin,
-  saveUserId,
 } from "@/lib/tenmatsu/store";
 import { usePersistence } from "@/lib/use-persistence";
 
@@ -182,14 +190,11 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   const [userId, setUserId] = useState("");
   /** ログインIDをこのブラウザに保存してあるか（入力しただけでは消去の導線を出さない） */
   const [userIdSaved, setUserIdSaved] = useState(false);
-  const [passwordInput, setPasswordInput] = useState("");
   const [loggedIn, setLoggedIn] = useState(getSessionToken() !== null);
   const [hasPassword, setHasPassword] = useState(getPassword() !== null);
-  const [loginBusy, setLoginBusy] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
   const [departments, setDepartments] = useState<DepartmentOption[] | null>(kept.departments);
   const [deptCode, setDeptCode] = useState<string | null>(kept.deptCode);
-  /** ★部門の失敗は loginError と分ける。混ぜると、やり直しの導線まで隠れて行き止まりになる */
+  /** ★部門の失敗はログインの失敗と分ける。混ぜると、やり直しの導線まで隠れて行き止まりになる */
   const [deptError, setDeptError] = useState<string | null>(null);
   const [deptBusy, setDeptBusy] = useState(false);
   /** 部門を読めないまま「指定せずに取得する」を選んだか */
@@ -222,14 +227,20 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     setSupported(isFolderAccessSupported());
   }, []);
 
-  // ほかの種類のタブでログインした・忘れたときも、この画面の表示を揃える
+  // ヘッダーのログインの画面・ほかの種類のタブでログインした・忘れたときも、この画面の表示を揃える
   useEffect(() => {
-    const unsubscribe = subscribeLogin(() => {
+    const sync = () => {
       const token = getSessionToken();
       setLoggedIn(token !== null);
       setHasPassword(getPassword() !== null);
       // 「閲覧」タブの有無も揃える（再読み込みで戻したとき・別の種類のタブでログインしたとき）
       setViewTab(getViewTab());
+      // ログインの画面で入れたIDを写す（取得のときの auth.userId と、登録を消す導線に使う）
+      const id = getLoginUserId();
+      if (id !== null) {
+        setUserId(id);
+        setUserIdSaved(true);
+      }
       if (token === null) {
         deptAutoRef.current = false;
         setDepartments((prev) => (prev === null ? prev : null));
@@ -241,9 +252,24 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
         setDepartments((prev) => prev ?? remembered.departments);
         setDeptCode((prev) => prev ?? remembered.deptCode);
       }
-    });
-    // ★このタブに残したログイン状態を戻す。描いたあとで行う (サーバーで描いた HTML と揃えるため)
+    };
+    const unsubscribe = subscribeLogin(sync);
+    // ★このタブに残したログイン状態を戻す。描いたあとで行う (サーバーで描いた HTML と揃えるため)。
+    //   restoreLogin は一度しか戻さず、先にマウントするヘッダーが使い切るので、必ず後で読み直す
     restoreLogin();
+    sync();
+    // ★未ログインならログインの画面を出す。**出すだけで、ログインはしない**
+    //   （閉じたら、このタブでは自分で開くまでもう出さない）
+    if (
+      shouldAutoOpenLogin({
+        kind: kind.id,
+        loggedIn: getSessionToken() !== null,
+        dismissedInTab: isLoginDismissedInTab(),
+        alreadyOpen: getLoginDialogState().open,
+      })
+    ) {
+      openLoginDialog("auto", kind.id);
+    }
     return unsubscribe;
   }, []);
 
@@ -367,7 +393,13 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
           },
           password: getPassword,
           token: getSessionToken,
-          setToken: (token) => setLogin({ sessionToken: token }),
+          setToken: (token) => {
+            setLogin({ sessionToken: token });
+            // ★パスワードがメモリにあれば job.ts がこの実行の中で1回だけ入り直すので、邪魔をしない
+            if (token === null && shouldPromptOnSessionLost({ during: "run", hasPassword: getPassword() !== null })) {
+              openLoginDialog("session-lost", kind.id);
+            }
+          },
         },
         deptCode: () => deptCodeRef.current,
         routePin: () => routePinRef.current,
@@ -467,41 +499,18 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
           setDeptError(DEPT_OPTIONS_EMPTY_TEXT);
           return;
         case "failed":
-          if (outcome.sessionLost) setLogin({ sessionToken: null });
+          if (outcome.sessionLost) {
+            setLogin({ sessionToken: null });
+            if (shouldPromptOnSessionLost({ during: "departments", hasPassword: getPassword() !== null })) {
+              openLoginDialog("session-lost", kind.id);
+            }
+          }
           setDeptError(departmentErrorText(outcome));
           return;
       }
     } finally {
       deptBusyRef.current = false;
       setDeptBusy(false);
-    }
-  };
-
-  const login = async () => {
-    const id = userId.trim();
-    const pass = passwordInput;
-    if (!id || !pass) {
-      setLoginError("楽楽精算のログインIDとパスワードを入れてください");
-      return;
-    }
-    setLoginBusy(true);
-    setLoginError(null);
-    try {
-      // ★ログインは1回だけ。失敗しても自動でやり直さない（楽楽精算はアカウントをロックする）
-      const { sessionToken, expiresAt, viewTab } = await api.login(id, pass);
-      // ★viewTab＝このアカウントに「閲覧」タブがあるか。一覧の経路はこれで決まるので、画面にも出す
-      setLogin({ password: pass, sessionToken, expiresAt, viewTab });
-      setViewTab(viewTab);
-      setPasswordInput("");
-      storage.persist(async () => {
-        await saveUserId(id);
-        setUserIdSaved(true);
-      });
-      await loadDepartments();
-    } catch (e) {
-      setLoginError(errorText(e));
-    } finally {
-      setLoginBusy(false);
     }
   };
 
@@ -556,6 +565,13 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
           }
           if (isFinished(s.state)) {
             setStopping(false);
+            // ★入り直せずに終わったときは、ここでログインの画面を出す（出すだけ）
+            if (
+              getSessionToken() === null &&
+              shouldPromptOnSessionLost({ during: "run-end", hasPassword: getPassword() !== null })
+            ) {
+              openLoginDialog("session-lost", kind.id);
+            }
             void refreshListRef.current(client);
             return;
           }
@@ -816,7 +832,8 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     connection,
     connected,
     loggedIn,
-    loginBusy,
+    // ★ログインはモーダルで行うので、この画面が「ログイン中」になることはない
+    loginBusy: false,
     departmentCount: departments?.length ?? null,
     deptLabel,
     departmentFailed: deptError !== null && departments === null,
@@ -830,6 +847,13 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   const runBlocked = runBlockedReason(flowInput);
   const steps = tenmatsuStepDefs(kind);
   const sectionId = (id: string) => steps.find((s) => s.id === id)?.targetId;
+  /**
+   * 手順②や「→ 楽楽精算へ」を押したとき、まだログインしていなければログインの画面を開く。
+   * ★入力欄はこの画面に無いので、欄へ動かすだけだと行き止まりになる。開くだけでログインはしない。
+   */
+  const openLoginIfNeeded = (targetId: string) => {
+    if (!loggedIn && targetId === sectionId("login")) openLoginDialog("manual", kind.id);
+  };
 
   const preview = previewNo ? (items.find((i) => i.denpyo_no === previewNo) ?? null) : null;
   const pending = pendingNo ? (items.find((i) => i.denpyo_no === pendingNo && isPending(i)) ?? null) : null;
@@ -852,6 +876,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
         ariaLabel={`${kind.label}の手順`}
         expanded={isFreshTenmatsu(flowInput)}
         helpSlug={kind.id}
+        onStepClick={(step) => openLoginIfNeeded(step.targetId)}
       />
 
       {storage.storageError && <p className={WARN_CLASS}>{storage.storageError}</p>}
@@ -937,12 +962,16 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
         </section>
 
         {/* ---------- 楽楽精算 ---------- */}
+        {/* ★入力欄はヘッダーのログインの画面（モーダル）に移した（2026-09-22）。
+            ここは残す: 手順②の行き先・このアカウントの経路・「画面の下見」の置き場所 */}
         <section id={sectionId("login")} tabIndex={-1} className={`${SECTION_CLASS} scroll-mt-4`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">
                 楽楽精算
-                <span className={SUBTITLE_CLASS}>ご自分のログインIDとパスワードでログインします</span>
+                <span className={SUBTITLE_CLASS}>
+                  ご自分のログインIDとパスワードでログインします（3つの書類で共通です）
+                </span>
               </h2>
               <p className="mt-1 text-sm text-slate-600">
                 {loggedIn ? (
@@ -957,75 +986,37 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
               {/* ★ログインした時点で分かる「閲覧」タブの有無。一覧の経路はこれで決まるので、
                   選ばせるのではなく、決まった結果を伝える（取れる伝票の範囲が変わるため） */}
               {loggedIn && accountRoute && <p className="mt-1 text-xs text-slate-500">{accountRoute}</p>}
+              {loggedIn && !hasPassword && (
+                <p className="mt-1 text-xs text-slate-500">
+                  取得の途中でログインが切れたときは、パスワードを入れ直していただく必要があります。
+                </p>
+              )}
             </div>
-            {loggedIn && (
+            {loggedIn ? (
               <button
                 type="button"
                 onClick={() => {
                   forgetLogin();
                   setDepartments(null);
+                  // 押した直後にログインの画面が出てこないように（自分で開けばいつでも出せる）
+                  markLoginDismissedInTab();
                 }}
                 disabled={running}
                 className={SECONDARY_BUTTON_CLASS}
               >
                 ログアウト (パスワードを忘れる)
               </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => openLoginDialog("manual", kind.id)}
+                className={PRIMARY_BUTTON_CLASS}
+              >
+                ログイン
+              </button>
             )}
           </div>
 
-          {!loggedIn && (
-            <form
-              className="mt-3 flex flex-wrap items-end gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void login();
-              }}
-            >
-              <label className="flex flex-col text-xs text-slate-600">
-                ログインID
-                <input
-                  type="text"
-                  value={userId}
-                  autoComplete="off"
-                  spellCheck={false}
-                  onChange={(e) => setUserId(e.target.value)}
-                  disabled={loginBusy}
-                  className={`mt-1 w-48 ${INPUT_CLASS}`}
-                />
-              </label>
-              <label className="flex flex-col text-xs text-slate-600">
-                パスワード
-                <input
-                  type="password"
-                  value={passwordInput}
-                  autoComplete="off"
-                  onChange={(e) => setPasswordInput(e.target.value)}
-                  disabled={loginBusy}
-                  className={`mt-1 w-48 ${INPUT_CLASS}`}
-                />
-              </label>
-              <button
-                type="submit"
-                disabled={loginBusy || !userId.trim() || !passwordInput}
-                title={!userId.trim() || !passwordInput ? "ログインIDとパスワードを入れてください" : undefined}
-                className={PRIMARY_BUTTON_CLASS}
-              >
-                {loginBusy ? "ログインしています…" : "ログイン"}
-              </button>
-            </form>
-          )}
-          {!loggedIn && (
-            <p className="mt-2 text-xs text-slate-500">
-              {/* ★保存のしかたは下の保存の欄に書いた。ここは「押す前に知っておくこと」だけ */}
-              パスワードは保存しません。楽楽精算は続けて失敗するとアカウントがロックされるので、失敗しても自動でやり直しません。
-            </p>
-          )}
-          {loggedIn && !hasPassword && (
-            <p className="mt-2 text-xs text-slate-500">
-              取得の途中でログインが切れたときは、パスワードを入れ直していただく必要があります。
-            </p>
-          )}
-          {loginError && <p className={ERROR_CLASS}>{loginError}</p>}
           {loggedIn && (
             <TenmatsuSurvey
               api={api}
@@ -1195,6 +1186,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
             reason={!canRun && !running ? (runBlocked?.text ?? null) : null}
             targetId={runBlocked?.targetId}
             targetLabel={runBlocked?.targetLabel}
+            onTarget={openLoginIfNeeded}
             className="mt-2"
           />
 

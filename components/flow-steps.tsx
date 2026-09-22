@@ -37,11 +37,17 @@ export function FlowSteps({
   title = "はじめて使う方へ",
   intro,
   helpSlug,
+  onStepClick,
 }: {
   plan: FlowPlan;
   ariaLabel: string;
   /** 何も始めていないときだけ、各段の説明も出す */
   expanded: boolean;
+  /**
+   * 段を押したときに、欄へ動かすほかにすることがあれば。
+   * ★欄ではなくモーダルで行う手順（楽楽精算のログイン）のために足した。
+   */
+  onStepClick?: (step: FlowPlan["steps"][number]) => void;
   title?: string;
   intro?: ReactNode;
   /** 「使い方を見る」で開くモーダルの、最初に選んでおく画面（lib/help.ts の HelpSection.slug） */
@@ -60,7 +66,10 @@ export function FlowSteps({
             <li key={step.id} aria-current={step.state === "current" || step.state === "blocked" ? "step" : undefined}>
               <button
                 type="button"
-                onClick={() => scrollToSection(step.targetId)}
+                onClick={() => {
+                  scrollToSection(step.targetId);
+                  onStepClick?.(step);
+                }}
                 className="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 hover:bg-slate-50"
               >
                 <span

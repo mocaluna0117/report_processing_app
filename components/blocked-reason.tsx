@@ -12,12 +12,15 @@ export function BlockedReason({
   targetId,
   targetLabel,
   className = "",
+  onTarget,
 }: {
   reason: string | null;
   /** その理由を直せる欄。渡すと「→ …」のボタンを出す */
   targetId?: string | null;
   targetLabel?: string | null;
   className?: string;
+  /** 欄へ動かすほかにすることがあれば（モーダルで行う手順のために足した） */
+  onTarget?: (targetId: string) => void;
 }) {
   if (!reason) return null;
   return (
@@ -27,7 +30,10 @@ export function BlockedReason({
       {targetId && targetLabel && (
         <button
           type="button"
-          onClick={() => scrollToSection(targetId)}
+          onClick={() => {
+            scrollToSection(targetId);
+            onTarget?.(targetId);
+          }}
           className="cursor-pointer underline hover:text-amber-950"
         >
           → {targetLabel}

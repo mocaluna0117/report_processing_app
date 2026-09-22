@@ -232,7 +232,8 @@ export function tenmatsuFlow(input: TenmatsuFlowInput): FlowPlan {
       ? { kind: "ready", hint: "ログインしています…", note: "ログイン中" }
       : {
           kind: "ready",
-          hint: "「楽楽精算」の欄にご自分のログインIDとパスワードを入れて「ログイン」を押してください",
+          // ★入力欄はモーダルに移した（2026-09-22）。押す場所を2つとも書く
+          hint: "この段か、右上の「楽楽精算: 未ログイン」を押すとログインの画面が開きます。ログインIDとパスワードを入れてください",
         };
 
   const dept: StepEval = !input.loggedIn
