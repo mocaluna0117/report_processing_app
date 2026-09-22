@@ -27,8 +27,12 @@ afterAll(async () => {
   await server?.close();
 });
 
-/** 検証用に待ち時間を縮める（本番は 20秒・10秒・8秒） */
-const QUICK: NavigationTiming = { frameWaitMs: 3_000, reopenWaitMs: 2_000, listTableWaitMs: 1_000 };
+/**
+ * 検証用に待ち時間を縮める（本番は 20秒・10秒・8秒）。
+ * ★一覧の表を待つ時間だけは1秒まで詰めない。ほかのテストと同時に走って重いとき、
+ *   表は出ているのに待ち切れずに落ちる（見たいのは筋道であって速さではない）。
+ */
+const QUICK: NavigationTiming = { frameWaitMs: 3_000, reopenWaitMs: 2_000, listTableWaitMs: 4_000 };
 const tenant = (): TenantConfig => ({ loginUrl: `${server!.url}/` });
 
 let lines: string[] = [];

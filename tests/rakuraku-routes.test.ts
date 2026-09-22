@@ -41,7 +41,8 @@ afterAll(async () => {
   await server?.close();
 });
 
-const QUICK: NavigationTiming = { frameWaitMs: 3_000, reopenWaitMs: 2_000, listTableWaitMs: 1_000 };
+/** 検証用に待ち時間を縮める（本番は 20秒・10秒・8秒）。表を待つ時間は詰めすぎない */
+const QUICK: NavigationTiming = { frameWaitMs: 3_000, reopenWaitMs: 2_000, listTableWaitMs: 4_000 };
 const tenant = (): TenantConfig => ({ loginUrl: `${server!.url}/` });
 const url = (path: string) => `${server!.url}/${path}`;
 

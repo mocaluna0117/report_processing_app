@@ -24,6 +24,13 @@ afterAll(async () => {
 const kind: ResolvedKind = resolveKind(KINDS.tenmatsu, KINDS.tenmatsu.routes[0]);
 /** 検証用に待ち時間を縮める（本番は 1.5秒・15秒） */
 const QUICK = { requestIntervalMs: 0, nextPageWaitMs: 4_000 };
+/**
+ * 差し替えが遅い画面を試すとき用。
+ * ★仕掛けの遅れ（2.5秒）に QUICK の 4秒だと余裕が1.5秒しかなく、
+ *   ほかのテストと同時に走って重いときに時間切れで落ちる。ここで見たいのは
+ *   「遅くても最終ページと誤判定しない」という**筋道**なので、本番（15秒）寄りの余裕を与える。
+ */
+const PATIENT = { requestIntervalMs: 0, nextPageWaitMs: 12_000 };
 
 async function openList(opts: { pages?: number; mode?: string; delay?: number } = {}): Promise<Page> {
   const page = await browser!.newPage();
@@ -184,7 +191,7 @@ describe.skipIf(!browser)("ページ送り — 2ページ目から先へ進め�
   it("★差し替えに2.5秒かかっても最終ページと誤判定しない", async () => {
     const page = await openList({ pages: 4, delay: 2_500 });
     const frame = await contentFrame(page);
-    expect((await advancePage(page, frame, kind, await readPager(frame), {}, QUICK)).ok).toBe(true);
+    expect((await advancePage(page, frame, kind, await readPager(frame), {}, PATIENT)).ok).toBe(true);
     await page.close();
   }, 60_000);
 

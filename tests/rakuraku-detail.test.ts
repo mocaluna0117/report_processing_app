@@ -193,7 +193,9 @@ describe.skipIf(!browser)("承認履歴から最終承認日を読む", () => {
     expect(blocked).toBe(true);
 
     const reopened = await openDetail(page, kind, tenant(), "TE00009002", href, { log, timing: QUICK });
-    await reopened.locator("button.accesskeyPrint").click({ timeout: 1_000 });
+    // ★「押せない」側は待たずに諦めてよいが、こちらは**押せることを確かめる**側なので
+    //   余裕をとる（重いときに1秒では足りず、押せるのに落ちていた）
+    await reopened.locator("button.accesskeyPrint").click({ timeout: 10_000 });
     expect(await flag(reopened, "__printClicked")).toBe(true);
     await page.close();
   });
