@@ -39,14 +39,13 @@ export type TenmatsuSource = "local-server" | "folder";
  */
 const KEYS: Record<
   DocKindId,
-  { list: string; maxPerRun: string; source: string; folder: string; folderName: string; folderList: string; dept: string; pdfStats: string; route: string }
+  { list: string; maxPerRun: string; source: string; folder: string; folderList: string; dept: string; pdfStats: string; route: string }
 > = {
   tenmatsu: {
     list: META_TENMATSU_LIST,
     maxPerRun: SETTING_KEY_TENMATSU_MAX_PER_RUN,
     source: "tenmatsu:source",
     folder: "tenmatsu:folder",
-    folderName: "tenmatsu:folderName",
     folderList: "tenmatsu:folderList",
     dept: "tenmatsu:dept",
     pdfStats: "tenmatsu:pdfStats",
@@ -57,7 +56,6 @@ const KEYS: Record<
     maxPerRun: SETTING_KEY_SENKETSU_MAX_PER_RUN,
     source: "senketsu:source",
     folder: "senketsu:folder",
-    folderName: "senketsu:folderName",
     folderList: "senketsu:folderList",
     dept: "senketsu:dept",
     pdfStats: "senketsu:pdfStats",
@@ -68,7 +66,6 @@ const KEYS: Record<
     maxPerRun: SETTING_KEY_NATSUIN_MAX_PER_RUN,
     source: "natsuin:source",
     folder: "natsuin:folder",
-    folderName: "natsuin:folderName",
     folderList: "natsuin:folderList",
     dept: "natsuin:dept",
     pdfStats: "natsuin:pdfStats",
@@ -164,20 +161,6 @@ export function defaultSource(hasToken: boolean): TenmatsuSource {
  * 選んだ保存先フォルダー（場所への参照）。無ければ null。
  * ★IndexedDB にはフォルダーの中身ではなく「場所への参照」だけが入る。使うたびにブラウザの許可が要る。
  */
-/**
- * 共有フォルダーの中の、その書類のフォルダー名（既定は画面に出る名前）。
- * ★Box で名前を変えられて選び直したときに覚える（lib/shared/folio-folder.ts）。
- */
-export async function loadFolderName(kind: DocKindId): Promise<string | null> {
-  const raw = await loadMeta<unknown>(KEYS[kind].folderName);
-  return typeof raw === "string" && raw !== "" ? raw : null;
-}
-
-export async function saveFolderName(kind: DocKindId, name: string): Promise<void> {
-  await saveMeta(KEYS[kind].folderName, name);
-}
-
-/** ★前の形（種類ごとに選んでいた保存先）。引っ越しの案内にだけ使う */
 export async function loadFolderHandle<T = unknown>(kind: DocKindId): Promise<T | null> {
   const raw = await loadMeta<unknown>(KEYS[kind].folder);
   return raw && typeof raw === "object" && (raw as { kind?: unknown }).kind === "directory" ? (raw as T) : null;

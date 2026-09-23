@@ -102,7 +102,7 @@ export const HELP_SHOTS: Readonly<Record<string, readonly HelpShot[]>> = {
       alt: "ヘッダーの楽楽精算の表示と、保存先フォルダーの欄",
       hotspots: [
         { text: "楽楽精算のログイン状態。押すとログインの画面が開きます" },
-        { text: "共有フォルダーを1回選ぶと、3種類とも使えるようになります" },
+        { text: "PDFを置くフォルダーを選び、ブラウザに聞かれたら「許可」を選びます" },
       ],
     },
     {

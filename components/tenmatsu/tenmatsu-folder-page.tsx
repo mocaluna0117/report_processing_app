@@ -71,15 +71,6 @@ import {
 } from "@/lib/tenmatsu/local/flow";
 import { LOCAL_KINDS, RUN_LIMITS } from "@/lib/tenmatsu/local/kind-config";
 import {
-  copyAcross,
-  countFiles,
-  defaultKindDirName,
-  movedText,
-  renamedDirText,
-  resolveKindDir,
-} from "@/lib/shared/folio-folder";
-import { loadSharedFolderHandle, saveSharedFolderHandle } from "@/lib/shared/store";
-import {
   RAKURAKU_CHIP_ID,
   getLoginDialogState,
   isLoginDismissedInTab,
@@ -108,8 +99,6 @@ import { FOLDER_ATTACHMENTS, FOLDER_OFFICE_HINT } from "@/lib/tenmatsu/pending";
 import { appendRunLog, nextLogSince } from "@/lib/tenmatsu/run-log";
 import {
   clearFolderHandle,
-  loadFolderName,
-  saveFolderName,
   clearFolderList,
   clearUserId,
   hasFolderData,
@@ -120,6 +109,7 @@ import {
   loadRoutePin,
   loadUserId,
   saveDept,
+  saveFolderHandle,
   saveFolderList,
   saveMaxPerRun,
   saveRoutePin,
@@ -167,19 +157,6 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
 
   const [supported, setSupported] = useState(true);
   const [handle, setHandle] = useState<BrowserDirHandle | null>(kept.handle);
-  /**
-   * 共有フォルダー（Folio フォルダー）。★保存先はこの中の「{kind.label}」を使う。
-   * 以前は書類ごとに別々のフォルダーを選んでいた（利用者の決定 2026-09-23）。
-   */
-  const [root, setRoot] = useState<BrowserDirHandle | null>(null);
-  /** 共有フォルダーの中の、この書類のフォルダー名 */
-  const [dirName, setDirName] = useState(defaultKindDirName(kind));
-  /** 名前が変えられていて、記録が見つかった別名のフォルダー（勝手に切り替えない） */
-  const [candidates, setCandidates] = useState<string[]>([]);
-  /** 前の形で選んでいた保存先（引っ越しの案内に使う） */
-  const [legacy, setLegacy] = useState<BrowserDirHandle | null>(null);
-  const [moving, setMoving] = useState(false);
-  const [moveNote, setMoveNote] = useState<string | null>(null);
   const [client, setClient] = useState<LocalFolderClient | null>(kept.client);
   const [connection, setConnection] = useState<FolderConnection>(kept.connection);
   const [connectionError, setConnectionError] = useState<string | null>(kept.connectionError);
@@ -326,9 +303,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
       }
       const partialErrors: string[] = [];
       try {
-        setRoot(await loadSharedFolderHandle());
-        // ★前の形で選んでいた保存先。引っ越しの案内にだけ使う
-        setLegacy(await loadFolderHandle<BrowserDirHandle>(kind.id));
+        setHandle(await loadFolderHandle<BrowserDirHandle>(kind.id));
       } catch (e) {
         partialErrors.push(`保存先フォルダー: ${errorText(e)}`);
       }
@@ -454,93 +429,33 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     }
   };
 
-  /**
-   * 共有フォルダーの中の、この書類のフォルダーを開く。
-   * ★無ければ作る。名前が変えられていて記録が別名で見つかったときは、**つながずに選んでもらう**
-   *   （別の書類のフォルダーを掴むと記録が混ざるため）。
-   */
-  const openFromRoot = async (rootDir: BrowserDirHandle, askPermission: boolean) => {
-    setConnection("checking");
-    setConnectionError(null);
-    try {
-      if (askPermission) await ensureFolderPermission(rootDir);
-      const saved = await loadFolderName(kind.id).catch(() => null);
-      const state = await resolveKindDir(new FolderStore(rootDir), kind, saved);
-      setCandidates(state.candidates);
-      if (state.candidates.length > 0) {
-        setHandle(null);
-        setClient(null);
-        setConnection("idle");
-        return;
-      }
-      const sub = (await rootDir.getDirectoryHandle(state.name, { create: true })) as BrowserDirHandle;
-      setDirName(state.name);
-      setHandle(sub);
-      await connect(sub, false);
-    } catch (e) {
-      setConnection("error");
-      setConnectionError(errorText(e));
-    }
-  };
-
-  // 共有フォルダーの許可がまだ生きていれば（Chrome の「今後も許可」など）、尋ねずにつなぐ
+  // 前回選んだフォルダーの許可がまだ生きていれば（Chrome の「今後も許可」など）、尋ねずにつなぐ
   useEffect(() => {
-    if (!storage.restored || !root || client || connection !== "idle" || candidates.length > 0) return;
+    if (!storage.restored || !handle || client || connection !== "idle") return;
     let alive = true;
-    void queryFolderPermission(root).then((state) => {
-      if (alive && state === "granted") void openFromRoot(root, false);
+    void queryFolderPermission(handle).then((state) => {
+      if (alive && state === "granted") void connect(handle, false);
     });
     return () => {
       alive = false;
     };
-    // openFromRoot は毎レンダー作り直されるので依存に入れない（つなぐのは条件がそろった1回だけ）
-  }, [storage.restored, root, client, connection, candidates.length]);
+    // connect は毎レンダー作り直されるので依存に入れない（つなぐのは条件がそろった1回だけ）
+  }, [storage.restored, handle, client, connection]);
 
-  /** ★選ぶのは共有フォルダー1つだけ。書類のフォルダーはその中に作る */
   const chooseFolder = async () => {
     setConnectionError(null);
     try {
-      const picked = await pickFolder("shared");
+      const picked = await pickFolder(kind.id);
       if (!picked) return;
-      setRoot(picked);
-      setHandle(null);
+      setHandle(picked);
       setClient(null);
       setItems([]);
       setListFresh(false);
-      setCandidates([]);
-      await saveSharedFolderHandle(picked);
-      await openFromRoot(picked, true);
+      storage.persist(() => saveFolderHandle(kind.id, picked));
+      await connect(picked, true);
     } catch (e) {
       setConnection("error");
       setConnectionError(errorText(e));
-    }
-  };
-
-  /** 名前が変えられていたとき、使うフォルダーを選んでもらう */
-  const useCandidate = async (name: string) => {
-    if (!root) return;
-    await saveFolderName(kind.id, name).catch(() => undefined);
-    setCandidates([]);
-    await openFromRoot(root, false);
-  };
-
-  /** 前の保存先から、この書類のフォルダーへ移す（★写すだけ。前のフォルダーは消さない） */
-  const moveFromLegacy = async () => {
-    if (!legacy || !handle) return;
-    setMoving(true);
-    setConnectionError(null);
-    try {
-      await ensureFolderPermission(legacy);
-      const from = new FolderStore(legacy);
-      const copied = await copyAcross(from, new FolderStore(handle));
-      setMoveNote(copied > 0 ? movedText(kind, copied) : "前の保存先には移すものがありませんでした。");
-      await clearFolderHandle(kind.id).catch(() => undefined);
-      setLegacy(null);
-      if (client) await refreshListRef.current(client);
-    } catch (e) {
-      setConnectionError(`前の保存先から移せませんでした (${errorText(e)})`);
-    } finally {
-      setMoving(false);
     }
   };
 
@@ -830,6 +745,20 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     storage.refreshUsage();
   };
 
+  const forgetFolder = async () => {
+    if (!confirm("保存先フォルダーの登録を消します（フォルダーの中のPDFと記録は消えません）。よろしいですか？")) return;
+    try {
+      await clearFolderHandle(kind.id);
+    } catch (e) {
+      storage.setStorageError(`保存先フォルダーの登録を消せませんでした (${errorText(e)})`);
+    }
+    setHandle(null);
+    setClient(null);
+    setConnection("idle");
+    setConnectionError(null);
+    storage.refreshHasSaved();
+  };
+
   const forgetUserId = async () => {
     if (!confirm("楽楽精算のログインIDの登録を消し、ログインも解除します。よろしいですか？")) return;
     try {
@@ -896,8 +825,8 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     kind,
     supported,
     restored: storage.restored,
-    hasHandle: root !== null,
-    handleName: root ? `${root.name}/${dirName}` : null,
+    hasHandle: handle !== null,
+    handleName: handle?.name ?? null,
     connection,
     connected,
     loggedIn,
@@ -958,34 +887,30 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
             <div>
               <h2 className="text-lg font-semibold">
                 保存先フォルダー
-                <span className={SUBTITLE_CLASS}>
-                  共有フォルダーの中の「{dirName}」に、PDFと取得の記録 (_記録) を置きます
-                </span>
+                <span className={SUBTITLE_CLASS}>PDFと取得の記録 (_記録) をこのフォルダーに置きます</span>
               </h2>
               <p className="mt-1 text-sm text-slate-600">
                 {!supported
                   ? "このブラウザでは使えません"
-                  : !root
-                    ? "共有フォルダーをまだ選んでいません"
+                  : !handle
+                    ? "まだ選んでいません"
                     : connection === "checking"
-                      ? `「${root.name}」につないでいます…`
+                      ? `「${handle.name}」につないでいます…`
                       : connected
                         ? (
                           <>
                             <span className="font-medium text-emerald-700">つながっています</span>
-                            <span className="ml-2 text-xs text-slate-500">
-                              保存先: {root.name}/{dirName}
-                            </span>
+                            <span className="ml-2 text-xs text-slate-500">保存先: {handle.name}</span>
                           </>
                         )
-                        : `共有フォルダー: ${root.name}`}
+                        : `前回選んだフォルダー: ${handle.name}`}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {root && !connected && candidates.length === 0 && (
+              {handle && !connected && (
                 <button
                   type="button"
-                  onClick={() => void openFromRoot(root, true)}
+                  onClick={() => void connect(handle, true)}
                   disabled={!supported || connection === "checking" || !storage.restored}
                   className={PRIMARY_BUTTON_CLASS}
                 >
@@ -997,69 +922,25 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
                 onClick={() => void chooseFolder()}
                 disabled={!supported || connection === "checking" || running || !storage.restored}
                 title={folderBlockedReason(flowInput) ?? undefined}
-                className={root ? SECONDARY_BUTTON_CLASS : PRIMARY_BUTTON_CLASS}
+                className={handle ? SECONDARY_BUTTON_CLASS : PRIMARY_BUTTON_CLASS}
               >
-                {root ? "別の共有フォルダーを選ぶ" : "共有フォルダーを選ぶ"}
+                {handle ? "別のフォルダーを選ぶ" : "保存先フォルダーを選ぶ"}
               </button>
             </div>
           </div>
           {/* 対応していないブラウザは下に大きく出しているので、ここでは出さない */}
           <BlockedReason reason={supported ? folderBlockedReason(flowInput) : null} className="mt-2" />
           {!supported && <p className={WARN_CLASS}>{FOLDER_UNSUPPORTED_TEXT}</p>}
-          {supported && !root && (
+          {supported && !handle && (
             <p className="mt-2 text-sm text-slate-600">
-              Folio の共有フォルダーを選んでください。その中に「{defaultKindDirName(kind)}」を作り、PDFと記録を置きます
-              （アフターメンテナンスの画面で選んだフォルダーと同じものです。1回選べば3種類とも使えます）。
+              {kind.label}のPDFを置くフォルダー (例: ドキュメントの「{kind.label}」) を選んでください。
             </p>
           )}
-          {supported && root && !connected && connection !== "checking" && candidates.length === 0 && (
+          {supported && handle && !connected && connection !== "checking" && (
             <p className="mt-2 text-xs text-slate-500">
               ブラウザが「このフォルダーの編集を許可しますか」と尋ねたら「許可」を選んでください。
             </p>
           )}
-          {/* ★名前が変えられたとき。勝手に切り替えず、選んでもらう */}
-          {candidates.length > 0 && (
-            <div className={WARN_CLASS}>
-              <p>{renamedDirText(kind, candidates)}</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {candidates.map((name) => (
-                  <button
-                    key={name}
-                    type="button"
-                    onClick={() => void useCandidate(name)}
-                    className={SECONDARY_BUTTON_CLASS}
-                  >
-                    「{name}」を使う
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => void useCandidate(defaultKindDirName(kind))}
-                  className={SECONDARY_BUTTON_CLASS}
-                >
-                  新しく「{defaultKindDirName(kind)}」を作る
-                </button>
-              </div>
-            </div>
-          )}
-          {/* ★前の形（書類ごとに選んでいた保存先）からの引っ越し */}
-          {legacy && connected && (
-            <div className="mt-2 rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-              <p>
-                前の保存先「{legacy.name}」があります。中のPDFと記録を「{dirName}」へ移せます
-                （移すだけで、前のフォルダーは消しません）。
-              </p>
-              <button
-                type="button"
-                disabled={moving || running}
-                onClick={() => void moveFromLegacy()}
-                className="mt-2 rounded-md border border-sky-400 bg-white px-3 py-1.5 text-sm font-semibold text-sky-800 hover:bg-sky-100 disabled:opacity-50"
-              >
-                {moving ? "移しています…" : "前の保存先から移す"}
-              </button>
-            </div>
-          )}
-          {moveNote && <p className="mt-2 text-xs text-slate-500">{moveNote}</p>}
           {connectionError && <p className={ERROR_CLASS}>{connectionError}</p>}
           {SHOW_IMPORT && connected && client && (
             <TenmatsuImportRecords
@@ -1431,6 +1312,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
           disabled={running}
           actions={[
             ...(items.length > 0 ? [{ label: "一覧を消去", onClick: () => void clearList(), danger: true }] : []),
+            ...(handle !== null ? [{ label: "保存先フォルダーの登録を消す", onClick: () => void forgetFolder(), danger: true }] : []),
             ...(userIdSaved ? [{ label: "ログインIDの登録を消す", onClick: () => void forgetUserId(), danger: true }] : []),
           ]}
           onClearFont={storage.clearFont}
