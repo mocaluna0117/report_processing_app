@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  SHARED_DIALOG_LEAD,
   SHARED_INTRO_TEXT,
   type SharedStatusInput,
   changedCustomers,
@@ -218,6 +219,17 @@ describe("共有フォルダーの顧客ファイル", () => {
     );
     expect(view.firstWrite).not.toBeNull();
     expect(view.notes.join()).toContain("取り込みました");
+  });
+});
+
+describe("ヘッダーから開くモーダル", () => {
+  it("★つながりが1つであることと、専決・捺印では同期しないことを先に言う", () => {
+    expect(SHARED_DIALOG_LEAD).toContain("Folio 全体で1つ");
+    expect(SHARED_DIALOG_LEAD).toContain("専決決裁書・捺印決裁書では同期しません");
+  });
+
+  it("はじめの説明は、台帳も共有することを書く（手直しだけと言わない）", () => {
+    expect(SHARED_INTRO_TEXT).toContain("台帳と手直し");
   });
 });
 

@@ -24,11 +24,14 @@ export function SharedFolderPanel({
   id,
   shared,
   canPersist,
+  inDialog = false,
 }: {
   shared: SharedFolderHook;
   canPersist: boolean;
   /** 手順バーから飛んでくるときの目印 */
   id?: string;
+  /** ヘッダーのモーダルの中に出す（見出しはモーダルの側にあるので出さない） */
+  inDialog?: boolean;
 }) {
   const view = sharedStatus({
     state: shared.state,
@@ -44,12 +47,12 @@ export function SharedFolderPanel({
     <section
       id={id}
       tabIndex={-1}
-      className={`scroll-mt-4 rounded-lg border p-4 ${TONE_CLASS[view.tone]}`}
+      className={`scroll-mt-4 rounded-lg border ${inDialog ? "p-3" : "p-4"} ${TONE_CLASS[view.tone]}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold">共有フォルダー</h2>
-          <p className="mt-0.5 break-words text-sm text-slate-600">{view.headline}</p>
+          {!inDialog && <h2 className="text-lg font-semibold">共有フォルダー</h2>}
+          <p className={`${inDialog ? "" : "mt-0.5 "}break-words text-sm text-slate-600`}>{view.headline}</p>
           {view.notes.map((note) => (
             <p key={note} className="mt-0.5 break-words text-xs text-slate-500">
               {note}
@@ -57,13 +60,13 @@ export function SharedFolderPanel({
           ))}
           <MoreDetails size="xs" summary="くわしく (共有するもの・しないもの)">
             <p>
-              共有フォルダーに置くのは、顧客データの<strong>手直し</strong>（氏名・電話番号を直した場合はその値を含みます）と、伏せ字済みの<strong>学習した書き方</strong>だけです。
+              共有フォルダーの中の <strong>_data</strong> に置くのは、顧客データの<strong>台帳</strong>（氏名・住所・電話番号を含みます）とその<strong>手直し</strong>、伏せ字済みの<strong>学習した書き方</strong>です。
             </p>
             <p>
-              台帳の取り込み値そのもの・受付一覧・受付メモの原文・定期点検のPDFと抽出結果は置きません。閲覧できる人は、そのフォルダーの権限どおりです。
+              受付一覧・受付メモの原文・定期点検のPDFと抽出結果は置きません。顛末書・専決決裁書・捺印決裁書のPDFも置きません（各自のPCのフォルダーに保存します）。閲覧できる人は、そのフォルダーの権限どおりです。
             </p>
             <p>
-              顧客データの<strong>台帳そのもの</strong>も共有するので、もう1台はフォルダーを選ぶだけで台帳ごと受け取れます。はじめて使うときだけ、xlsx / csv を共有フォルダーの中の <strong>_data</strong> に置いてください。手で取り込む（下の「顧客データ」の枠にドロップする）道も今までどおり使えます。
+              もう1台はフォルダーを選ぶだけで台帳ごと受け取れます。顧客データが増えたときは、アフターメンテナンスの「顧客データ」の枠に xlsx / csv をドロップすると、共有フォルダーにも置かれます。
             </p>
           </MoreDetails>
         </div>

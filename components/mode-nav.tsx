@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { HelpDialog } from "@/components/help-dialog";
 import { RakurakuLoginDialog } from "@/components/rakuraku-login-dialog";
+import { SharedFolderDialog } from "@/components/shared-folder-dialog";
 import { SIGNED_IN_COOKIE } from "@/lib/auth";
 import { HELP_SECTIONS } from "@/lib/help";
 import { getHelpDialogState, openHelp, subscribeHelpDialog } from "@/lib/help-dialog";
@@ -18,6 +19,10 @@ import {
   rakurakuChip,
   subscribeLoginDialog,
 } from "@/lib/rakuraku-login-dialog";
+import { restoreSharedConnection } from "@/lib/shared/connection";
+import { SHARED_CHIP_ID, openSharedDialog, subscribeSharedDialog } from "@/lib/shared/dialog";
+import { sharedChip, usesSharedFolder } from "@/lib/shared/status";
+import { useSharedConnection } from "@/lib/shared/use-shared-folder";
 import { DOC_KINDS } from "@/lib/tenmatsu/kinds";
 import {
   getLoginUserId,
@@ -27,13 +32,10 @@ import {
 } from "@/lib/tenmatsu/local/session";
 
 /**
- * 画面 (処理の種類)。扱うデータが別なのでURLも分ける。
- * 顛末書と専決決裁書は同じ作りなので、種類の設定から並べる。
- */
-/**
- * 楽楽精算の表示の見た目。
- * ★**未ログイン（alert）はいちばん目立たせる**。ほかのボタンと同じ灰色だと気づかれなかった。
- * ★楽楽精算を使わない画面（定期点検・アフター）では静かにする（off）。
+ * 楽楽精算・共有フォルダーの表示の見た目（同じ4通り）。
+ * ★**未ログイン・未接続（alert）はいちばん目立たせる**。ほかのボタンと同じ灰色だと気づかれなかった。
+ * ★それを使わない画面では静かにする（off）。楽楽精算は定期点検・アフター、
+ *   共有フォルダーは専決決裁書・捺印決裁書で使わない。
  */
 const CHIP_CLASS: Record<ChipTone, string> = {
   alert: "border border-amber-400 bg-amber-100 font-semibold text-amber-900 shadow-sm hover:bg-amber-200",
@@ -42,6 +44,10 @@ const CHIP_CLASS: Record<ChipTone, string> = {
   unknown: "border border-slate-300 bg-white font-medium text-slate-600 hover:bg-slate-50",
 };
 
+/**
+ * 画面 (処理の種類)。扱うデータが別なのでURLも分ける。
+ * 顛末書と専決決裁書は同じ作りなので、種類の設定から並べる。
+ */
 export const MODES: readonly { href: string; label: string }[] = [
   { href: "/", label: "定期点検" },
   { href: "/after", label: "アフターメンテナンス" },
@@ -80,11 +86,24 @@ export function ModeNav() {
   }, []);
   const [loginOpen, setLoginOpen] = useState(false);
   useEffect(() => subscribeLoginDialog((s) => setLoginOpen(s.open)), []);
+
+  /**
+   * 共有フォルダー（Box など）のつながり。Folio 全体で1つ（lib/shared/connection.ts）。
+   * ★読み込み直後は許可を尋ねない。許可が生きていればそのままつなぐ（同期するのは使う画面だけ）。
+   */
+  const connection = useSharedConnection();
+  useEffect(() => {
+    // ログイン画面では読まない（Folio にログインする前なので）
+    if (pathname !== "/login") void restoreSharedConnection();
+  }, [pathname]);
+  const [sharedOpen, setSharedOpen] = useState(false);
+  useEffect(() => subscribeSharedDialog(setSharedOpen), []);
   /** いま見ている画面の使い方を、開いたときの既定タブにする */
   const currentSlug = HELP_SECTIONS.find((s) => s.href === pathname)?.slug ?? null;
   /** いま見ているのが顛末書系ならその種類（楽楽精算を使う画面か）。ほかは null */
   const currentKind = DOC_KINDS.find((k) => k.route === pathname)?.id ?? null;
   const chip = rakurakuChip({ ...rakuraku, onDocPage: currentKind !== null });
+  const shared = sharedChip({ ...connection, canPersist: true, usesShared: usesSharedFolder(pathname) });
 
   // ログイン画面では画面の切り替えを出さない (押しても戻されるだけなので)
   if (pathname === "/login") return null;
@@ -96,7 +115,7 @@ export function ModeNav() {
   };
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3">
       <nav
         aria-label="処理の種類"
         className="inline-flex rounded-lg bg-slate-200 p-1 text-sm shadow-inner"
@@ -134,6 +153,25 @@ export function ModeNav() {
       >
         使い方
       </button>
+      {/* ★共有フォルダー（データベースの役割）。どの画面からでもつなげるよう、ここに1つだけ置く。
+          専決決裁書・捺印決裁書では使わないので、つながっていなくても目立たせない */}
+      <button
+        id={SHARED_CHIP_ID}
+        type="button"
+        onClick={openSharedDialog}
+        aria-haspopup="dialog"
+        aria-pressed={sharedOpen}
+        title={shared.title}
+        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1 text-xs ${CHIP_CLASS[shared.tone]}`}
+      >
+        {shared.dot && (
+          <span
+            aria-hidden
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${shared.tone === "on" ? "bg-emerald-500" : "bg-amber-500"}`}
+          />
+        )}
+        {shared.text}
+      </button>
       {/* ★楽楽精算のログイン（Folio 自体のログインとは別物）。どの画面からでも開けるよう
           ここに1つだけ置く。定期点検・アフターでは自分から開かない（楽楽精算を使わないため） */}
       <button
@@ -155,6 +193,7 @@ export function ModeNav() {
       </button>
       <HelpDialog />
       <RakurakuLoginDialog />
+      <SharedFolderDialog />
       {signedIn && (
         <>
           {/* ★楽楽精算のログアウトと取り違えないよう、間に区切りを入れて名前も分ける */}
