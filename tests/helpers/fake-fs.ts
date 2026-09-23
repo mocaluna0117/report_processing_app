@@ -123,6 +123,18 @@ class FakeDir implements DirHandleLike {
     this.children.delete(name);
   }
 
+  /**
+   * 本物の FileSystemDirectoryHandle.resolve と同じ: 相手が自分の中にあれば、そこまでの名前の並び。
+   * 同じフォルダーなら []、中に無い（別のフォルダー・別の場所）なら null。
+   */
+  async resolve(other: DirHandleLike): Promise<string[] | null> {
+    if (!(other instanceof FakeDir) || other.fs !== this.fs) return null;
+    if (other.path === this.path) return [];
+    const prefix = this.path ? `${this.path}/` : "";
+    if (!other.path.startsWith(prefix)) return null;
+    return other.path.slice(prefix.length).split("/");
+  }
+
   async *entries(): AsyncIterableIterator<[string, DirHandleLike | FileHandleLike]> {
     this.fs.check();
     for (const [name, node] of [...this.children]) yield [name, node];

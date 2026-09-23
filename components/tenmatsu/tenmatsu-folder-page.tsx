@@ -70,6 +70,8 @@ import {
   tenmatsuStepDefs,
 } from "@/lib/tenmatsu/local/flow";
 import { LOCAL_KINDS, RUN_LIMITS } from "@/lib/tenmatsu/local/kind-config";
+import { loadSharedFolderHandle } from "@/lib/shared/store";
+import { sharedOverlap, sharedOverlapText } from "@/lib/tenmatsu/local/folder-guard";
 import {
   RAKURAKU_CHIP_ID,
   getLoginDialogState,
@@ -407,10 +409,28 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   );
 
   /** フォルダーにつなぐ。askPermission は「ボタンを押した処理の中」でだけ true にする */
+  /**
+   * 保存先が Box の共有フォルダーの中（または共有フォルダーを含む）なら、理由の文を返す。
+   * ★楽楽精算は人によって見られる伝票が違うので、PDF を共有の場所に置かせない（lib/tenmatsu/local/folder-guard.ts）。
+   */
+  const sharedOverlapReason = async (dir: BrowserDirHandle): Promise<string | null> => {
+    const shared = await loadSharedFolderHandle().catch(() => null);
+    const overlap = await sharedOverlap(dir, shared);
+    return overlap ? sharedOverlapText(kind, overlap) : null;
+  };
+
   const connect = async (dir: BrowserDirHandle, askPermission: boolean) => {
     setConnection("checking");
     setConnectionError(null);
     try {
+      // ★前に選んでいた保存先でも確かめる（この見張りを入れる前に、共有フォルダーの中を選んでいた人のため）
+      const blocked = await sharedOverlapReason(dir);
+      if (blocked) {
+        setClient(null);
+        setConnection("error");
+        setConnectionError(blocked);
+        return;
+      }
       if (askPermission) await ensureFolderPermission(dir);
       const next = makeClient(dir);
       await next.health();
@@ -447,6 +467,13 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     try {
       const picked = await pickFolder(kind.id);
       if (!picked) return;
+      // ★共有フォルダーの中は、保存先として覚えもしない
+      const blocked = await sharedOverlapReason(picked);
+      if (blocked) {
+        setConnection("error");
+        setConnectionError(blocked);
+        return;
+      }
       setHandle(picked);
       setClient(null);
       setItems([]);

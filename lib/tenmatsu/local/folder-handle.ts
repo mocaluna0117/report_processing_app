@@ -14,6 +14,8 @@ type PermissionState = "granted" | "denied" | "prompt";
 export interface BrowserDirHandle extends DirHandleLike {
   queryPermission?(descriptor: PermissionMode): Promise<PermissionState>;
   requestPermission?(descriptor: PermissionMode): Promise<PermissionState>;
+  /** そのフォルダーが自分の中にあれば、そこまでの名前の並び（同じなら []）。無ければ null */
+  resolve?(possibleDescendant: BrowserDirHandle): Promise<string[] | null>;
 }
 
 interface PickerWindow {
