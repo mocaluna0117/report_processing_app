@@ -23,7 +23,8 @@ const report = (over: Partial<SyncReport> = {}): SyncReport => ({
   pending: { customers: 3, examples: { inquiry: 8, inspection: 4 } },
   customers: { applied: 2, unmatched: 0, written: true },
   examples: { inquiry: { count: 8, written: false }, inspection: { count: 4, written: false } },
-  ledger: { imported: [], pending: [], skipped: [] , conflicts: [] },
+  ledger: { imported: [], pending: [], skipped: [], conflicts: [] },
+  customerLedger: { count: 5, applied: 0, written: false },
   failures: [],
   ...over,
 });
@@ -75,6 +76,7 @@ describe("初めてのフォルダー", () => {
 describe("同期の結果", () => {
   it("共有している件数と、取り込んだ手直しの件数を出す", () => {
     const text = syncResultText(report());
+    expect(text).toContain("顧客データ 5件");
     expect(text).toContain("手直し 3件");
     expect(text).toContain("学習した書き方 12件");
     expect(text).toContain("2件");

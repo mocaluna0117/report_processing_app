@@ -15,8 +15,10 @@
 import {
   type ImportReport,
   type SharedMergeReport,
+  applySharedLedger,
   countCustomers,
   loadSharedCustomerEdits,
+  loadSharedLedger,
   mergeSharedCustomerEdits,
   saveImport,
 } from "@/lib/after/customer-store";
@@ -56,6 +58,7 @@ import {
   pickSharedExamples,
 } from "@/lib/shared/examples";
 import { type SharedFolder, sharedErrorText } from "@/lib/shared/folder";
+import { type SharedLedger, ledgerCount, mergeSharedLedger, pickSharedLedger } from "@/lib/shared/ledger";
 import { loadSeenCustomerFiles, saveLastSync, saveSeenCustomerFiles } from "@/lib/shared/store";
 
 /** 学習した書き方の種類 → 共有フォルダーのファイル */
@@ -79,6 +82,9 @@ export interface SyncDeps {
   saveImport: (parsed: ParsedImport) => Promise<ImportReport>;
   loadSeenCustomerFiles: () => Promise<SeenCustomerFiles>;
   saveSeenCustomerFiles: (seen: SeenCustomerFiles) => Promise<void>;
+  /** この端末の台帳（取り込み値そのもの） */
+  loadLedger: () => Promise<SharedLedger>;
+  applyLedger: (ledger: SharedLedger) => Promise<ImportReport[]>;
 }
 
 export const DEFAULT_SYNC_DEPS: SyncDeps = {
@@ -91,6 +97,8 @@ export const DEFAULT_SYNC_DEPS: SyncDeps = {
   saveImport,
   loadSeenCustomerFiles,
   saveSeenCustomerFiles,
+  loadLedger: loadSharedLedger,
+  applyLedger: applySharedLedger,
 };
 
 /** この端末にあって、まだフォルダーに出していないかもしれない分の件数（初回の確認に出す） */
@@ -111,6 +119,15 @@ export interface LedgerReport {
   conflicts: string[];
 }
 
+/** 顧客データの台帳（取り込み値そのもの）の同期 */
+export interface LedgerSyncReport {
+  /** 共有フォルダーにある台帳の件数 */
+  count: number;
+  /** この端末へ取り込んだ件数（追加＋更新） */
+  applied: number;
+  written: boolean;
+}
+
 export interface SyncFailure {
   dataset: SharedDatasetId;
   label: string;
@@ -128,8 +145,10 @@ export interface SyncReport {
   pending: SharedPending;
   customers: { applied: number; unmatched: number; written: boolean };
   examples: Record<ExampleKind, { count: number; written: boolean }>;
-  /** 共有フォルダーに置いた顧客データのファイル */
+  /** 共有フォルダーに置いた顧客データのファイル（xlsx / csv からの取り込み） */
   ledger: LedgerReport;
+  /** 顧客データの台帳そのもの（共有フォルダーの 顧客データ.json） */
+  customerLedger: LedgerSyncReport;
   /** 読めなかった・書けなかったデータ（ほかは進めている） */
   failures: SyncFailure[];
 }
@@ -199,6 +218,7 @@ export async function syncShared(
     customers: { applied: 0, unmatched: 0, written: false },
     examples: emptyExamples(() => ({ count: 0, written: false })),
     ledger,
+    customerLedger: { count: 0, applied: 0, written: false },
     failures: [],
   };
 
@@ -215,6 +235,26 @@ export async function syncShared(
       message: sharedErrorText(error),
     });
   };
+
+  // ---- 顧客データの台帳（★手直しより先。新しい台帳の上に手直しを乗せる） ----
+  const ledgerDataset = SHARED_DATASETS["customer-ledger"];
+  try {
+    const mineLedger = await deps.loadLedger();
+    const result = await folder.update(
+      ledgerDataset,
+      pickSharedLedger,
+      (current) => (current ? mergeSharedLedger(current, mineLedger) : mineLedger),
+      now,
+    );
+    const applied = await deps.applyLedger(result.items);
+    report.customerLedger = {
+      count: ledgerCount(result.items),
+      applied: applied.reduce((n, r) => n + r.added + r.updated, 0),
+      written: result.written,
+    };
+  } catch (e) {
+    fail(ledgerDataset, e);
+  }
 
   // ---- 顧客の手直し ----
   const editsDataset = SHARED_DATASETS["customer-edits"];

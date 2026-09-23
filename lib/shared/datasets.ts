@@ -1,13 +1,16 @@
 /**
  * 共有フォルダーに置くデータの種類。純データのみ。
  *
- * ★共有するのは「成熟していくもの」だけ: 顧客データの**手直し**と、**学習した書き方**。
- *   台帳の取り込み値は各自が同じ xlsx を取り込めば再現できるので置かない。
+ * ★共有するのは、顧客データの**台帳**と**手直し**、そして**学習した書き方**。
  *   受付一覧（受付メモの原文）・定期点検のPDFと抽出結果・フォント・トークンは置かない。
  * ★ファイル名は固定。Box / SharePoint の禁止文字（" * : < > ? / \ |）を使わない。
  */
 
-export type SharedDatasetId = "customer-edits" | "examples-inquiry" | "examples-inspection";
+export type SharedDatasetId =
+  | "customer-ledger"
+  | "customer-edits"
+  | "examples-inquiry"
+  | "examples-inspection";
 
 export interface SharedDataset {
   id: SharedDatasetId;
@@ -24,6 +27,15 @@ export interface SharedDataset {
 export const SHARED_SCHEMA_VERSION = 1;
 
 export const SHARED_DATASETS: Readonly<Record<SharedDatasetId, SharedDataset>> = {
+  // ★台帳は手直しと分けて置く。台帳は取り込んだときにしか変わらないが、
+  //   手直しは直すたびに変わるので、一緒にすると毎回この大きなファイルを書き直すことになる
+  "customer-ledger": {
+    id: "customer-ledger",
+    file: "顧客データ.json",
+    kind: "folio/customer-ledger",
+    schemaVersion: SHARED_SCHEMA_VERSION,
+    label: "顧客データ",
+  },
   "customer-edits": {
     id: "customer-edits",
     file: "顧客の手直し.json",

@@ -37,6 +37,7 @@ import { FakeFs } from "./helpers/fake-fs";
 const EDITS = SHARED_DATASETS["customer-edits"];
 const LEARN = SHARED_DATASETS["examples-inquiry"];
 const LEARN2 = SHARED_DATASETS["examples-inspection"];
+const LEDGER = SHARED_DATASETS["customer-ledger"];
 
 const QUICK = { ...DEFAULT_SHARED_TIMING, readWaitMs: 0, sleep: async () => {} };
 /** ★共有データは直下ではなく、この中に入る（業務のフォルダーと混ぜないため） */
@@ -145,14 +146,14 @@ describe("まだ空のフォルダー", () => {
     expect(await loadLastSync()).toBeNull();
   });
 
-  it("許してもらえたら3つのファイルを作る", async () => {
+  it("許してもらえたら4つのファイルを作る", async () => {
     const { fs, mine } = setup();
     await putCustomers([{ ...customer(), edits: { memo: "架空のメモ" }, editStamps: { memo: 5 }, editedAt: 5 }]);
     await upsertStoredExample("inquiry", example());
 
     const report = await syncShared(mine, { now: 100, allowFirstWrite: true });
     expect(report.awaitingFirstWrite).toBe(false);
-    expect(fs.files()).toEqual([EDITS.file, LEARN.file, LEARN2.file].map(at).sort());
+    expect(fs.files()).toEqual([EDITS.file, LEARN.file, LEARN2.file, LEDGER.file].map(at).sort());
     expect(report.customers.written).toBe(true);
     expect(await loadLastSync()).toBe(100);
 

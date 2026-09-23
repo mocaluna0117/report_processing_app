@@ -91,7 +91,12 @@ export function firstWriteText(folderName: string | null, pending: SharedPending
 /** 同期できたときの結果 */
 export function syncResultText(report: SyncReport): string {
   const learned = report.examples.inquiry.count + report.examples.inspection.count;
-  return `手直し ${report.pending.customers.toLocaleString()}件・学習した書き方 ${learned.toLocaleString()}件を共有しています（この端末に取り込んだ手直し ${report.customers.applied.toLocaleString()}件）。`;
+  return (
+    `顧客データ ${report.customerLedger.count.toLocaleString()}件・` +
+    `手直し ${report.pending.customers.toLocaleString()}件・` +
+    `学習した書き方 ${learned.toLocaleString()}件を共有しています` +
+    `（この端末に取り込んだ手直し ${report.customers.applied.toLocaleString()}件）。`
+  );
 }
 
 /**
@@ -149,6 +154,11 @@ export function sharedStatus(input: SharedStatusInput): SharedStatusView {
 
   // 共有フォルダーの顧客ファイルの結果は、書き出しの確認中でも出す（読むだけなので先に動いている）
   if (report) {
+    if (report.customerLedger.applied > 0) {
+      notes.push(
+        `共有フォルダーから顧客データを ${report.customerLedger.applied.toLocaleString()}件 取り込みました。`,
+      );
+    }
     for (const line of report.ledger.imported) notes.push(line);
     for (const skipped of report.ledger.skipped) {
       notes.push(`「${skipped.file}」は顧客データとして読めないので飛ばしました（${skipped.message}）`);

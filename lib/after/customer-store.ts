@@ -21,6 +21,7 @@ import {
   applySharedCustomerEdits,
   extractCustomerEdits,
 } from "@/lib/shared/customer-edits";
+import { type SharedLedger, extractLedger, sameLedgerSource, toCustomers } from "@/lib/shared/ledger";
 import { STORE_CUSTOMERS, request, withStore } from "@/lib/storage";
 
 export interface ImportReport {
@@ -266,6 +267,39 @@ export async function clearTenmatsuStaff(
     store.put(next);
   });
   return next;
+}
+
+/** 共有フォルダーに載せる形で、この端末の台帳を取り出す */
+export async function loadSharedLedger(): Promise<SharedLedger> {
+  return extractLedger(await loadCustomers());
+}
+
+/**
+ * 共有フォルダーから読んだ台帳を、この端末へ当てる。
+ *
+ * ★取り込みと同じ道を通す（saveImport）。手直しの引き継ぎ・重複の解消・空欄の補完が
+ *   そのまま効くので、規則が二重にならない。
+ * ★中身が同じ取り込み元は書き戻さない（数千件の書き戻しは重い）。
+ */
+export async function applySharedLedger(ledger: SharedLedger): Promise<ImportReport[]> {
+  const mine = extractLedger(await loadCustomers());
+  const reports: ImportReport[] = [];
+  for (const source of ["dx", "suketto"] as const) {
+    const incoming = ledger[source];
+    if (!incoming || incoming.customers.length === 0) continue;
+    if (sameLedgerSource(mine[source], incoming)) continue;
+    reports.push(
+      await saveImport({
+        source,
+        fileName: "共有フォルダー",
+        sheetName: null,
+        totalRows: incoming.customers.length,
+        customers: toCustomers(incoming),
+        skipped: [],
+      }),
+    );
+  }
+  return reports;
 }
 
 /** 共有フォルダーに載せる形で、この端末の手直しを取り出す */

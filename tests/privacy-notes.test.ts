@@ -74,8 +74,9 @@ describe("共有フォルダーを登録しているとき", () => {
     expect(details).toContain("学習した書き方");
     expect(details).toContain("置きません");
     expect(details).toContain("受付一覧");
-    // 氏名・電話を直したときはその値が入ることを隠さない
-    expect(details).toContain("氏名・電話番号を直した場合はその値を含みます");
+    // ★顧客データ一式（氏名・住所・電話番号）が共有フォルダーに載ることを隠さない
+    expect(details).toContain("顧客データ一式");
+    expect(details).toContain("氏名・住所・電話番号を含みます");
   });
 
   it("★誰が見られるかを書く（アプリが守るのではなくフォルダーの権限が守る）", () => {
