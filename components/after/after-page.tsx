@@ -39,6 +39,7 @@ import { prefetchReportAssets } from "@/lib/report/assets";
 import { dropColumns, expandResultRow } from "@/lib/rows";
 import { recordSummary } from "@/lib/summary";
 import type { InquiryExample } from "@/lib/summarize/examples";
+import { changedCustomers } from "@/lib/shared/status";
 import { useSharedFolder } from "@/lib/shared/use-shared-folder";
 import { type Examples, useExamples } from "@/lib/use-examples";
 import {
@@ -95,29 +96,22 @@ export function AfterPage() {
       } catch (e) {
         partialErrors.push(`学習した書き方: ${e instanceof Error ? e.message : String(e)}`);
       }
-      try {
-        // ★つなぐのは restore のあと（許可が生きていれば shared 側の効果が自分でつなぐ）
-        await shared.restore();
-      } catch (e) {
-        partialErrors.push(`共有フォルダー: ${e instanceof Error ? e.message : String(e)}`);
-      }
       return { partialErrors };
     },
     hasSaved: async () => (await loadAfterCases()).length > 0,
   });
   /**
-   * 共有フォルダー（Box Drive などで見えるフォルダー）。
-   * ★同期でこの端末の保存が変わるので、終わったら画面の写しを読み直す。
+   * 共有フォルダー（Box Drive などで見えるフォルダー）。つながりは Folio 全体で1つ
+   * （lib/shared/connection.ts。ヘッダーからもつなげる）。
+   * ★同期でこの端末の保存が変わるので、終わったら画面の写しを読み直す（どこから同期しても）。
    *   learning はこの下で作るので、控え（ref）越しに呼ぶ。
    */
   const learningRef = useRef<Examples<AfterCase> | null>(null);
   const shared = useSharedFolder({
     storage,
     onSynced: async (report) => {
-      // ★共有フォルダーの顧客ファイルを取り込んだときも読み直す（件数と一覧が古いままになる）
-      if (report.customers.applied > 0 || report.ledger.imported.length > 0) {
-        setCustomers(await loadCustomers());
-      }
+      // ★手直し・台帳の JSON・顧客ファイル、どれで変わっても読み直す（件数と一覧が古いままになる）
+      if (changedCustomers(report)) setCustomers(await loadCustomers());
       await learningRef.current?.restore();
     },
   });

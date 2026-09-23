@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   SHARED_INTRO_TEXT,
   type SharedStatusInput,
+  changedCustomers,
   clearExamplesConfirmText,
   firstWriteText,
   formatSyncTime,
   lastSyncText,
+  sharedChip,
   sharedStatus,
   syncResultText,
   unmatchedText,
+  usesSharedFolder,
 } from "@/lib/shared/status";
 import type { SyncReport } from "@/lib/shared/sync";
 
@@ -215,5 +218,92 @@ describe("共有フォルダーの顧客ファイル", () => {
     );
     expect(view.firstWrite).not.toBeNull();
     expect(view.notes.join()).toContain("取り込みました");
+  });
+});
+
+describe("共有フォルダーのデータを使う画面", () => {
+  it("定期点検・アフター・顛末書は使う", () => {
+    expect(usesSharedFolder("/")).toBe(true);
+    expect(usesSharedFolder("/after")).toBe(true);
+    expect(usesSharedFolder("/tenmatsu")).toBe(true);
+  });
+
+  it("★専決決裁書・捺印決裁書・ログインの画面は使わない（自動で同期しない）", () => {
+    expect(usesSharedFolder("/senketsu")).toBe(false);
+    expect(usesSharedFolder("/natsuin")).toBe(false);
+    expect(usesSharedFolder("/login")).toBe(false);
+  });
+});
+
+describe("同期で顧客データが変わったか", () => {
+  const base = report({ customers: { applied: 0, unmatched: 0, written: false } });
+
+  it("何も取り込まなければ読み直さない", () => {
+    expect(changedCustomers(base)).toBe(false);
+  });
+
+  it("★手直し・台帳の JSON・顧客ファイル、どれで変わっても読み直す", () => {
+    expect(changedCustomers({ ...base, customers: { applied: 1, unmatched: 0, written: false } })).toBe(true);
+    expect(changedCustomers({ ...base, customerLedger: { count: 5, applied: 5, written: false } })).toBe(true);
+    expect(
+      changedCustomers({ ...base, ledger: { ...base.ledger, imported: ["助っ人クラウド.xlsx を取り込みました"] } }),
+    ).toBe(true);
+  });
+});
+
+describe("ヘッダーの共有フォルダーの表示", () => {
+  const chip = (over: Partial<Parameters<typeof sharedChip>[0]> = {}) =>
+    sharedChip({ ...input(), known: true, usesShared: true, ...over });
+
+  it("★読み込む前（サーバーで描いた直後）は「共有フォルダー」とだけ出す", () => {
+    expect(chip({ known: false, state: "none" })).toMatchObject({ text: "共有フォルダー", tone: "unknown" });
+  });
+
+  it("つながっていて何も問題が無ければ静かに出す", () => {
+    const view = chip({ report: report(), lastSync: 1_700_000_000_000 });
+    expect(view).toMatchObject({ text: "共有フォルダー: 接続済み", tone: "on" });
+    expect(view.title).toContain("Folio共有");
+    expect(view.title).toContain("最終同期 11/15 07:13");
+  });
+
+  it("同期の途中はそう出す", () => {
+    expect(chip({ syncing: true }).text).toBe("共有フォルダー: 同期中…");
+  });
+
+  it("★使う画面でつながっていなければ目立たせる", () => {
+    expect(chip({ state: "none" })).toMatchObject({ text: "共有フォルダー: 未設定", tone: "alert" });
+    expect(chip({ state: "prompt" })).toMatchObject({ text: "共有フォルダー: 未接続", tone: "alert" });
+    expect(chip({ state: "error", error: "見つかりません" })).toMatchObject({
+      text: "共有フォルダー: つなげません",
+      tone: "alert",
+    });
+  });
+
+  it("★専決決裁書・捺印決裁書では、つながっていなくても静かに出す", () => {
+    expect(chip({ state: "prompt", usesShared: false }).tone).toBe("off");
+    expect(chip({ state: "none", usesShared: false }).tone).toBe("off");
+  });
+
+  it("未接続のときは、つながないと相手の変更が届かないことを書く", () => {
+    const view = chip({ state: "prompt" });
+    expect(view.title).toContain("相手の変更は届かず");
+    expect(view.title).toContain("押すと共有フォルダーの欄が開きます");
+  });
+
+  it("★確かめてほしいこと（初回の書き出し・入れ替え・失敗）があれば、つながっていても目立たせる", () => {
+    expect(chip({ report: report({ awaitingFirstWrite: true }) })).toMatchObject({
+      text: "共有フォルダー: 確認してください",
+      tone: "alert",
+    });
+    const replace = report({
+      ledger: { imported: [], pending: [{ file: "a.xlsx", text: "減ります。" }], skipped: [], conflicts: [] },
+    });
+    expect(chip({ report: replace }).tone).toBe("alert");
+    const failed = report({ failures: [{ dataset: "customer-edits", label: "手直し", message: "書けません" }] });
+    expect(chip({ report: failed }).tone).toBe("alert");
+  });
+
+  it("このブラウザで使えないときは、使えないと出す（目立たせない）", () => {
+    expect(chip({ state: "unsupported" })).toMatchObject({ text: "共有フォルダー: 使えません", tone: "off" });
   });
 });
