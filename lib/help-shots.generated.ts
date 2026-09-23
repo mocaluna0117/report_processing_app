@@ -23,6 +23,11 @@ export const HELP_SHOT_GEOMETRY: Readonly<Record<string, HelpShotGeometry>> = {
     height: 604,
     hotspots: [{ x: 50, y: 69.3 }, { x: 3.3, y: 10.9 }],
   },
+  "after-shared": {
+    width: 1344,
+    height: 610,
+    hotspots: [{ x: 12.2, y: 9.2 }, { x: 17.1, y: 71.8 }, { x: 50, y: 59.7 }],
+  },
   "after-intake": {
     width: 2496,
     height: 1625,

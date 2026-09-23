@@ -75,6 +75,16 @@ export const HELP_SHOTS: Readonly<Record<string, readonly HelpShot[]>> = {
       ],
     },
     {
+      id: "after-shared",
+      caption: "右上の「共有フォルダー」を押したところ。どの画面からでも開けます。",
+      alt: "共有フォルダーの小窓。フォルダーを選ぶボタンと、共有するものの説明がある",
+      hotspots: [
+        { text: "つながりは Folio 全体で1つ。専決・捺印では同期しません" },
+        { text: "Box など2台から見えるフォルダーを選びます（PDFは置きません）" },
+        { text: "共有するもの・しないものは「くわしく」にあります" },
+      ],
+    },
+    {
       id: "after-intake",
       caption: "お客様を選んで、受付内容を貼り付けたところ。",
       alt: "左にお客様の検索と一覧、右にお客様の情報と受付内容の入力欄",

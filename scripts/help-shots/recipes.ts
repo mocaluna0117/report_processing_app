@@ -226,7 +226,7 @@ const LOGIN_DEPARTMENTS = [
 ];
 
 // ---------------------------------------------------------------------------
-// 台本（12枚）
+// 台本（14枚）
 // ---------------------------------------------------------------------------
 
 export const RECIPES: readonly Recipe[] = [
@@ -283,6 +283,23 @@ export const RECIPES: readonly Recipe[] = [
     hotspots: [
       { at: "#after-import button[type=button] p:first-of-type", dy: 0.1 },
       { at: 'nav[aria-label="アフターメンテナンス受付の手順"] li:first-child span[aria-hidden]' },
+    ],
+  },
+  {
+    id: "after-shared",
+    path: "/after",
+    // ★ヘッダーの「共有フォルダー」から開く小窓。押すだけ（フォルダーは選ばない）
+    act: async (page) => {
+      await page.click("#shared-folder-chip");
+      await page.waitForSelector('[role="dialog"][aria-label="共有フォルダー"]');
+    },
+    clip: ['[role="dialog"][aria-label="共有フォルダー"]'],
+    // ★余白を足すと後ろの画面の文字が切れて写る。小窓だけを切り取る
+    pad: 0,
+    hotspots: [
+      { at: '[role="dialog"][aria-label="共有フォルダー"] h2' },
+      { at: '[role="dialog"] button:has-text("共有フォルダーを選ぶ")' },
+      { at: '[role="dialog"] summary' },
     ],
   },
   {
