@@ -185,6 +185,15 @@ export class FolderStore {
     }
   }
 
+  /** フォルダーを作る（もうあれば何もしない） */
+  async ensureDir(path: Path): Promise<void> {
+    try {
+      await this.dirAt(path, true);
+    } catch (e) {
+      throw toFolderError(e, path, "作れ");
+    }
+  }
+
   async exists(path: Path): Promise<boolean> {
     return (await this.stat(path)) !== null;
   }
