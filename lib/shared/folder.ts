@@ -13,7 +13,13 @@
  * ★**大きさは変わらないことがある**ので、変化の判定は「大きさと更新時刻の両方」で見る。
  */
 import type { SharedDataset } from "@/lib/shared/datasets";
-import { backupName } from "@/lib/shared/datasets";
+import {
+  DEFAULT_SHARED_DATA_DIR,
+  SHARED_DATASET_IDS,
+  SHARED_DATASETS,
+  backupName,
+  pickDataDir,
+} from "@/lib/shared/datasets";
 import {
   type SharedEnvelope,
   SharedCorruptError,
@@ -92,8 +98,55 @@ export class SharedFolder {
     readonly timing: SharedFolderTiming = DEFAULT_SHARED_TIMING,
   ) {}
 
+  /**
+   * 共有データを入れるフォルダー（共有フォルダーの直下）。
+   * ★ensureDataDir() を呼ぶまでは直下（[]）。同期のはじめに1回だけ決める。
+   */
+  private dataDir: string[] = [];
+  /** dataDir をもう決めたか（決めるのは1回だけ） */
+  private resolved = false;
+
   get name(): string {
     return this.store.name;
+  }
+
+  /** いま使っているフォルダーの中の場所（顧客ファイルを読むときにも使う） */
+  get dir(): string[] {
+    return this.dataDir;
+  }
+
+  /**
+   * 共有データを入れるフォルダーを決める（同期のはじめに1回）。
+   * ★直下に前の形のファイルが残っていたら、ここで移す。業務のフォルダーと混ざらないように
+   *   （利用者の決定 2026-09-23）。移し終わるまでは前の形のまま読める。
+   */
+  async ensureDataDir(): Promise<string[]> {
+    if (this.resolved) return this.dataDir;
+    this.resolved = true;
+    const found = pickDataDir(await this.store.list([]));
+    this.dataDir = [found ?? DEFAULT_SHARED_DATA_DIR];
+    await this.moveLegacyFiles();
+    return this.dataDir;
+  }
+
+  /** 直下に残っている前の形のファイルを、データのフォルダーへ移す（同じ名前があれば触らない） */
+  private async moveLegacyFiles(): Promise<void> {
+    for (const id of SHARED_DATASET_IDS) {
+      for (const name of [SHARED_DATASETS[id].file, backupName(SHARED_DATASETS[id].file)]) {
+        const here = await this.store.stat([name]);
+        if (!here || here.kind !== "file") continue;
+        // ★移し先にもうあるなら、直下の古い方は消さずに残す（取り違えたら戻せない）
+        if (await this.store.exists([...this.dataDir, name])) continue;
+        await this.store.copyFile([name], [...this.dataDir, name]);
+        await this.store.remove([name]);
+      }
+    }
+  }
+
+  /** ★まだ決めていなければここで決める（呼ぶ順番に左右されないように） */
+  private async pathOf(file: string): Promise<string[]> {
+    await this.ensureDataDir();
+    return [...this.dataDir, file];
   }
 
   /** フォルダーがまだ使えるか（無くなっていれば folderMissing） */
@@ -102,7 +155,7 @@ export class SharedFolder {
   }
 
   private async mark(dataset: SharedDataset): Promise<FileMark> {
-    const stat = await this.store.stat([dataset.file]);
+    const stat = await this.store.stat(await this.pathOf(dataset.file));
     if (!stat || stat.kind !== "file") return NO_FILE;
     return { exists: true, size: stat.size, lastModified: stat.lastModified };
   }
@@ -125,7 +178,7 @@ export class SharedFolder {
       const mark = await this.mark(dataset);
       if (!mark.exists) return { envelope: null, mark };
       try {
-        const text = await this.store.readText([dataset.file]);
+        const text = await this.store.readText(await this.pathOf(dataset.file));
         return { envelope: parseEnvelope(dataset, text, pick), mark };
       } catch (e) {
         // 形が違う・別の種類・新しい版は読み直しても変わらないので、そのまま返す
@@ -159,9 +212,12 @@ export class SharedFolder {
       if (statChanged(mark, await this.mark(dataset))) continue;
       if (mark.exists) {
         // 控えは1世代だけ（顛末書の _記録 と同じ）
-        await this.store.copyFile([dataset.file], [backupName(dataset.file)]);
+        await this.store.copyFile(await this.pathOf(dataset.file), await this.pathOf(backupName(dataset.file)));
       }
-      await this.store.writeBytes([dataset.file], formatEnvelope(dataset, merged, this.writer, now));
+      await this.store.writeBytes(
+        await this.pathOf(dataset.file),
+        formatEnvelope(dataset, merged, this.writer, now),
+      );
       return { items: merged, written: true, retries: attempt };
     }
     throw new SharedBusyError(dataset.file);

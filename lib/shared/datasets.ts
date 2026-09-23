@@ -49,5 +49,27 @@ export const SHARED_DATASETS: Readonly<Record<SharedDatasetId, SharedDataset>> =
 
 export const SHARED_DATASET_IDS = Object.keys(SHARED_DATASETS) as SharedDatasetId[];
 
+/**
+ * 共有データを入れるフォルダーの候補（共有フォルダーの直下に作る）。
+ *
+ * ★**先に見つかった方を使う。**どちらも無ければ `_data` を作る。
+ *   両方に対応するのは、`.` で始まる名前を同期ソフトが「隠しファイル」として無視することが
+ *   あるため。実際に `.data` を作って試し、同期されなければ `_data` に名前を変えるだけでよい。
+ * ★Windows の「隠し」は名前ではなくファイルの属性で、ブラウザからは付けられない。
+ *   どちらの名前でも Explorer では見える（macOS の Finder では `.data` だけ隠れる）。
+ */
+export const SHARED_DATA_DIRS: readonly string[] = [".data", "_data"];
+
+/** どちらも無いときに作るフォルダー */
+export const DEFAULT_SHARED_DATA_DIR = "_data";
+
+/** 共有フォルダーの中身から、使うフォルダーを選ぶ（無ければ null） */
+export function pickDataDir(entries: readonly { name: string; kind: "file" | "directory" }[]): string | null {
+  for (const name of SHARED_DATA_DIRS) {
+    if (entries.some((e) => e.kind === "directory" && e.name === name)) return name;
+  }
+  return null;
+}
+
 /** 書き換える前の控え（1世代だけ。顛末書の _記録 と同じ流儀） */
 export const backupName = (file: string): string => `${file}.bak`;

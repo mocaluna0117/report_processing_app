@@ -31,10 +31,17 @@ const dxRow = (pj: string, owner = "架空　花子") =>
 // ★点検保守台帳は「物件番号の末尾が 01」の行だけを取り込む（lib/after/dx.ts）
 const dxCsv = (pjs: string[]) => [DX_HEADER.join(","), ...pjs.map((pj) => dxRow(pj).join(","))].join("\n");
 
+/** ★顧客ファイルは共有フォルダーの直下ではなく、データのフォルダーに置く */
+const DATA = "_data";
 const setup = (files: Record<string, string> = {}) => {
   const fs = new FakeFs("Folio共有");
-  for (const [name, text] of Object.entries(files)) fs.put(name, text);
+  for (const [name, text] of Object.entries(files)) fs.put(`${DATA}/${name}`, text);
   return { fs, folder: new SharedFolder(new FolderStore(fs.root), "device-A", QUICK) };
+};
+/** データのフォルダーの中のファイルを消す */
+const removeShared = async (fs: FakeFs, name: string) => {
+  const dir = await fs.root.getDirectoryHandle(DATA);
+  await dir.removeEntry(name);
 };
 
 beforeEach(async () => {
@@ -66,7 +73,7 @@ describe("共有フォルダーの顧客ファイルを取り込む", () => {
   it("ファイルが新しくなれば取り込み直す", async () => {
     const { fs, folder } = setup({ "台帳.csv": dxCsv(["2101230101"]) });
     await syncShared(folder, { now: 100, allowFirstWrite: true });
-    fs.put("台帳.csv", dxCsv(["2101230101", "2101230201"]));
+    fs.put(`${DATA}/台帳.csv`, dxCsv(["2101230101", "2101230201"]));
     const again = await syncShared(folder, { now: 200 });
     expect(again.ledger.imported[0]).toContain("追加 1件");
     expect((await countCustomers()).total).toBe(2);
@@ -77,7 +84,7 @@ describe("共有フォルダーの顧客ファイルを取り込む", () => {
     await syncShared(folder, { now: 100, allowFirstWrite: true });
     await saveCustomerEdits("dx:2101230101", { memo: "この端末で直したメモ" }, 150);
 
-    fs.put("台帳.csv", dxCsv(["2101230101", "2101230201"]));
+    fs.put(`${DATA}/台帳.csv`, dxCsv(["2101230101", "2101230201"]));
     await syncShared(folder, { now: 200 });
 
     const saved = (await loadCustomers()).find((c) => c.id === "dx:2101230101")!;
@@ -96,7 +103,7 @@ describe("共有フォルダーの顧客ファイルを取り込む", () => {
   it("★共有フォルダーの JSON と Excel の一時ファイルは読まない", async () => {
     const { fs, folder } = setup({ "台帳.csv": dxCsv(["2101230101"]) });
     await syncShared(folder, { now: 100, allowFirstWrite: true });
-    fs.put("~$台帳.csv", dxCsv(["2101230109"]));
+    fs.put(`${DATA}/~$台帳.csv`, dxCsv(["2101230109"]));
     const again = await syncShared(folder, { now: 200 });
     expect(again.ledger.imported).toEqual([]);
     expect(again.ledger.skipped).toEqual([]);
@@ -105,7 +112,7 @@ describe("共有フォルダーの顧客ファイルを取り込む", () => {
   it("ファイルを片付けても、顧客は消えない（印だけ落とす）", async () => {
     const { fs, folder } = setup({ "台帳.csv": dxCsv(["2101230101"]) });
     await syncShared(folder, { now: 100, allowFirstWrite: true });
-    await fs.root.removeEntry("台帳.csv");
+    await removeShared(fs, "台帳.csv");
     await syncShared(folder, { now: 200 });
     expect((await countCustomers()).total).toBe(1);
     expect(await loadSeenCustomerFiles()).toEqual({});
@@ -136,7 +143,7 @@ describe("助っ人クラウドは丸ごと入れ替わるので、減るとき�
     const { fs, folder } = setup({ "助っ人.csv": suketCsv(["A1", "A2", "A3"]) });
     await syncShared(folder, { now: 100, allowFirstWrite: true });
 
-    fs.put("助っ人.csv", suketCsv(["A1"]));
+    fs.put(`${DATA}/助っ人.csv`, suketCsv(["A1"]));
     const again = await syncShared(folder, { now: 200 });
     expect(again.ledger.imported).toEqual([]);
     expect(again.ledger.pending).toHaveLength(1);
@@ -149,7 +156,7 @@ describe("助っ人クラウドは丸ごと入れ替わるので、減るとき�
   it("確かめてもらえたら入れ替える", async () => {
     const { fs, folder } = setup({ "助っ人.csv": suketCsv(["A1", "A2", "A3"]) });
     await syncShared(folder, { now: 100, allowFirstWrite: true });
-    fs.put("助っ人.csv", suketCsv(["A1"]));
+    fs.put(`${DATA}/助っ人.csv`, suketCsv(["A1"]));
 
     const done = await syncShared(folder, { now: 200, allowLedgerReplace: true });
     expect(done.ledger.pending).toEqual([]);
@@ -160,7 +167,7 @@ describe("助っ人クラウドは丸ごと入れ替わるので、減るとき�
   it("増えるときは確かめずに取り込む", async () => {
     const { fs, folder } = setup({ "助っ人.csv": suketCsv(["A1"]) });
     await syncShared(folder, { now: 100, allowFirstWrite: true });
-    fs.put("助っ人.csv", suketCsv(["A1", "A2"]));
+    fs.put(`${DATA}/助っ人.csv`, suketCsv(["A1", "A2"]));
     const again = await syncShared(folder, { now: 200 });
     expect(again.ledger.pending).toEqual([]);
     expect((await countCustomers()).bySource.suketto).toBe(2);
@@ -211,7 +218,7 @@ describe("同じ取り込み元のファイルが2つあるとき", () => {
       "助っ人_10月.csv": suketCsv(["A1", "A2", "A3"]),
     });
     await syncShared(folder, { now: 100, allowFirstWrite: true });
-    await fs.root.removeEntry("助っ人_9月.csv");
+    await removeShared(fs, "助っ人_9月.csv");
 
     const again = await syncShared(folder, { now: 200 });
     expect(again.ledger.conflicts).toEqual([]);
@@ -223,7 +230,7 @@ describe("同じ取り込み元のファイルが2つあるとき", () => {
     await syncShared(folder, { now: 100, allowFirstWrite: true });
     expect((await countCustomers()).bySource.suketto).toBe(2);
 
-    fs.put("助っ人_10月.csv", suketCsv(["A1"]));
+    fs.put(`${DATA}/助っ人_10月.csv`, suketCsv(["A1"]));
     const again = await syncShared(folder, { now: 200 });
     expect(again.ledger.conflicts).toHaveLength(1);
     expect(again.ledger.imported).toEqual([]);

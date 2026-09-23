@@ -39,6 +39,9 @@ const LEARN = SHARED_DATASETS["examples-inquiry"];
 const LEARN2 = SHARED_DATASETS["examples-inspection"];
 
 const QUICK = { ...DEFAULT_SHARED_TIMING, readWaitMs: 0, sleep: async () => {} };
+/** ★共有データは直下ではなく、この中に入る（業務のフォルダーと混ぜないため） */
+const DATA = "_data";
+const at = (file: string) => `${DATA}/${file}`;
 
 const fields = (over: Partial<CustomerFields> = {}): CustomerFields => ({
   pj: "2101230101",
@@ -88,11 +91,16 @@ const example = (over: Partial<InquiryExample> = {}): InquiryExample => ({
 /** 相手のPC（同じフォルダーを開いた別の端末） */
 const other = (fs: FakeFs) => new SharedFolder(new FolderStore(fs.root), "device-B", QUICK);
 
-const pushEdits = (folder: SharedFolder, mine: SharedCustomerEdits, now: number) =>
-  folder.update(EDITS, pickSharedCustomerEdits, (c) => (c ? mergeCustomerEdits(c, mine) : mine), now);
+// ★相手のPCも、書く前に共有データのフォルダーを決める（本番と同じ順番）
+const pushEdits = async (folder: SharedFolder, mine: SharedCustomerEdits, now: number) => {
+  await folder.ensureDataDir();
+  return folder.update(EDITS, pickSharedCustomerEdits, (c) => (c ? mergeCustomerEdits(c, mine) : mine), now);
+};
 
-const pushExamples = (folder: SharedFolder, mine: SharedExamples, now: number) =>
-  folder.update(LEARN, pickSharedExamples, (c) => (c ? mergeSharedExamples(c, mine) : mine), now);
+const pushExamples = async (folder: SharedFolder, mine: SharedExamples, now: number) => {
+  await folder.ensureDataDir();
+  return folder.update(LEARN, pickSharedExamples, (c) => (c ? mergeSharedExamples(c, mine) : mine), now);
+};
 
 const setup = () => {
   const fs = new FakeFs("Folio共有");
@@ -144,11 +152,11 @@ describe("まだ空のフォルダー", () => {
 
     const report = await syncShared(mine, { now: 100, allowFirstWrite: true });
     expect(report.awaitingFirstWrite).toBe(false);
-    expect(fs.files()).toEqual([EDITS.file, LEARN.file, LEARN2.file].sort());
+    expect(fs.files()).toEqual([EDITS.file, LEARN.file, LEARN2.file].map(at).sort());
     expect(report.customers.written).toBe(true);
     expect(await loadLastSync()).toBe(100);
 
-    const written = JSON.parse(fs.text(EDITS.file) ?? "");
+    const written = JSON.parse(fs.text(at(EDITS.file)) ?? "");
     expect(written.kind).toBe(EDITS.kind);
     expect(written.schemaVersion).toBe(EDITS.schemaVersion);
     expect(written.writer).toBe("device-A");
@@ -190,7 +198,7 @@ describe("相手の手直しを受け取る", () => {
     const saved = await loadCustomers();
     expect(effectiveFields(saved[0]).supervisor).toBe("架空　花子");
     // ★見つからない手直しはファイルに残す（同じ xlsx を取り込めば結び付く）
-    const file = JSON.parse(fs.text(EDITS.file) ?? "");
+    const file = JSON.parse(fs.text(at(EDITS.file)) ?? "");
     expect(Object.keys(file.items)).toContain("sk:ffffffff");
   });
 
@@ -235,7 +243,7 @@ describe("相手の手直しを受け取る", () => {
     await syncShared(mine, { now: 100 });
     expect(effectiveFields((await loadCustomers())[0]).memo).toBe("新しい");
     // ファイル側も新しい方に揃う
-    const file = JSON.parse(fs.text(EDITS.file) ?? "");
+    const file = JSON.parse(fs.text(at(EDITS.file)) ?? "");
     expect(file.items["dx:2101230101"].edits.memo).toBe("新しい");
   });
 
@@ -267,7 +275,7 @@ describe("学習した書き方", () => {
     expect(await loadDeletedExampleMarks("inquiry")).toEqual({ "c-1": 2_000 });
 
     await syncShared(mine, { now: 3_000 });
-    const file = JSON.parse(fs.text(LEARN.file) ?? "");
+    const file = JSON.parse(fs.text(at(LEARN.file)) ?? "");
     expect(file.items.items).toEqual([]);
     expect(file.items.deleted).toEqual({ "c-1": 2_000 });
   });
@@ -291,7 +299,7 @@ describe("学習した書き方", () => {
 
     await syncShared(mine, { now: 4_000 });
     expect((await loadExamples("inquiry")).map((e) => e.output)).toEqual(["覚え直した"]);
-    expect(fs.text(LEARN.file)).toContain("覚え直した");
+    expect(fs.text(at(LEARN.file))).toContain("覚え直した");
   });
 
   it("アフターと定期点検の手本は混ざらない", async () => {
@@ -300,9 +308,9 @@ describe("学習した書き方", () => {
     await upsertStoredExample("inspection", example({ id: "i-1", output: "定期点検" }));
 
     await syncShared(mine, { now: 100, allowFirstWrite: true });
-    expect(fs.text(LEARN.file)).toContain("アフター");
-    expect(fs.text(LEARN.file)).not.toContain("定期点検");
-    expect(fs.text(LEARN2.file)).toContain("定期点検");
+    expect(fs.text(at(LEARN.file))).toContain("アフター");
+    expect(fs.text(at(LEARN.file))).not.toContain("定期点検");
+    expect(fs.text(at(LEARN2.file))).toContain("定期点検");
   });
 });
 
@@ -318,17 +326,17 @@ describe("何度同期しても壊れない", () => {
     expect(again.customers.written).toBe(false);
     expect(again.examples.inquiry.written).toBe(false);
     expect(fs.writes.length).toBe(before);
-    expect(fs.files()).not.toContain(`${EDITS.file}.bak`);
+    expect(fs.files()).not.toContain(at(`${EDITS.file}.bak`));
   });
 
   it("同期を重ねても中身は変わらない（冪等）", async () => {
     const { fs, mine } = setup();
     await putCustomers([{ ...customer(), edits: { memo: "架空のメモ" }, editStamps: { memo: 5 }, editedAt: 5 }]);
     await syncShared(mine, { now: 100, allowFirstWrite: true });
-    const first = fs.text(EDITS.file);
+    const first = fs.text(at(EDITS.file));
     await syncShared(mine, { now: 200 });
     await syncShared(mine, { now: 300 });
-    expect(fs.text(EDITS.file)).toBe(first);
+    expect(fs.text(at(EDITS.file))).toBe(first);
     expect((await loadCustomers()).length).toBe(1);
   });
 });
@@ -347,14 +355,14 @@ describe("つまずいたとき", () => {
       },
       50,
     );
-    fs.put(LEARN.file, "{ 壊れた");
+    fs.put(at(LEARN.file), "{ 壊れた");
 
     const report = await syncShared(mine, { now: 100 });
     expect(report.customers.applied).toBe(1);
     expect(report.failures.map((f) => f.dataset)).toEqual(["examples-inquiry"]);
     expect(report.failures[0].label).toBe(LEARN.label);
     // ★壊れたファイルは自分で直さない（書き換えずに残す）
-    expect(fs.text(LEARN.file)).toBe("{ 壊れた");
+    expect(fs.text(at(LEARN.file))).toBe("{ 壊れた");
     expect(await loadLastSync()).toBe(100);
   });
 
@@ -368,7 +376,7 @@ describe("つまずいたとき", () => {
 
     const report = await syncShared(mine, { now: 100 });
     expect(report.failures[0].message).toContain("新しくしてください");
-    expect(JSON.parse(fs.text(LEARN.file) ?? "").schemaVersion).toBe(99);
+    expect(JSON.parse(fs.text(at(LEARN.file)) ?? "").schemaVersion).toBe(99);
   });
 
   it("フォルダーが無くなったら投げる（ローカルは触らない）", async () => {
@@ -377,5 +385,34 @@ describe("つまずいたとき", () => {
     fs.vanish();
     await expect(syncShared(mine, { now: 100 })).rejects.toThrow();
     expect(await loadLastSync()).toBeNull();
+  });
+});
+
+describe("前の形（直下に置いていた分）からの移し替え", () => {
+  it("★つないだときに、直下のファイルをデータのフォルダーへ移す", async () => {
+    const { fs, mine } = setup();
+    // 前の形: 共有データが共有フォルダーの直下にあった
+    await pushEdits(new SharedFolder(new FolderStore(fs.root), "device-old", QUICK), {}, 50);
+    const before = fs.files();
+    expect(before).toContain(at(EDITS.file));
+
+    // いまの形に作り直す（直下へ置き直して、移し替えが起きることを見る）
+    fs.put(EDITS.file, fs.text(at(EDITS.file)) ?? "");
+    await (await fs.root.getDirectoryHandle("_data")).removeEntry(EDITS.file);
+    expect(fs.files()).toContain(EDITS.file);
+
+    await syncShared(mine, { now: 100 });
+    expect(fs.files()).toContain(at(EDITS.file));
+    // ★直下からは消える（同じものが2つ並ばない）
+    expect(fs.files()).not.toContain(EDITS.file);
+  });
+
+  it("★移し先に同じ名前があれば、直下のものは消さない（取り違えたら戻せない）", async () => {
+    const { fs, mine } = setup();
+    await pushEdits(new SharedFolder(new FolderStore(fs.root), "device-old", QUICK), {}, 50);
+    fs.put(EDITS.file, "直下に残っていた別の中身");
+
+    await syncShared(mine, { now: 100 });
+    expect(fs.text(EDITS.file)).toBe("直下に残っていた別の中身");
   });
 });

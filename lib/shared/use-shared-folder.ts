@@ -215,16 +215,18 @@ export function useSharedFolder({
       const folder = folderRef.current;
       if (!folder) return null;
       try {
-        await folder.store.writeBytes([name], bytes);
+        // ★共有データのフォルダーへ置く（直下は業務のフォルダーだけにしておく）
+        const dir = await folder.ensureDataDir();
+        await folder.store.writeBytes([...dir, name], bytes);
         const seen = await loadSeenCustomerFiles();
         // ★Folio がこの端末から置いた、同じ取り込み元の古いファイルだけ片付ける
         //   （利用者が手で置いたファイルには触らない）。放っておくと
         //   「同じ取り込み元が2つ」になって、どちらを使うか決められなくなる
         const stale = staleWrittenFiles(seen, source, name);
-        for (const old of stale) await folder.store.remove([old]).catch(() => undefined);
+        for (const old of stale) await folder.store.remove([...dir, old]).catch(() => undefined);
         const next = { ...seen };
         for (const old of stale) delete next[old];
-        const stat = await folder.store.stat([name]);
+        const stat = await folder.store.stat([...dir, name]);
         if (stat?.kind === "file") {
           // ★自分で置いたファイルは、次の同期で取り込み直さなくてよい（もう取り込んである）
           next[name] = markOf({ name, size: stat.size, lastModified: stat.lastModified }, source, true);

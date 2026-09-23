@@ -172,6 +172,8 @@ export async function syncShared(
   const deps = options.deps ?? DEFAULT_SYNC_DEPS;
   // ★フォルダーそのものが使えるか。ここで落ちたら、以降は全部落ちるので投げる
   await folder.probe();
+  // ★共有データを入れるフォルダーを決める（前の形のファイルが直下にあれば、ここで移す）
+  await folder.ensureDataDir();
 
   // ★台帳を先に取り込む。手直しはそのあとで当てる（新しい台帳の上に乗せるため）
   const ledger = await importLedgerFiles(folder, deps, options.allowLedgerReplace ?? false);
@@ -272,7 +274,7 @@ async function importLedgerFiles(
   const out: LedgerReport = { imported: [], pending: [], skipped: [], conflicts: [] };
   let files: FolderFile[];
   try {
-    files = pickCustomerFiles(await folder.store.listFiles([]));
+    files = pickCustomerFiles(await folder.store.listFiles(folder.dir));
   } catch {
     // 一覧を読めないときは、この段を飛ばす（手直しの同期は続ける）
     return out;
@@ -291,7 +293,10 @@ async function importLedgerFiles(
   const ready: { file: FolderFile; parsed: ParsedImport }[] = [];
   for (const file of changed) {
     try {
-      ready.push({ file, parsed: parseCustomerFile(await folder.store.readBytes([file.name]), file.name) });
+      ready.push({
+        file,
+        parsed: parseCustomerFile(await folder.store.readBytes([...folder.dir, file.name]), file.name),
+      });
     } catch (e) {
       // 顧客データでないファイル（ほかの書類が置いてあるだけ）。印は付けずに飛ばす
       out.skipped.push({ file: file.name, message: e instanceof Error ? e.message : String(e) });
