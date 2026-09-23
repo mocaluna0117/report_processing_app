@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { HelpShots } from "@/components/help-shots";
 import { ModalShell } from "@/components/modal-shell";
+import { openContact } from "@/lib/contact/dialog";
 import { COMMON_FAQ, HELP_SECTIONS } from "@/lib/help";
 import { closeHelp, getHelpDialogState, subscribeHelpDialog } from "@/lib/help-dialog";
 import { getNavigationGuard } from "@/lib/navigation-guard";
@@ -154,6 +155,21 @@ export function HelpDialog() {
             </dl>
           </>
         )}
+      </div>
+
+      {/* ★ここで解決しないときの行き先。使い方を閉じて、問い合わせを開く（選んでいた画面を渡す） */}
+      <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 border-t border-slate-200 px-6 py-3 text-sm text-slate-600">
+        <span>解決しないとき・こうしてほしいときは</span>
+        <button
+          type="button"
+          onClick={() => {
+            closeHelp();
+            openContact({ page: section?.href ?? null });
+          }}
+          className="cursor-pointer rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          問い合わせ
+        </button>
       </div>
     </ModalShell>
   );

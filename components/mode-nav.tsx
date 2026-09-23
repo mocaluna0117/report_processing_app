@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ContactDialog } from "@/components/contact-dialog";
 import { HelpDialog } from "@/components/help-dialog";
 import { RakurakuLoginDialog } from "@/components/rakuraku-login-dialog";
 import { SharedFolderDialog } from "@/components/shared-folder-dialog";
 import { SIGNED_IN_COOKIE } from "@/lib/auth";
+import { CONTACT_BUTTON_ID, openContact, subscribeContact } from "@/lib/contact/dialog";
 import { HELP_SECTIONS } from "@/lib/help";
 import { getHelpDialogState, openHelp, subscribeHelpDialog } from "@/lib/help-dialog";
 import { getNavigationGuard } from "@/lib/navigation-guard";
@@ -98,6 +100,8 @@ export function ModeNav() {
   }, [pathname]);
   const [sharedOpen, setSharedOpen] = useState(false);
   useEffect(() => subscribeSharedDialog(setSharedOpen), []);
+  const [contactOpen, setContactOpen] = useState(false);
+  useEffect(() => subscribeContact(setContactOpen), []);
   /** いま見ている画面の使い方を、開いたときの既定タブにする */
   const currentSlug = HELP_SECTIONS.find((s) => s.href === pathname)?.slug ?? null;
   /** いま見ているのが顛末書系ならその種類（楽楽精算を使う画面か）。ほかは null */
@@ -153,6 +157,21 @@ export function ModeNav() {
       >
         使い方
       </button>
+      {/* ★不具合・要望を開発者へ送る（Folio 全体で1つ）。開いた画面を最初から選んでおく */}
+      <button
+        id={CONTACT_BUTTON_ID}
+        type="button"
+        onClick={() => openContact({ page: pathname })}
+        aria-haspopup="dialog"
+        aria-pressed={contactOpen}
+        className={
+          contactOpen
+            ? "cursor-pointer rounded-md border border-slate-400 bg-white px-2.5 py-1 text-xs font-semibold text-slate-900"
+            : "cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+        }
+      >
+        問い合わせ
+      </button>
       {/* ★共有フォルダー（データベースの役割）。どの画面からでもつなげるよう、ここに1つだけ置く。
           専決決裁書・捺印決裁書では使わないので、つながっていなくても目立たせない */}
       <button
@@ -194,6 +213,7 @@ export function ModeNav() {
       <HelpDialog />
       <RakurakuLoginDialog />
       <SharedFolderDialog />
+      <ContactDialog />
       {signedIn && (
         <>
           {/* ★楽楽精算のログアウトと取り違えないよう、間に区切りを入れて名前も分ける */}
