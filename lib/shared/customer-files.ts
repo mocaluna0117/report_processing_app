@@ -126,14 +126,24 @@ export function ledgerConflictText(source: CustomerSource, files: readonly strin
   );
 }
 
-/** Folio がこの端末から置いた、同じ取り込み元の古いファイル（置き換えたら片付ける） */
-export function staleWrittenFiles(
+/**
+ * 新しいファイルを置いたときに、共有フォルダーから外す古いファイル。
+ *
+ * ★**丸ごと入れ替える取り込み元（助っ人クラウド）だけ**外す。2つ並ぶと
+ *   どちらを使うか決められず、取り込みが止まってしまう。
+ * ★**足し込む取り込み元（点検保守台帳）は外さない。** 月ごとの差分を分けて置くので、
+ *   古い月を外すと、もう1台にはその月の分が届かなくなる。
+ * ★Folio が置いたものか、利用者が手で置いたものかは問わない。どちらも「前の台帳」であり、
+ *   残すと行き止まりになるため（外したものは画面に必ず出す）。
+ */
+export function supersededFiles(
   seen: SeenCustomerFiles,
   source: CustomerSource,
   keepName: string,
 ): string[] {
+  if (!REPLACING_SOURCES.includes(source)) return [];
   return Object.entries(seen)
-    .filter(([name, mark]) => mark.mine === true && mark.source === source && name !== keepName)
+    .filter(([name, mark]) => mark.source === source && name !== keepName)
     .map(([name]) => name)
     .sort();
 }

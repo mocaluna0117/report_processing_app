@@ -8,7 +8,7 @@
 // ★同期は storage.canPersist（復元できた）まで走らせない。
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CustomerSource } from "@/lib/after/types";
-import { ledgerPutText, markOf, staleWrittenFiles } from "@/lib/shared/customer-files";
+import { ledgerPutText, markOf, supersededFiles } from "@/lib/shared/customer-files";
 import type { SharedFolderState } from "@/lib/shared/status";
 import { SharedFolder, sharedErrorText } from "@/lib/shared/folder";
 import {
@@ -219,10 +219,10 @@ export function useSharedFolder({
         const dir = await folder.ensureDataDir();
         await folder.store.writeBytes([...dir, name], bytes);
         const seen = await loadSeenCustomerFiles();
-        // ★Folio がこの端末から置いた、同じ取り込み元の古いファイルだけ片付ける
-        //   （利用者が手で置いたファイルには触らない）。放っておくと
-        //   「同じ取り込み元が2つ」になって、どちらを使うか決められなくなる
-        const stale = staleWrittenFiles(seen, source, name);
+        // ★丸ごと入れ替える取り込み元（助っ人クラウド）だけ、前の台帳を外す。
+        //   放っておくと「同じ取り込み元が2つ」になって取り込みが止まる。
+        //   点検保守台帳は月ごとの差分を分けて置くので外さない
+        const stale = supersededFiles(seen, source, name);
         for (const old of stale) await folder.store.remove([...dir, old]).catch(() => undefined);
         const next = { ...seen };
         for (const old of stale) delete next[old];

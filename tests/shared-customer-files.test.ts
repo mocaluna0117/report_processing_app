@@ -12,7 +12,7 @@ import {
   ledgerImportedText,
   markOf,
   pickCustomerFiles,
-  staleWrittenFiles,
+  supersededFiles,
 } from "@/lib/shared/customer-files";
 
 // 共有フォルダーに置いた顧客データのファイルを、2人目も自動で取り込めるようにする（2026-09-23）。
@@ -189,27 +189,30 @@ describe("同じ取り込み元のファイルが2つ以上あるとき", () => 
   });
 });
 
-describe("自分で置いた古いファイルの片付け", () => {
+describe("新しいファイルを置いたときに外す古いファイル", () => {
   const seen = {
     "助っ人_9月.csv": { size: 1, lastModified: 1, source: "suketto" as const, mine: true },
-    "助っ人_10月.csv": { size: 2, lastModified: 2, source: "suketto" as const, mine: true },
-    "台帳.csv": { size: 3, lastModified: 3, source: "dx" as const, mine: true },
+    "台帳_9月.csv": { size: 3, lastModified: 3, source: "dx" as const, mine: true },
+    "台帳_8月.csv": { size: 5, lastModified: 5, source: "dx" as const },
     "誰かが置いた助っ人.csv": { size: 4, lastModified: 4, source: "suketto" as const },
   };
 
-  it("同じ取り込み元で、いま置いたもの以外を挙げる", () => {
-    expect(staleWrittenFiles(seen, "suketto", "助っ人_10月.csv")).toEqual(["助っ人_9月.csv"]);
+  it("★助っ人クラウドは前の台帳を外す（2つ並ぶと取り込みが止まるため）", () => {
+    expect(supersededFiles(seen, "suketto", "助っ人_10月.csv")).toEqual([
+      "助っ人_9月.csv",
+      "誰かが置いた助っ人.csv",
+    ]);
   });
 
-  it("★利用者が手で置いたファイルには触らない", () => {
-    expect(staleWrittenFiles(seen, "suketto", "新しい助っ人.csv")).not.toContain("誰かが置いた助っ人.csv");
+  it("★点検保守台帳は外さない（月ごとの差分を分けて置くため）", () => {
+    expect(supersededFiles(seen, "dx", "台帳_10月.csv")).toEqual([]);
   });
 
-  it("取り込み元が違うものは片付けない", () => {
-    expect(staleWrittenFiles(seen, "dx", "新しい台帳.csv")).toEqual(["台帳.csv"]);
+  it("同じ名前で置き直すときは、自分を外さない", () => {
+    expect(supersededFiles(seen, "suketto", "助っ人_9月.csv")).toEqual(["誰かが置いた助っ人.csv"]);
   });
 
-  it("置けたときは、片付けた分も書く", () => {
+  it("置けたときは、外した分も書く", () => {
     expect(ledgerPutText("助っ人_10月.csv", ["助っ人_9月.csv"])).toContain("古い助っ人_9月.csvは外しました");
     expect(ledgerPutText("台帳.csv", [])).not.toContain("外しました");
     expect(ledgerPutText("台帳.csv", [])).toContain("もう1台でも同じ台帳になります");
