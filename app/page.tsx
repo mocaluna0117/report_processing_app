@@ -48,6 +48,9 @@ import { buildHandoverSync } from "@/lib/after/match-report";
 import { type RowStaffPlan, buildRowStaff } from "@/lib/after/match-staff";
 import type { Customer } from "@/lib/after/types";
 import { HandoverSync } from "@/components/handover-sync";
+import { scheduleSharedSync } from "@/lib/shared/connection";
+import { changedCustomers } from "@/lib/shared/status";
+import { useOnSharedSynced, useSharedSyncOnOpen } from "@/lib/shared/use-shared-folder";
 import {
   clearAll as clearStorage,
   deleteReport,
@@ -117,6 +120,8 @@ export default function Home() {
   const [autoHandover, setAutoHandover] = useState<Map<string, string | null> | null>(null);
   /** 監督・営業を引くための顧客データ (引渡日の反映と同じものを使い回す) */
   const [staffCustomers, setStaffCustomers] = useState<Customer[]>([]);
+  /** 共有フォルダーの同期で顧客データが変わったら進める (監督・営業の顧客を読み直す) */
+  const [customersKey, setCustomersKey] = useState(0);
   const fileMap = useRef(new Map<string, UploadedFile>());
   /**
    * 最新の抽出結果。処理中でもセルは編集できるので、
@@ -151,6 +156,17 @@ export default function Home() {
     inputOf: (row) => row.redactedDefects ?? "",
     outputLabel: "点検内容",
     storage,
+    scheduleSync: scheduleSharedSync,
+  });
+  /**
+   * 共有フォルダー（つながりは Folio 全体で1つ。ヘッダーからつなぐ）。
+   * 開いたときに相手の分（顧客データ・学習）を取り込み、終わったら画面の写しを読み直す。
+   * ★引渡日の反映と学習は、直したら少し後に書き出す（scheduleSharedSync）。
+   */
+  useSharedSyncOnOpen();
+  useOnSharedSynced(async (report) => {
+    if (changedCustomers(report)) setCustomersKey((k) => k + 1);
+    await learning.restore();
   });
   const copyState = useExcelCopy();
 
@@ -203,7 +219,7 @@ export default function Home() {
     return () => {
       alive = false;
     };
-  }, [processing]);
+  }, [processing, customersKey]);
 
   // 処理中に画面を切り替えると未完了分が失われるので確認を出す
   useEffect(() => {
@@ -412,6 +428,7 @@ export default function Home() {
             : [],
         ),
       );
+      scheduleSharedSync();
       // 「元に戻す」用に、更新前の引渡日を覚えておく
       setAutoHandover(
         new Map(

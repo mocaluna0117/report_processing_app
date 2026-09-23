@@ -71,6 +71,7 @@ import {
 } from "@/lib/tenmatsu/local/flow";
 import { LOCAL_KINDS, RUN_LIMITS } from "@/lib/tenmatsu/local/kind-config";
 import { loadSharedFolderHandle } from "@/lib/shared/store";
+import { useSharedSyncOnOpen } from "@/lib/shared/use-shared-folder";
 import { sharedOverlap, sharedOverlapText } from "@/lib/tenmatsu/local/folder-guard";
 import {
   RAKURAKU_CHIP_ID,
@@ -154,6 +155,12 @@ const SHOW_IMPORT: boolean = false;
 export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; header?: ReactNode }) {
   const kind = DOC_KIND_BY_ID[kindId];
   const kept = getFolderSession(kind.id);
+  /**
+   * 共有フォルダー（データベースの役割。つながりは Folio 全体で1つ）。
+   * ★監督・営業を顧客データへ反映する顛末書だけが、開いたときに相手の分を取り込む。
+   *   専決決裁書・捺印決裁書では同期しない（共有フォルダーのデータを使わないため）。
+   */
+  useSharedSyncOnOpen(kind.showStaffSync);
   /** この種類で選べる一覧の経路（1つしか無ければ選択は出さない） */
   const ROUTES = routeOptions(kind.id);
 

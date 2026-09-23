@@ -12,6 +12,9 @@ import {
   staffUpdatesFor,
 } from "@/lib/after/match-staff";
 import type { Customer } from "@/lib/after/types";
+import { scheduleSharedSync } from "@/lib/shared/connection";
+import { changedCustomers } from "@/lib/shared/status";
+import { useOnSharedSynced } from "@/lib/shared/use-shared-folder";
 import { isStorageAvailable } from "@/lib/storage";
 import type { ListItem } from "@/lib/tenmatsu/client";
 
@@ -87,6 +90,10 @@ export function TenmatsuStaffSync({
       alive = false;
     };
   }, [reloadKey]);
+  // 共有フォルダーから相手の手直し・台帳を取り込んだら読み直す (ヘッダーから同期したときも)
+  useOnSharedSynced((report) => {
+    if (changedCustomers(report)) setReloadKey((k) => k + 1);
+  });
 
   const sync = useMemo(
     () => buildStaffSync(items, customers ?? []),
@@ -109,12 +116,14 @@ export function TenmatsuStaffSync({
   const apply = async (rows: StaffSyncRow[]) => {
     setBusy(true);
     setError(null);
+    let wrote = false;
     try {
       for (const row of rows) {
         const saved = await saveTenmatsuStaff(
           row.updates.map((u) => ({ ...u, pj: row.key })),
         );
         if (saved.length > 0) {
+          wrote = true;
           setApplied((prev) => new Map(prev).set(row.key, saved.length));
         }
       }
@@ -123,6 +132,8 @@ export function TenmatsuStaffSync({
       setError(`反映できませんでした (${e instanceof Error ? e.message : String(e)})`);
     } finally {
       setBusy(false);
+      // 手直しとして共有フォルダーにも書き出す (つないでいなければ何もしない)
+      if (wrote) scheduleSharedSync();
     }
   };
 

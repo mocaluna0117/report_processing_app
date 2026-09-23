@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type ConnectionDeps,
@@ -349,5 +351,30 @@ describe("登録を消す", () => {
     await restoreSharedConnection();
     await forgetSharedFolder();
     expect(getSharedConnection().error).toContain("容量が足りません");
+  });
+});
+
+describe("どの画面が開いたときに同期を頼むか（画面のテスト基盤が無いので、中身を読んで見張る）", () => {
+  const source = (path: string) => readFileSync(resolve(__dirname, "..", path), "utf8");
+
+  it("定期点検は頼む", () => {
+    expect(source("app/page.tsx")).toContain("useSharedSyncOnOpen();");
+  });
+
+  it("アフターは頼む（useSharedFolder の中で頼む）", () => {
+    expect(source("components/after/after-page.tsx")).toContain("useSharedFolder({");
+    expect(source("lib/shared/use-shared-folder.ts")).toMatch(/export function useSharedFolder\([\s\S]*?useSharedSyncOnOpen\(\);/);
+  });
+
+  it("★顛末書系の画面は、監督・営業を反映する種類（顛末書）だけが頼む", () => {
+    expect(source("components/tenmatsu/tenmatsu-folder-page.tsx")).toContain(
+      "useSharedSyncOnOpen(kind.showStaffSync);",
+    );
+  });
+
+  it("★ヘッダーは頼まない（つなぐだけ。専決・捺印で同期しないため）", () => {
+    const nav = source("components/mode-nav.tsx");
+    expect(nav).not.toContain("wantSharedSync");
+    expect(nav).not.toContain("useSharedSyncOnOpen");
   });
 });

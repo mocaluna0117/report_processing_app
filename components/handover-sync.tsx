@@ -11,6 +11,9 @@ import {
 import { buildHandoverSync, type HandoverSyncItem } from "@/lib/after/match-report";
 import type { Customer } from "@/lib/after/types";
 import type { ResultRow } from "@/lib/process";
+import { scheduleSharedSync } from "@/lib/shared/connection";
+import { changedCustomers } from "@/lib/shared/status";
+import { useOnSharedSynced } from "@/lib/shared/use-shared-folder";
 import { isStorageAvailable } from "@/lib/storage";
 
 /** 状態ごとの見せ方 */
@@ -74,6 +77,10 @@ export function HandoverSync({
       alive = false;
     };
   }, [processing, reloadKey]);
+  // 共有フォルダーから相手の手直し・台帳を取り込んだら読み直す (ヘッダーから同期したときも)
+  useOnSharedSynced((report) => {
+    if (changedCustomers(report)) setReloadKey((k) => k + 1);
+  });
 
   const items = useMemo(
     () => (customers ? buildHandoverSync(rows, customers) : []),
@@ -98,6 +105,8 @@ export function HandoverSync({
     try {
       const saved = await saveReportHandoverDates(updates);
       replace(saved);
+      // 手直しとして共有フォルダーにも書き出す (つないでいなければ何もしない)
+      if (saved.length > 0) scheduleSharedSync();
       // 実際に書けた顧客だけを「更新しました」にする (別タブで消された顧客は飛ばされる)
       const savedIds = new Set(saved.map((c) => c.id));
       const written = targets.filter((t) => t.match.customer && savedIds.has(t.match.customer.id));
@@ -131,7 +140,10 @@ export function HandoverSync({
       const saved = await saveCustomerEdits(item.match.customer.id, {
         handoverDate: previous,
       });
-      if (saved) replace([saved]);
+      if (saved) {
+        replace([saved]);
+        scheduleSharedSync();
+      }
       setApplied((prev) => {
         const next = new Map(prev);
         next.delete(item.pairId);
@@ -297,7 +309,7 @@ export function HandoverSync({
           <p>
             顧客データを取り込み直しても残ります (アフターメンテナンスの顧客カードで確認・取り消しできます)。
             顧客データはこのブラウザの中にあるため、取り込んだ端末で処理してください
-            (アフターの画面で共有フォルダーを設定していれば、手直しはもう1台にも伝わります)。
+            (ヘッダーの「共有フォルダー」でつないでいれば、手直しはもう1台にも伝わります)。
           </p>
         </MoreDetails>
       </div>
