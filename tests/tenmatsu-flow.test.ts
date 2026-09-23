@@ -59,7 +59,9 @@ describe.each(DOC_KINDS)("$label の手順", (kind) => {
   it("初回はフォルダーの段がいまここで、次にすることが出る", () => {
     const plan = tenmatsuFlow(fresh(kind));
     expect(plan.currentId).toBe("folder");
-    expect(plan.nextHint).toContain("保存先フォルダーを選ぶ");
+    // ★フォルダーは共有フォルダー1つだけ選ぶ（書類ごとのフォルダーはその中に自動で作る）
+    expect(plan.nextHint).toContain("共有フォルダーを選ぶ");
+    expect(plan.nextHint).toContain(kind.label);
     expect(plan.steps.map((s) => s.state)).toEqual(["current", "todo", "todo", "todo", "todo"]);
     expect(isFreshTenmatsu(fresh(kind))).toBe(true);
   });

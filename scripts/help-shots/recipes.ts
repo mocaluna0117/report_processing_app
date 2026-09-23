@@ -331,7 +331,7 @@ export const RECIPES: readonly Recipe[] = [
     clip: ["header", "#tenmatsu-folder"],
     hotspots: [
       { at: "#rakuraku-login" },
-      { at: '#tenmatsu-folder button:has-text("保存先フォルダーを選ぶ")' },
+      { at: '#tenmatsu-folder button:has-text("共有フォルダーを選ぶ")' },
     ],
   },
   {

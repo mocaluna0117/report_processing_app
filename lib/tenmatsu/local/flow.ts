@@ -57,7 +57,7 @@ export function tenmatsuStepDefs(kind: DocKind): FlowStepDef[] {
     {
       id: "folder",
       label: "保存先フォルダー",
-      description: `PDFを置くフォルダー (例: ドキュメントの「${label}」) を選び、ブラウザに聞かれたら「許可」を選びます。`,
+      description: `Folio の共有フォルダーを選び、ブラウザに聞かれたら「許可」を選びます (3種類とも1回で済みます)。`,
       targetId: `${kind.id}-folder`,
     },
     {
@@ -225,7 +225,8 @@ export function tenmatsuFlow(input: TenmatsuFlowInput): FlowPlan {
               }
             : {
                 kind: "ready",
-                hint: `「保存先フォルダーを選ぶ」を押して、${label}のPDFを置くフォルダーを選んでください`,
+                // ★フォルダーは共有フォルダー1つだけ選ぶ。書類ごとのフォルダーはその中に自動で作る
+                hint: `「共有フォルダーを選ぶ」を押してください。その中に「${label}」を作って、PDFと記録を置きます`,
               };
 
   const login: StepEval = input.loggedIn
