@@ -8,7 +8,7 @@ import { HELP_SHOT_GEOMETRY } from "@/lib/help-shots.generated";
  *
  * ★写真は next/image を使わず、素の <img src="/help/…"> で出す。
  *   proxy.ts の matcher は /_next/image と /_next/static を認証の対象外にしているので、
- *   next/image や静的インポートで出すと、社内画面の写真が APP_PASSWORD の外に置かれる。
+ *   next/image や静的インポートで出すと、社内画面の写真が Folio のログインの外に置かれる。
  *   （tests/help.test.ts が、この決まりが戻されていないか見張っている）
  */
 const MARKER_CLASS =

@@ -74,7 +74,7 @@ describe("「使い方」ページの中身", () => {
 
   it("★写真は next/image を使わない（認証の外に出さないため）", () => {
     // proxy.ts の matcher は /_next/image と /_next/static を素通しにしている。
-    // そこに社内画面の写真を置くと、APP_PASSWORD の保護が効かない。
+    // そこに社内画面の写真を置くと、Folio のログインの保護が効かない。
     // 写真を出しているのは components/help-shots.tsx（モーダルが読み込む）
     const shots = readFileSync("components/help-shots.tsx", "utf8");
     // （理由はこのファイルの冒頭コメントに書いてあるので、import だけを見る）
