@@ -34,11 +34,19 @@ export function isTabNamed(text: string, name: string): boolean {
  * 見つからない・読めないときは false（＝申請検索から取る。開けなければ切り替わる）。
  */
 export async function hasViewTab(page: Page): Promise<boolean> {
+  return hasTabNamed(page, VIEW_TAB_TEXT);
+}
+
+/**
+ * どれかのフレームに、その名前だけが載った押せる場所（タブ・リンク）が見えているか。
+ * ★文の一部には反応しない。隠れているものは数えない。読めないフレームは「無い」とみなす。
+ */
+export async function hasTabNamed(page: Page, name: string): Promise<boolean> {
   for (const frame of page.frames()) {
     const found = await frame
-      .evaluate((name: string) => {
+      .evaluate((tabName: string) => {
         const flat = (s: string) => s.replace(/[\s　]+/g, "");
-        const target = flat(name);
+        const target = flat(tabName);
         for (const el of Array.from(document.querySelectorAll("a, button, [onclick], [role=tab]"))) {
           const text = ((el as HTMLElement).innerText || el.textContent || "").trim();
           // 押せる場所にその文字だけが載っているものを数える（文の一部は数えない）
@@ -48,7 +56,7 @@ export async function hasViewTab(page: Page): Promise<boolean> {
           return true;
         }
         return false;
-      }, VIEW_TAB_TEXT)
+      }, name)
       .catch(() => false);
     if (found) return true;
   }

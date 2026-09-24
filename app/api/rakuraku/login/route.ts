@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { launchBrowser } from "@/lib/rakuraku/browser";
 import { RakurakuError } from "@/lib/rakuraku/errors";
 import { GuardError, assertEnabled, assertSameOrigin } from "@/lib/rakuraku/guard";
+import { landingCounters, readLandingMarkers } from "@/lib/rakuraku/landing";
 import { autoLoginOnce } from "@/lib/rakuraku/login";
 import { log } from "@/lib/rakuraku/log";
 import { SESSION_TTL_MS, SessionError, seal } from "@/lib/rakuraku/session";
@@ -84,9 +85,14 @@ export async function POST(request: Request) {
     page.setDefaultTimeout(Math.max(10_000, BUDGET_MS - (Date.now() - started)));
 
     const result = await autoLoginOnce(page, tenant, { userId, password });
+    // ★着いた画面の目印を数えて残すだけ（2026-09-25 の Phase 0。成功の見分け方はまだ変えない）。
+    //   数だけなので、画面の文字や URL は残らない（lib/rakuraku/landing.ts）
+    const markers = await readLandingMarkers(page)
+      .then(landingCounters)
+      .catch(() => ({}));
     if (result.code !== "OK") {
       cooldown.set(key, Date.now() + COOLDOWN_MS);
-      log("login", { ok: false, code: result.code, ms_total: Date.now() - started });
+      log("login", { ok: false, code: result.code, ms_total: Date.now() - started, ...markers });
       return fail(result.code, result.message);
     }
 
@@ -104,7 +110,7 @@ export async function POST(request: Request) {
       viewTab,
       exp: expiresAt,
     });
-    log("login", { ok: true, n_view_tab: viewTab ? 1 : 0, ms_total: Date.now() - started });
+    log("login", { ok: true, n_view_tab: viewTab ? 1 : 0, ms_total: Date.now() - started, ...markers });
     return NextResponse.json(
       { ok: true, sessionToken, expiresAt, viewTab, totalMs: Date.now() - started },
       { headers: { "Cache-Control": "no-store" } },

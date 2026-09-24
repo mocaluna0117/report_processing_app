@@ -19,6 +19,7 @@ import {
 } from "@/lib/rakuraku/navigation";
 import type { RouteHow } from "@/lib/rakuraku/protocol";
 import { accountRouteText } from "@/lib/rakuraku/parse/route";
+import { landingCounters, readLandingMarkers } from "@/lib/rakuraku/landing";
 import { hasViewTab, isTabNamed } from "@/lib/rakuraku/tabs";
 import { tryLaunch } from "./rakuraku/helpers/browser";
 import { type FixtureServer, startFixtureServer } from "./rakuraku/helpers/fixture-server";
@@ -211,6 +212,32 @@ describe.skipIf(!browser)("経路の切り替え", () => {
     expect(location.frame.url()).toContain("workflowId=3");
     await page.close();
   }, 30_000);
+});
+
+describe("★ログインしたあとに着いた画面の目印（数えるだけ。2026-09-25）", () => {
+  it.runIf(browser)("ログイン後のトップ（frameset）: main のフレームと「ワークフロー」タブがあり、パスワード欄は無い", async () => {
+    const page = await open("top_frameset.html");
+    await page.waitForTimeout(300);
+    expect(await readLandingMarkers(page)).toMatchObject({ mainFrame: true, workflowTab: true, passwordFields: 0, unreadableFrames: 0 });
+    await page.close();
+  }, 20_000);
+
+  it.runIf(browser)("ログイン画面: パスワード欄があり、目印は無い", async () => {
+    const page = await open("login_again.html");
+    expect(await readLandingMarkers(page)).toMatchObject({ mainFrame: false, workflowTab: false, passwordFields: 1 });
+    await page.close();
+  }, 20_000);
+
+  it.runIf(browser)("★お知らせだけの画面: パスワード欄が無くても、目印も無い（今の見分け方だと成功に見えてしまう画面）", async () => {
+    const page = await open("list_denied.html");
+    expect(await readLandingMarkers(page)).toMatchObject({ mainFrame: false, workflowTab: false, passwordFields: 0 });
+    await page.close();
+  }, 20_000);
+
+  it("ログに出すのは n_ で始まる数だけ", () => {
+    const counters = landingCounters({ frames: 3, mainFrame: true, workflowTab: false, passwordFields: 0, unreadableFrames: 1 });
+    expect(counters).toEqual({ n_frames: 3, n_main_frame: 1, n_workflow_tab: 0, n_password_field: 0, n_unreadable_frame: 1 });
+  });
 });
 
 describe("「閲覧」タブがあるアカウントかを見る", () => {
