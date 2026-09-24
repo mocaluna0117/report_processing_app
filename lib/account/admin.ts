@@ -24,7 +24,8 @@ export type AdminAction =
   | { action: "reset"; id: string }
   | { action: "disable"; id: string }
   | { action: "enable"; id: string }
-  | { action: "delete"; id: string };
+  | { action: "delete"; id: string }
+  | { action: "rename"; id: string; name: string };
 
 export interface AdminResponse {
   ok: boolean;
@@ -48,6 +49,13 @@ export function planAdminAction(raw: unknown, selfId: string): { ok: true; plan:
       const nameProblem = displayNameProblem(name);
       if (nameProblem) return { ok: false, message: nameProblem };
       return { ok: true, plan: { action: "create", id, name } };
+    }
+    case "rename": {
+      if (id === selfId) return { ok: false, message: "自分の表示名は、上の「表示名」の欄で変えてください" };
+      const name = typeof r.name === "string" ? r.name.trim() : "";
+      const nameProblem = displayNameProblem(name);
+      if (nameProblem) return { ok: false, message: nameProblem };
+      return { ok: true, plan: { action: "rename", id, name } };
     }
     case "reset":
     case "disable":
@@ -128,6 +136,22 @@ export async function handleAccountsRequest(
       if (!(await store.get(plan.id))) return reply(404, { ok: false, message: "そのアカウントは見つかりません" });
       await store.remove(plan.id);
       return reply(200, { ok: true, message: `${plan.id} を消しました`, accounts: await listAll(store) });
+    }
+
+    if (plan.action === "rename") {
+      // ★表示名だけを変える（版は変えないので、その人のログインは切れない。右上は5分以内に変わる）
+      const renamed = await store.update(plan.id, (r) => (r.name === plan.name ? null : { ...r, name: plan.name }));
+      if (!renamed.ok) {
+        return reply(renamed.reason === "missing" ? 404 : 409, {
+          ok: false,
+          message: renamed.reason === "missing" ? "そのアカウントは見つかりません" : "同じときに別の変更があったため、やり直してください",
+        });
+      }
+      return reply(200, {
+        ok: true,
+        message: `${plan.id} の表示名を「${plan.name}」にしました（本人の右上は5分以内に変わります）`,
+        accounts: await listAll(store),
+      });
     }
 
     let temp: string | undefined;

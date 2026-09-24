@@ -19,6 +19,7 @@ describe("API のルート", () => {
     "app/api/login/route.ts",
     "app/api/logout/route.ts",
     "app/api/account/password/route.ts",
+    "app/api/account/name/route.ts",
     "app/api/accounts/route.ts",
   ]);
   const routes = walk("app/api").filter((p) => p.endsWith("route.ts"));
@@ -30,14 +31,14 @@ describe("API のルート", () => {
   });
 
   it("自分で確かめる口は、印を読んでから処理に渡す", () => {
-    for (const p of ["app/api/account/password/route.ts", "app/api/accounts/route.ts"]) {
+    for (const p of ["app/api/account/password/route.ts", "app/api/account/name/route.ts", "app/api/accounts/route.ts"]) {
       expect(code(p), p).toContain("sessionOf(request, config)");
     }
   });
 });
 
 describe("画面とサーバーの境目", () => {
-  const SERVER_ONLY = ["login", "change-password", "admin", "password", "kv", "store", "runtime", "current", "page-state"];
+  const SERVER_ONLY = ["login", "change-password", "rename", "admin", "password", "kv", "store", "runtime", "current", "page-state"];
 
   it("★画面の部品（use client）は、サーバーのアカウントの部品を import しない", () => {
     const clientFiles = [...walk("components"), ...walk("lib"), ...walk("app")].filter(

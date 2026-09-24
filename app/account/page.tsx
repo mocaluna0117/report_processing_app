@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { AccountAdmin } from "@/components/account/account-admin";
+import { NameForm } from "@/components/account/name-form";
 import { PasswordForm } from "@/components/account/password-form";
-import { MUST_CHANGE_TEXT, PASSWORD_CHANGED_TEXT, changeErrorText } from "@/lib/account/messages";
+import { MUST_CHANGE_TEXT, NAME_CHANGED_TEXT, PASSWORD_CHANGED_TEXT, changeErrorText } from "@/lib/account/messages";
 import { accountPageState } from "@/lib/account/page-state";
 import { accountStoreFor, currentAuthConfig } from "@/lib/account/runtime";
 import { SESSION_COOKIE, safeNextPath } from "@/lib/auth";
@@ -60,7 +61,11 @@ export default async function AccountPage({
           {state.forced ? (
             <p className="mt-3 rounded bg-amber-50 px-3 py-2 text-sm text-amber-900">{MUST_CHANGE_TEXT}</p>
           ) : (
-            done === "1" && <p className="mt-3 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-900">{PASSWORD_CHANGED_TEXT}</p>
+            (done === "1" || done === "name") && (
+              <p className="mt-3 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                {done === "name" ? NAME_CHANGED_TEXT : PASSWORD_CHANGED_TEXT}
+              </p>
+            )
           )}
           {errors.length > 0 && (
             <ul className="mt-3 list-disc rounded bg-red-50 py-2 pl-7 pr-3 text-sm text-red-700">
@@ -76,6 +81,15 @@ export default async function AccountPage({
           <p className="mt-2 text-xs text-slate-500">
             変えると、ほかの端末でログインしていた分は5分ほどで切れます。忘れたときは、管理者に仮のパスワードを発行してもらってください。
           </p>
+          {/* ★表示名は、パスワードを決めたあとに変えられる */}
+          {!state.forced && (
+            <>
+              <h2 className="mt-8 text-lg font-semibold">表示名を変える</h2>
+              <div className="mt-2">
+                <NameForm current={state.record.name} />
+              </div>
+            </>
+          )}
           {state.record.role === "admin" && !state.forced && <AccountAdmin selfId={state.record.id} />}
         </>
       )}

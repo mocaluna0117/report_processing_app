@@ -2,7 +2,12 @@
  * ログイン・アカウントの画面に出す文。純関数と定数だけ（画面とサーバーの両方から読む）。
  * ★ログインに失敗したときは、ID が無いのか・パスワードが違うのかを言い分けない（ID を当てられないように）。
  */
-import { PASSWORD_PROBLEM_TEXT, type PasswordProblem } from "@/lib/account/policy";
+import {
+  DISPLAY_NAME_PROBLEM_TEXT,
+  type DisplayNameProblem,
+  PASSWORD_PROBLEM_TEXT,
+  type PasswordProblem,
+} from "@/lib/account/policy";
 
 export type LoginErrorCode =
   | "1"
@@ -38,6 +43,8 @@ export const FORGOT_PASSWORD_TEXT =
 /** パスワードを変えたあとの文 */
 export const PASSWORD_CHANGED_TEXT =
   "パスワードを変えました。ほかの端末でログインしていた分は、5分ほどで切れます。";
+/** 表示名を変えたあとの文 */
+export const NAME_CHANGED_TEXT = "表示名を変えました。ほかの端末の右上は、5分ほどで変わります。";
 /** 仮のパスワードで入ったときの先頭の文 */
 export const MUST_CHANGE_TEXT =
   "仮のパスワードでログインしました。続けて使うには、自分のパスワードを決めてください。";
@@ -48,6 +55,7 @@ export const TEMP_PASSWORD_NOTE =
 
 /** パスワードを変えられなかったときの文（URL の error=…&p=… から） */
 export function changeErrorText(code: string | null | undefined, problems: string | null | undefined): string[] {
+  if (code && code in DISPLAY_NAME_PROBLEM_TEXT) return [DISPLAY_NAME_PROBLEM_TEXT[code as DisplayNameProblem]];
   switch (code) {
     case "current":
       return ["今のパスワードが違います"];

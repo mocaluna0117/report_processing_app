@@ -111,9 +111,22 @@ export function AccountAdmin({ selfId }: { selfId: string }) {
                     <td className={`border-b border-slate-100 px-3 py-2 ${TONE_CLASS[status.tone]}`}>{status.text}</td>
                     <td className="border-b border-slate-100 px-3 py-2">
                       {self ? (
-                        <span className="text-xs text-slate-400">自分（パスワードは上の欄で変えます）</span>
+                        <span className="text-xs text-slate-400">自分（パスワード・表示名は上の欄で変えます）</span>
                       ) : (
                         <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            className={SMALL_BUTTON}
+                            onClick={() => {
+                              const name = prompt(`「${account.name}」（${account.id}）の新しい表示名`, account.name);
+                              if (name !== null && name.trim() !== "" && name.trim() !== account.name) {
+                                void run({ action: "rename", id: account.id, name: name.trim() });
+                              }
+                            }}
+                          >
+                            名前を変える
+                          </button>
                           <button
                             type="button"
                             disabled={busy}

@@ -54,12 +54,26 @@ export function loginIdProblem(id: string): string | null {
   return null;
 }
 
-export function displayNameProblem(name: string): string | null {
+export type DisplayNameProblem = "name-empty" | "name-long" | "name-invalid";
+
+export const DISPLAY_NAME_PROBLEM_TEXT: Record<DisplayNameProblem, string> = {
+  "name-empty": "表示名を入れてください",
+  "name-long": `表示名は${DISPLAY_NAME_MAX}文字までです`,
+  "name-invalid": "表示名に使えない文字があります",
+};
+
+/** 表示名の問題の記号（無ければ null）。★前後の空白を取ったあとの値で見る */
+export function displayNameProblemCode(name: string): DisplayNameProblem | null {
   const trimmed = name.trim();
-  if (trimmed.length === 0) return "表示名を入れてください";
-  if ([...trimmed].length > DISPLAY_NAME_MAX) return `表示名は${DISPLAY_NAME_MAX}文字までです`;
-  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return "表示名に使えない文字があります";
+  if (trimmed.length === 0) return "name-empty";
+  if ([...trimmed].length > DISPLAY_NAME_MAX) return "name-long";
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return "name-invalid";
   return null;
+}
+
+export function displayNameProblem(name: string): string | null {
+  const code = displayNameProblemCode(name);
+  return code ? DISPLAY_NAME_PROBLEM_TEXT[code] : null;
 }
 
 /** パスワードを揃える（全角の英数字を半角に。★前後の空白は取らない。打った本人の意図と違わないように） */

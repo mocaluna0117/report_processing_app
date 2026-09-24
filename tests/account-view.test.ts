@@ -61,6 +61,7 @@ describe("パスワードを変えられなかったときの文", () => {
       "確認のために入れたパスワードが一致しません",
     ]);
     expect(changeErrorText("policy", "<script>")).toEqual(["パスワードの決まりに合いませんでした"]);
+    expect(changeErrorText("name-long", null)).toEqual(["表示名は20文字までです"]);
     expect(changeErrorText("<x>", null)).toEqual([]);
     expect(changeErrorText(undefined, undefined)).toEqual([]);
   });
@@ -117,6 +118,13 @@ describe("★画面の作り（中身を読んで見張る）", () => {
     const admin = read("components/account/account-admin.tsx");
     expect(admin.match(/fetch\(([^,)]+)/g)).toEqual(['fetch("/api/accounts"']);
     expect(admin).not.toMatch(/localStorage|sessionStorage|indexedDB/);
+  });
+
+  it("表示名の欄は、パスワードを決めたあとに出し、/api/account/name へ普通のフォームで送る", () => {
+    const form = read("components/account/name-form.tsx");
+    expect(form).toContain('action="/api/account/name"');
+    expect(form).not.toContain("fetch(");
+    expect(read("app/account/page.tsx")).toMatch(/!state\.forced && \(\s*<>\s*<h2[^>]*>表示名を変える<\/h2>/);
   });
 
   it("管理の欄は、管理者で、パスワードを決めたあとだけ出す", () => {

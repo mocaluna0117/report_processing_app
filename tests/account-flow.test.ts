@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { handleAccountsRequest, planAdminAction } from "@/lib/account/admin";
 import { formatBootstrap, parseBootstrap } from "@/lib/account/bootstrap";
 import { handleChangePassword } from "@/lib/account/change-password";
+import { handleRename } from "@/lib/account/rename";
 import type { AuthConfig } from "@/lib/account/config";
 import { requireSignedIn } from "@/lib/account/current";
 import { type GateInput, decideAccess } from "@/lib/account/gate";
@@ -538,5 +539,54 @@ describe("★前の合言葉の印（切り替えの間だけ）", () => {
     const token = await createSessionToken("user", "kasou-shared", 86_400);
     const expired = config({ legacy: { user: "user", password: "kasou-shared", untilSec: nowSec - 1 } });
     expect(await readSession(token, expired, nowSec)).toEqual({ kind: "none", hadToken: true });
+  });
+});
+
+describe("表示名を変える", () => {
+  const rename = (store: AccountStore, claims: SessionClaims | null, name: string, origin = SAME) =>
+    handleRename({ config: config(), origin, claims, form: { name }, secure: true, nowMs: NOW_MS }, { store });
+
+  it("自分の表示名を変えると、右上の名前がすぐ変わる（ログインは切れない＝版は変わらない）", async () => {
+    const { store } = setup();
+    const record = await member();
+    await store.create(record);
+    const claims: SessionClaims = { u: record.id, sv: record.sv, mc: 0, chk: NOW, exp: NOW + 3600 };
+    const result = await rename(store, claims, "  架空 太郎（営業）  ");
+    expect(result.location).toBe("/account?done=name");
+    expect(await store.get(record.id)).toMatchObject({ name: "架空 太郎（営業）", sv: record.sv });
+    const marker = readSignedInMarker(result.cookies.find((c) => c.name === "folio_signed_in")?.value);
+    expect(marker).toMatchObject({ name: "架空 太郎（営業）" });
+    // ★ログインの期限は延ばさない
+    expect(claimsFrom(result.cookies)?.exp).toBe(claims.exp);
+  });
+
+  it("決まりに合わない名前・別のサイト・仮の入場・古い印は断る", async () => {
+    const { store } = setup();
+    const record = await member();
+    await store.create(record);
+    const claims: SessionClaims = { u: record.id, sv: record.sv, mc: 0, chk: NOW, exp: NOW + 3600 };
+    expect((await rename(store, claims, "   ")).location).toBe("/account?error=name-empty");
+    expect((await rename(store, claims, "あ".repeat(21))).location).toBe("/account?error=name-long");
+    expect((await rename(store, claims, "架空", CROSS)).location).toBe("/account?error=origin");
+    expect((await rename(store, { ...claims, mc: 1 }, "架空")).location).toBe("/login?expired=1");
+    expect((await rename(store, { ...claims, sv: 1 }, "架空")).location).toBe("/login?expired=1");
+    expect((await store.get(record.id))?.name).toBe("架空 太郎");
+  });
+
+  it("管理者は、ほかの人の表示名を変えられる（その人のログインは切れない）。自分はこの操作では変えない", async () => {
+    const { store } = setup();
+    const a = await member({ id: "kasou-admin", name: "管理者", role: "admin" });
+    const m = await member();
+    await store.create(a);
+    await store.create(m);
+    const claims: SessionClaims = { u: a.id, sv: a.sv, mc: 0, chk: NOW, exp: NOW + 3600 };
+    const result = await handleAccountsRequest(
+      { config: config(), method: "POST", origin: SAME, claims, body: { action: "rename", id: m.id, name: "架空 太郎（経理）" }, nowMs: NOW_MS },
+      { store, scrypt: FAST },
+    );
+    expect(result.status).toBe(200);
+    expect(await store.get(m.id)).toMatchObject({ name: "架空 太郎（経理）", sv: m.sv });
+    expect(planAdminAction({ action: "rename", id: "kasou-admin", name: "x" }, "kasou-admin")).toMatchObject({ ok: false });
+    expect(planAdminAction({ action: "rename", id: m.id, name: "" }, "kasou-admin")).toMatchObject({ ok: false });
   });
 });
