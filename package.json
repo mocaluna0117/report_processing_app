@@ -26,6 +26,7 @@
     "@google/genai": "^2.18.0",
     "@pdf-lib/fontkit": "^1.1.1",
     "@sparticuz/chromium": "153.0.0",
+    "@upstash/redis": "^1.39.0",
     "fflate": "^0.8.3",
     "harfbuzzjs": "^1.6.0",
     "next": "^16.3.2",
