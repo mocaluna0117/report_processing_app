@@ -158,10 +158,12 @@ describe("右上の人の形のアイコンのメニュー", () => {
     expect(button).toContain("{view.short}");
   });
 
-  it("★アイコンは見出しと同じ行の右端に1つだけ（ヘッダーには置かない）", () => {
+  it("★アイコンは見出しと同じ段の右端に1つだけ。タブとボタンは見出しの1段下", () => {
     const layout = read("app/layout.tsx");
     expect(layout.split("<AccountMenu />").length - 1).toBe(1);
-    expect(layout.indexOf("<AccountMenu />")).toBeGreaterThan(layout.indexOf("<ModeNav />"));
+    // 見出し（</h1>）のすぐあとにアイコン、そのあとの段にタブ
+    expect(layout.indexOf("<AccountMenu />")).toBeGreaterThan(layout.indexOf("</h1>"));
+    expect(layout.indexOf("<ModeNav />")).toBeGreaterThan(layout.indexOf("<AccountMenu />"));
     expect(read("components/mode-nav.tsx")).not.toContain('action="/api/logout"');
   });
 });

@@ -40,8 +40,8 @@ export const HELP_SHOT_GEOMETRY: Readonly<Record<string, HelpShotGeometry>> = {
   },
   "tenmatsu-folder": {
     width: 2496,
-    height: 640,
-    hotspots: [{ x: 93.4, y: 8.8 }, { x: 90.3, y: 72.8 }],
+    height: 728,
+    hotspots: [{ x: 74.9, y: 19.8 }, { x: 90.3, y: 76.1 }],
   },
   "tenmatsu-login": {
     width: 1024,

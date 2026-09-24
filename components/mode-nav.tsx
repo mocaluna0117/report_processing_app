@@ -122,7 +122,7 @@ export function ModeNav() {
   if (signedIn && !signedIn.legacy && signedIn.mustChange) return null;
 
   return (
-    <div className="flex flex-wrap items-center justify-end gap-3">
+    <div className="flex flex-wrap items-center gap-3">
       <nav
         aria-label="処理の種類"
         className="inline-flex rounded-lg bg-slate-200 p-1 text-sm shadow-inner"

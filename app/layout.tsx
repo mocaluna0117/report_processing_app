@@ -17,16 +17,19 @@ export default function RootLayout({
     <html lang="ja">
       <body className="min-h-screen bg-slate-100 text-slate-900 antialiased">
         <div className="mx-auto max-w-7xl px-6 py-8">
-          {/* ★右端は人の形のアイコン（アカウント・ログアウト）。見出しと同じ行に置き、タブが折り返しても動かさない */}
-          <header className="flex items-start gap-4">
-            <h1 className="shrink-0 pt-1 text-2xl font-bold tracking-tight">
-              Folio
-              <PageTitle />
-            </h1>
-            <div className="flex min-w-0 flex-1 justify-end">
+          {/* ★1段目は見出しと、右端の人の形のアイコン（アカウント・ログアウト）。
+              2段目に画面のタブとボタン（見出しの1段下。利用者の希望 2026-09-24） */}
+          <header>
+            <div className="flex items-center justify-between gap-4">
+              <h1 className="text-2xl font-bold tracking-tight">
+                Folio
+                <PageTitle />
+              </h1>
+              <AccountMenu />
+            </div>
+            <div className="mt-3">
               <ModeNav />
             </div>
-            <AccountMenu />
           </header>
           {children}
         </div>
