@@ -171,16 +171,18 @@ describe("★門番（中身を読んで見張る）", () => {
     expect(code("lib/auth.ts")).not.toContain("parseBasicAuth");
   });
 
-  it("Vercel の上で設定が無ければ閉じる（開いたままにしない）", () => {
-    const proxy = source("proxy.ts");
-    expect(proxy).toContain('process.env.VERCEL === "1"');
-    expect(proxy).toContain("status: 503");
+  it("門番の判断は lib/account/gate.ts に任せる（Vercel の上で設定が無ければ閉じる規則もそこ）", () => {
+    expect(code("proxy.ts")).toContain("decideAccess(");
+    expect(code("lib/account/config.ts")).toContain('env.VERCEL === "1"');
   });
 
   it("ログイン・ログアウトは、別のサイトからの送信を断る", () => {
-    for (const path of ["app/api/login/route.ts", "app/api/logout/route.ts"]) {
-      expect(source(path), path).toContain("isSameOriginPost(originInputOf(request))");
-    }
+    expect(source("app/api/logout/route.ts")).toContain("isSameOriginPost(originInputOf(request))");
+    // ログインは handleLogin の最初で確かめる
+    expect(source("app/api/login/route.ts")).toContain("origin: originInputOf(request)");
+    const login = code("lib/account/login.ts");
+    expect(login.indexOf("isSameOriginPost(input.origin)")).toBeGreaterThan(-1);
+    expect(login.indexOf("isSameOriginPost(input.origin)")).toBeLessThan(login.indexOf("loginSnapshot"));
   });
 
   it("lib/auth.ts は画面からも読まれるので、秘密や node:crypto を入れない", () => {

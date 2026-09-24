@@ -1,4 +1,5 @@
 import "server-only";
+import { readAuthConfig } from "@/lib/account/config";
 import { type TenantConfig, readTenantConfig } from "./config";
 
 /**
@@ -24,9 +25,9 @@ export function assertEnabled(): TenantConfig {
   if (!tenant) {
     throw new GuardError("DISABLED", "楽楽精算の設定がされていません (RAKURAKU_LOGIN_URL)");
   }
-  // 本番でパスワード保護が無いなら、この口も開けない
-  if (process.env.VERCEL_ENV === "production" && !process.env.APP_PASSWORD) {
-    throw new GuardError("NO_PASSWORD", "APP_PASSWORD が無いため無効です");
+  // 本番で Folio のログイン（一人ずつのアカウント）が設定されていないなら、この口も開けない
+  if (process.env.VERCEL_ENV === "production" && readAuthConfig(process.env).kind !== "accounts") {
+    throw new GuardError("NO_PASSWORD", "Folio のログインが設定されていないため無効です");
   }
   // プレビューは既定で止める (URL が毎回変わるので、意図せず本番の楽楽精算を触らせない)
   if (process.env.VERCEL_ENV === "preview" && process.env.RAKURAKU_ALLOW_PREVIEW !== "1") {

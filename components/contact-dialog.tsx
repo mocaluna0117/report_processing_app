@@ -423,7 +423,7 @@ export function ContactDialog() {
           </div>
 
           <label className="mt-3 block text-xs font-medium text-slate-600">
-            お名前（任意。返事が要るときに誰か分かるように）
+            お名前（任意。ログインしている人の表示名が最初から入ります）
             <input
               type="text"
               value={draft.name}
@@ -438,7 +438,7 @@ export function ContactDialog() {
               {diagnosticsLines(diagnostics).map((line) => (
                 <li key={line}>{line}</li>
               ))}
-              <li>Folio の版と、送った日時</li>
+              <li>Folio のアカウント（誰からか分かるように）、Folio の版と、送った日時</li>
             </ul>
             <p>楽楽精算のログインID・共有フォルダーの名前・取り込んだファイルの名前は送りません。</p>
           </MoreDetails>

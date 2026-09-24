@@ -6,8 +6,19 @@ const KEYS = [
   "RAKURAKU_LOGIN_URL",
   "RAKURAKU_ALLOW_PREVIEW",
   "VERCEL_ENV",
+  "VERCEL",
   "APP_PASSWORD",
+  "FOLIO_SESSION_SECRET",
+  "KV_REST_API_URL",
+  "KV_REST_API_TOKEN",
+  "FOLIO_ACCOUNTS",
 ] as const;
+/** 本番で Folio のログイン（一人ずつのアカウント）がそろっている（★値は架空） */
+const ACCOUNTS = {
+  FOLIO_SESSION_SECRET: "kasou-secret-kasou-secret-kasou-secret-0123",
+  KV_REST_API_URL: "https://kasou.upstash.invalid",
+  KV_REST_API_TOKEN: "kasou-token",
+};
 const saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
 
 afterEach(() => {
@@ -36,8 +47,9 @@ describe("ルートの門番", () => {
     }
   });
 
-  it("★本番でパスワード保護が無ければ止める (ログイン試行の踏み台にさせない)", () => {
-    setup({ RAKURAKU_LOGIN_URL: OK_URL, VERCEL_ENV: "production" });
+  it("★本番で Folio のログインが無ければ止める (ログイン試行の踏み台にさせない)", () => {
+    // ★旧合言葉だけでは足りない（アカウントの設定が要る）
+    setup({ RAKURAKU_LOGIN_URL: OK_URL, VERCEL_ENV: "production", APP_PASSWORD: "x" });
     try {
       assertEnabled();
       throw new Error("通ってはいけない");
@@ -46,8 +58,8 @@ describe("ルートの門番", () => {
     }
   });
 
-  it("本番でパスワード保護があれば通す", () => {
-    setup({ RAKURAKU_LOGIN_URL: OK_URL, VERCEL_ENV: "production", APP_PASSWORD: "x" });
+  it("本番で Folio のログインがあれば通す", () => {
+    setup({ RAKURAKU_LOGIN_URL: OK_URL, VERCEL_ENV: "production", ...ACCOUNTS });
     expect(assertEnabled().loginUrl).toBe(OK_URL);
   });
 

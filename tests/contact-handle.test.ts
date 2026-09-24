@@ -56,6 +56,15 @@ describe("送る", () => {
     expect(sent[0].text).toContain("お名前: 架空　花子");
   });
 
+  it("送った人の Folio のアカウントを本文に入れる（ルートがログインの印から読む）", async () => {
+    const { d, sent } = deps();
+    await handleContact(form(), { ...ENV, account: "kasou-hanako" }, d);
+    expect(sent[0].text).toContain("Folio のアカウント: kasou-hanako");
+    const other = deps();
+    await handleContact(form(), ENV, other.d);
+    expect(other.sent[0].text).not.toContain("Folio のアカウント");
+  });
+
   it("送り元は CONTACT_FROM で変えられる", async () => {
     const { d, sent } = deps();
     await handleContact(form(), { ...ENV, from: "Folio <folio@example.com>" }, d);

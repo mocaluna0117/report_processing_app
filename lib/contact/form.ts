@@ -238,6 +238,8 @@ function formatJst(at: number): string {
 }
 
 export interface ContactMeta {
+  /** 送った人の Folio のアカウント（サーバーがログインの印から書き足す。分からなければ null） */
+  account?: string | null;
   /** コミットの先頭7文字（サーバーが自分で書き足す。分からなければ null） */
   version: string | null;
   /** production / preview / development */
@@ -266,6 +268,7 @@ export function buildContactText(payload: ContactPayload, meta: ContactMeta): st
     `種類: ${categoryLabel(payload.category)}`,
     `画面: ${pageLabel(payload.page)}${payload.page ? ` (${payload.page})` : ""}`,
     `お名前: ${payload.name || "（未記入）"}`,
+    ...(meta.account ? [`Folio のアカウント: ${meta.account}`] : []),
     rule,
     payload.message,
     rule,

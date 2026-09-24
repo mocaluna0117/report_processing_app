@@ -38,6 +38,8 @@ export interface ContactEnv {
   commit?: string;
   /** VERCEL_ENV */
   environment?: string;
+  /** 送った人の Folio のアカウント（ルートがログインの印から読む） */
+  account?: string | null;
 }
 
 export interface ContactDeps {
@@ -113,6 +115,7 @@ export async function handleContact(
     to,
     subject: contactSubject(checked.payload),
     text: buildContactText(checked.payload, {
+      account: env.account ?? null,
       version: env.commit?.trim() || null,
       environment: env.environment?.trim() || null,
       at: now,

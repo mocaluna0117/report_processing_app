@@ -4,10 +4,21 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { HelpShots } from "@/components/help-shots";
 import { ModalShell } from "@/components/modal-shell";
+import { SIGNED_IN_COOKIE, readSignedInMarker } from "@/lib/auth";
 import { openContact } from "@/lib/contact/dialog";
 import { COMMON_FAQ, HELP_SECTIONS } from "@/lib/help";
 import { closeHelp, getHelpDialogState, subscribeHelpDialog } from "@/lib/help-dialog";
 import { getNavigationGuard } from "@/lib/navigation-guard";
+
+/** ログインしている人の表示名（問い合わせのお名前に最初から入れる）。★表示にだけ使う */
+function signedInName(): string | null {
+  const raw = document.cookie
+    .split("; ")
+    .find((c) => c.startsWith(`${SIGNED_IN_COOKIE}=`))
+    ?.slice(SIGNED_IN_COOKIE.length + 1);
+  const marker = readSignedInMarker(raw);
+  return marker && !marker.legacy ? marker.name : null;
+}
 
 /** 「どの画面でも」タブの目印（HELP_SECTIONS の slug とはぶつからない） */
 const COMMON_TAB = "__common__";
@@ -164,7 +175,7 @@ export function HelpDialog() {
           type="button"
           onClick={() => {
             closeHelp();
-            openContact({ page: section?.href ?? null });
+            openContact({ page: section?.href ?? null, name: signedInName() });
           }}
           className="cursor-pointer rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-50"
         >

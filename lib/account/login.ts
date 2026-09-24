@@ -127,7 +127,7 @@ async function tryBootstrap(input: LoginInput, deps: LoginDeps, id: string, pass
   return deps.store.upsert(id, (current) => ({
     v: 1,
     id,
-    name: current?.name ?? "管理者",
+    name: boot.name ?? current?.name ?? "管理者",
     role: "admin",
     hash: boot.hash,
     mustChange: true,

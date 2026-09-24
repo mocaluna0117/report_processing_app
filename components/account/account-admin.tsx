@@ -105,9 +105,9 @@ export function AccountAdmin({ selfId }: { selfId: string }) {
                 const self = account.id === selfId;
                 return (
                   <tr key={account.id} className="align-top">
-                    <td className="border-b border-slate-100 px-3 py-2 font-medium">{account.name}</td>
-                    <td className="border-b border-slate-100 px-3 py-2 font-mono text-xs">{account.id}</td>
-                    <td className="border-b border-slate-100 px-3 py-2">{roleText(account)}</td>
+                    <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2 font-medium">{account.name}</td>
+                    <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2 font-mono text-xs">{account.id}</td>
+                    <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2">{roleText(account)}</td>
                     <td className={`border-b border-slate-100 px-3 py-2 ${TONE_CLASS[status.tone]}`}>{status.text}</td>
                     <td className="border-b border-slate-100 px-3 py-2">
                       {self ? (

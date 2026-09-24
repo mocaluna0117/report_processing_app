@@ -63,17 +63,20 @@ export function subscribeContact(listener: (open: boolean) => void): () => void 
   return () => listeners.delete(listener);
 }
 
-/** 書きかけが無いか（無ければ、開いた画面を選び直してよい） */
+/** 書きかけが無いか（無ければ、開いた画面とお名前を入れ直してよい） */
 export function isDraftEmpty(d: ContactDraft): boolean {
-  return d.message.trim() === "" && d.photos.length === 0 && d.name.trim() === "";
+  return d.message.trim() === "" && d.photos.length === 0;
 }
 
 /**
  * 開く。page は開いた画面（ヘッダーなら今の画面、使い方なら選んでいたタブ）。
  * ★書きかけがあるときは、前に選んだ画面のまま（書いている途中で勝手に変えない）。
  */
-export function openContact(options: { page?: string | null } = {}): void {
-  if (isDraftEmpty(draft)) draft = { ...draft, page: knownPage(options.page) };
+export function openContact(options: { page?: string | null; name?: string | null } = {}): void {
+  if (isDraftEmpty(draft)) {
+    // ★ログインしている人の表示名を最初から入れる（消して送ってもよい）
+    draft = { ...draft, page: knownPage(options.page), name: (options.name ?? "").slice(0, 50) };
+  }
   open = true;
   notify();
 }

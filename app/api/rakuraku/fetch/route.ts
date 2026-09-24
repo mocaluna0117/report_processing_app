@@ -8,6 +8,7 @@ import { parseFetchRequest } from "@/lib/rakuraku/protocol";
 import { unseal } from "@/lib/rakuraku/session";
 import { withSessionPage } from "@/lib/rakuraku/session-browser";
 import { ndjsonResponse } from "@/lib/rakuraku/stream";
+import { requireSignedIn } from "@/lib/account/current";
 
 /**
  * 伝票1件を取得する。**1伝票＝1呼び出し**（途中で落ちても、それまでの伝票はブラウザが保存済み）。
@@ -29,6 +30,9 @@ const BUDGET_MS = 270_000;
 const ATTACHMENT_RESERVE_MS = 70_000;
 
 export async function POST(request: Request) {
+  // ★proxy だけに頼らず、ここでもログインを確かめる（署名と期限。仮のパスワードの人は通さない）
+  const signed = await requireSignedIn(request);
+  if (!signed.ok) return signed.response;
   const started = Date.now();
   // 本文は応答を流し始める前に読んでおく
   const raw: unknown = await request.json().catch(() => null);

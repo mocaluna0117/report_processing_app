@@ -6,6 +6,7 @@ import { unseal } from "@/lib/rakuraku/session";
 import { withSessionPage } from "@/lib/rakuraku/session-browser";
 import { ndjsonResponse } from "@/lib/rakuraku/stream";
 import { runSurvey } from "@/lib/rakuraku/survey";
+import { requireSignedIn } from "@/lib/account/current";
 
 /**
  * 「画面の下見」: 楽楽精算の**画面の作りだけ**を集めて、開発者へ渡す文面の材料を返す。
@@ -24,6 +25,9 @@ export const dynamic = "force-dynamic";
 const BUDGET_MS = 240_000;
 
 export async function POST(request: Request) {
+  // ★proxy だけに頼らず、ここでもログインを確かめる（署名と期限。仮のパスワードの人は通さない）
+  const signed = await requireSignedIn(request);
+  if (!signed.ok) return signed.response;
   const started = Date.now();
   const raw: unknown = await request.json().catch(() => null);
 

@@ -1,54 +1,68 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, safeNextPath, verifySessionToken } from "@/lib/auth";
+import { decideAccess } from "@/lib/account/gate";
+import { StoreUnavailableError } from "@/lib/account/kv";
+import { accountStoreFor, currentAuthConfig } from "@/lib/account/runtime";
+import { type SessionState, clearedCookies, issueSession, readSession } from "@/lib/account/session";
+import { SESSION_COOKIE } from "@/lib/auth";
 
 /**
- * 簡易パスワード保護。
- * 顧客の個人情報を扱うアプリなので、デプロイ先のURLを知っているだけでは使えないようにする。
- * 環境変数 APP_PASSWORD が設定されているときだけ有効 (ローカル開発では未設定でそのまま使える)。
+ * Folio のログインの門番。顧客の個人情報を扱うので、URL を知っているだけでは使えないようにする。
  *
- * 認証はログインフォーム (/login) + 署名付きクッキー。
- * ブラウザ標準の Basic認証ダイアログはパスワードマネージャーが扱えず、
- * ブラウザを閉じると資格情報も消えてしまうため、通常のフォームにしている。
- * ★Basic認証ヘッダーは受け付けない（人ごとのアカウントに移すため。使っているところも無い）。
- * ★Vercel の上で合言葉の設定が無いときは、開いたままにせず閉じる（fail closed）。
+ * ★一人ずつのアカウント（2026-09-24）。判断は lib/account/gate.ts（純関数）にまとめてあり、ここは薄く呼ぶだけ。
+ *   - 手元の開発で FOLIO_ACCOUNTS が無ければ全部通す（今までどおり）
+ *   - Vercel の上で設定が足りなければ、開いたままにせず 503 にする（fail closed）
+ *   - 旧合言葉のクッキーは、APP_PASSWORD が残っている間だけ通す（切り替えの間、1人目が使い続けられるように）
+ * ★Basic 認証のヘッダーは受け付けない。
  */
 export async function proxy(request: NextRequest) {
-  const password = process.env.APP_PASSWORD;
-  if (!password) {
-    if (process.env.VERCEL === "1") {
-      return new NextResponse("Folio のログインの設定が足りないため、使えません（管理者へ連絡してください）", {
-        status: 503,
-        headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
+  const config = currentAuthConfig();
+  const { pathname, search } = request.nextUrl;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const secure = request.nextUrl.protocol === "https:";
+
+  const session: SessionState =
+    config.kind === "accounts"
+      ? await readSession(request.cookies.get(SESSION_COOKIE)?.value, config, nowSec)
+      : { kind: "none", hadToken: false };
+
+  const decision = await decideAccess(
+    { config, pathname, search, dest: request.headers.get("sec-fetch-dest"), session, nowSec },
+    async (id) => {
+      if (config.kind !== "accounts") return null;
+      try {
+        return await accountStoreFor(config).get(id);
+      } catch (e) {
+        if (e instanceof StoreUnavailableError) return "unavailable";
+        throw e;
+      }
+    },
+  );
+
+  if (decision.kind === "pass") {
+    const response = NextResponse.next();
+    // 確かめ直したら、確かめた時刻を新しくした印を出し直す（期限は延ばさない）
+    if (decision.reissue && config.kind === "accounts" && session.kind === "account") {
+      const { cookies } = issueSession({
+        record: decision.reissue,
+        secret: config.secret,
+        secure,
+        nowSec,
+        keepExp: session.claims.exp,
       });
+      for (const cookie of cookies) response.cookies.set(cookie);
+      response.headers.set("Cache-Control", "private, no-store");
     }
-    return NextResponse.next();
+    return response;
   }
 
-  const expectedUser = process.env.APP_USER || "user";
-  const { pathname } = request.nextUrl;
-
-  // ログイン画面と、その送信先だけは通す (ここを止めるとログインできない)
-  if (pathname === "/login" || pathname === "/api/login" || pathname === "/api/logout") {
-    return NextResponse.next();
-  }
-
-  if (await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value, expectedUser, password)) {
-    return NextResponse.next();
-  }
-
-  // APIは画面遷移できないので、リダイレクトではなく401で返す
-  if (pathname.startsWith("/api/")) {
-    return new NextResponse("認証が必要です", {
-      status: 401,
-      headers: { "Cache-Control": "no-store" },
-    });
-  }
-
-  const login = new URL("/login", request.url);
-  // ログイン後に元の画面へ戻す (パスだけを渡し、外部URLへは飛ばさない)
-  const next = safeNextPath(`${pathname}${request.nextUrl.search}`);
-  if (next !== "/") login.searchParams.set("next", next);
-  const response = NextResponse.redirect(login);
+  const response =
+    decision.kind === "redirect"
+      ? NextResponse.redirect(new URL(decision.location, request.url))
+      : new NextResponse(decision.body, {
+          status: decision.status,
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        });
+  if (decision.clear) for (const cookie of clearedCookies(secure)) response.cookies.set(cookie);
   response.headers.set("Cache-Control", "no-store");
   return response;
 }

@@ -8,7 +8,7 @@ import { HelpDialog } from "@/components/help-dialog";
 import { RakurakuLoginDialog } from "@/components/rakuraku-login-dialog";
 import { SharedFolderDialog } from "@/components/shared-folder-dialog";
 import { clearTabForAnotherPerson } from "@/lib/account/sign-out";
-import { SIGNED_IN_COOKIE } from "@/lib/auth";
+import { SIGNED_IN_COOKIE, type SignedInMarker, readSignedInMarker } from "@/lib/auth";
 import { CONTACT_BUTTON_ID, openContact, subscribeContact } from "@/lib/contact/dialog";
 import { HELP_SECTIONS } from "@/lib/help";
 import { getHelpDialogState, openHelp, subscribeHelpDialog } from "@/lib/help-dialog";
@@ -60,14 +60,25 @@ export const MODES: readonly { href: string; label: string }[] = [
 export function ModeNav() {
   const pathname = usePathname();
   /**
-   * ログイン中か (パスワード保護を使っていない環境では出さない)。
-   * 判定に使う印は httpOnly ではないクッキーで、認証そのものは proxy.ts が見る。
-   * 読むのはマウント後 (サーバー側の描画と食い違わないように)。
+   * 誰がログインしているか (パスワード保護を使っていない環境では出さない)。
+   * 判定に使う印は httpOnly ではないクッキーで、認証そのものは proxy.ts が見る（表示にだけ使う）。
+   * 読むのはマウント後 (サーバー側の描画と食い違わないように)。画面を移るたびに読み直す
+   * （パスワードを決めた直後など、印が変わるため）。
    */
-  const [signedIn, setSignedIn] = useState(false);
+  const [signedIn, setSignedIn] = useState<SignedInMarker | null>(null);
   useEffect(() => {
-    setSignedIn(document.cookie.split("; ").some((c) => c === `${SIGNED_IN_COOKIE}=1`));
-  }, []);
+    const raw = document.cookie
+      .split("; ")
+      .find((c) => c.startsWith(`${SIGNED_IN_COOKIE}=`))
+      ?.slice(SIGNED_IN_COOKIE.length + 1);
+    let value = raw;
+    try {
+      value = raw === undefined ? undefined : decodeURIComponent(raw);
+    } catch {
+      // 読めなければそのまま
+    }
+    setSignedIn(readSignedInMarker(value));
+  }, [pathname]);
   // ヘッダーの「使い方」がいま選んだ状態に見えるように（開いていなくても、モーダルの表示と揃える）
   const [helpOpen, setHelpOpen] = useState(false);
   useEffect(() => subscribeHelpDialog((s) => setHelpOpen(s.open)), []);
@@ -125,6 +136,36 @@ export function ModeNav() {
     if (guard && !confirm(guard)) e.preventDefault();
   };
 
+  const logoutForm = (
+    <form
+      method="post"
+      action="/api/logout"
+      onSubmit={(e) => {
+        // 処理中なら確かめる（画面を離れると、その分をやり直すことになる）
+        const guard = getNavigationGuard();
+        if (guard && !confirm(guard)) {
+          e.preventDefault();
+          return;
+        }
+        // ★このタブの楽楽精算のログインも忘れる（次にこの端末を使う人に残さない）
+        clearTabForAnotherPerson();
+      }}
+    >
+      <button
+        type="submit"
+        title={FOLIO_LOGOUT_TITLE}
+        className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+      >
+        {FOLIO_LOGOUT_LABEL}
+      </button>
+    </form>
+  );
+
+  // ★仮のパスワードで入った人は、パスワードを決めるまでほかの画面を使えないので、ログアウトだけを出す
+  if (signedIn && !signedIn.legacy && signedIn.mustChange) {
+    return <div className="flex items-center gap-3">{logoutForm}</div>;
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-3">
       <nav
@@ -168,7 +209,7 @@ export function ModeNav() {
       <button
         id={CONTACT_BUTTON_ID}
         type="button"
-        onClick={() => openContact({ page: pathname })}
+        onClick={() => openContact({ page: pathname, name: signedIn && !signedIn.legacy ? signedIn.name : null })}
         aria-haspopup="dialog"
         aria-pressed={contactOpen}
         className={
@@ -222,32 +263,28 @@ export function ModeNav() {
       <SharedFolderDialog />
       <ContactDialog />
       {signedIn && (
-        <>
+        // ★区切り・アカウント・ログアウトは、折り返してもいっしょに動くようにまとめる
+        <span className="inline-flex items-center gap-3">
           {/* ★楽楽精算のログアウトと取り違えないよう、間に区切りを入れて名前も分ける */}
           <span aria-hidden className="h-4 w-px shrink-0 bg-slate-300" />
-          <form
-            method="post"
-            action="/api/logout"
-            onSubmit={(e) => {
-              // 処理中なら確かめる（画面を離れると、その分をやり直すことになる）
-              const guard = getNavigationGuard();
-              if (guard && !confirm(guard)) {
-                e.preventDefault();
-                return;
+          {/* ★自分のアカウント（パスワードの変更・管理者なら管理）。パスワードを決める前は出さない（その画面にいるため） */}
+          {!signedIn.legacy && !signedIn.mustChange && (
+            <Link
+              href="/account"
+              onNavigate={guardNavigation}
+              aria-current={pathname === "/account" ? "page" : undefined}
+              title={signedIn.admin ? "パスワードを変える・アカウントの管理" : "パスワードを変える"}
+              className={
+                pathname === "/account"
+                  ? "rounded-md border border-slate-400 bg-white px-2.5 py-1 text-xs font-semibold text-slate-900"
+                  : "rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
               }
-              // ★このタブの楽楽精算のログインも忘れる（次にこの端末を使う人に残さない）
-              clearTabForAnotherPerson();
-            }}
-          >
-            <button
-              type="submit"
-              title={FOLIO_LOGOUT_TITLE}
-              className="cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700"
             >
-              {FOLIO_LOGOUT_LABEL}
-            </button>
-          </form>
-        </>
+              アカウント: {signedIn.name}
+            </Link>
+          )}
+          {logoutForm}
+        </span>
       )}
     </div>
   );

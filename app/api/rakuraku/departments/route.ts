@@ -7,6 +7,7 @@ import { log } from "@/lib/rakuraku/log";
 import { openHome } from "@/lib/rakuraku/navigation";
 import { reseal, unseal } from "@/lib/rakuraku/session";
 import { toErrorEvent } from "@/lib/rakuraku/stream";
+import { requireSignedIn } from "@/lib/account/current";
 
 /**
  * このアカウントで**実際に選べる部門**を楽楽精算から読む。
@@ -29,6 +30,9 @@ const json = (body: unknown) =>
   NextResponse.json(body, { headers: { "Cache-Control": "no-store" } });
 
 export async function POST(request: Request) {
+  // ★proxy だけに頼らず、ここでもログインを確かめる（署名と期限。仮のパスワードの人は通さない）
+  const signed = await requireSignedIn(request);
+  if (!signed.ok) return signed.response;
   const started = Date.now();
   let tenant;
   try {

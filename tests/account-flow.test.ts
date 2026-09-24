@@ -243,7 +243,16 @@ describe("ログイン", () => {
 describe("最初の管理者", () => {
   const CODE = "kasu-2abc-3def";
   const bootstrapFor = async (exp = NOW + 3600) =>
-    formatBootstrap({ expSec: exp, loginId: "kasou-admin", hash: await hashPassword(canonicalTemp(CODE), FAST) });
+    formatBootstrap({ expSec: exp, loginId: "kasou-admin", hash: await hashPassword(canonicalTemp(CODE), FAST), name: null });
+
+  it("右上の名前も渡せる（日本語でも）", async () => {
+    const hash = await hashPassword(canonicalTemp(CODE), FAST);
+    const value = formatBootstrap({ expSec: NOW + 3600, loginId: "kasou-admin", hash, name: "架空 管理" });
+    expect(parseBootstrap(value)).toMatchObject({ loginId: "kasou-admin", name: "架空 管理" });
+    const { store, deps } = setup();
+    await login(deps, { id: "kasou-admin", password: CODE }, { config: config({ bootstrap: value }) });
+    expect((await store.get("kasou-admin"))?.name).toBe("架空 管理");
+  });
 
   it("形を読み書きできる。おかしな値は無視する", async () => {
     const value = await bootstrapFor();
@@ -259,7 +268,7 @@ describe("最初の管理者", () => {
     const first = await login(deps, { id: "kasou-admin", password: CODE.toUpperCase() }, { config: cfg });
     expect(first.location).toBe("/account");
     expect(claimsFrom(first.cookies)?.mc).toBe(1);
-    expect(await store.get("kasou-admin")).toMatchObject({ role: "admin", mustChange: true });
+    expect(await store.get("kasou-admin")).toMatchObject({ role: "admin", mustChange: true, name: "管理者" });
     // パスワードを決めたあとでも、同じコードでは入り直せない
     await store.update("kasou-admin", (r) => ({ ...r, hash: "scrypt$1$10.8.1$x$y", mustChange: false }));
     const again = await login(deps, { id: "kasou-admin", password: CODE }, { config: cfg });

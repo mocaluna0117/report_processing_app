@@ -12,6 +12,7 @@ import type {
   SummarizeRequest,
   SummarizeResponse,
 } from "@/lib/summarize/types";
+import { requireSignedIn } from "@/lib/account/current";
 
 export const runtime = "nodejs";
 // Vercel等のサーバーレス環境での関数実行上限
@@ -159,6 +160,9 @@ async function callGemini(
 }
 
 export async function POST(request: Request): Promise<NextResponse<SummarizeResponse>> {
+  // ★proxy だけに頼らず、ここでもログインを確かめる（署名と期限。仮のパスワードの人は通さない）
+  const signed = await requireSignedIn(request);
+  if (!signed.ok) return signed.response;
   let body: SummarizeRequest;
   try {
     body = sanitizeRequest(await request.json());

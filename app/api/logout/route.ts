@@ -1,19 +1,16 @@
-import { NextResponse, type NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 import { isSameOriginPost, originInputOf } from "@/lib/account/origin";
-import { SESSION_COOKIE, SIGNED_IN_COOKIE } from "@/lib/auth";
+import { isHttps, redirectWith } from "@/lib/account/respond";
+import { clearedCookies } from "@/lib/account/session";
 
 export const runtime = "nodejs";
 
-/** ログアウト (共有端末で使い終わったとき)。クッキーを消してログイン画面へ戻す */
+/**
+ * ログアウト（この端末だけ）。クッキーを消してログイン画面へ戻す。
+ * ほかの端末も切りたいときは、パスワードを変える（版が変わって5分以内に切れる）。
+ */
 export async function POST(request: NextRequest) {
   // ★別のサイトから勝手にログアウトさせない（何も消さずに最初の画面へ）
-  if (!isSameOriginPost(originInputOf(request))) {
-    return NextResponse.redirect(new URL("/", request.url), 303);
-  }
-  const response = NextResponse.redirect(new URL("/login", request.url), 303);
-  for (const name of [SESSION_COOKIE, SIGNED_IN_COOKIE]) {
-    response.cookies.set({ name, value: "", path: "/", maxAge: 0 });
-  }
-  response.headers.set("Cache-Control", "no-store");
-  return response;
+  if (!isSameOriginPost(originInputOf(request))) return redirectWith(request, "/");
+  return redirectWith(request, "/login?signed-out=1", clearedCookies(isHttps(request)));
 }

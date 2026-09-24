@@ -3,6 +3,7 @@
  * 止めた・パスワードを変えたのは、proxy の確かめ直し（5分ごと）で届く。
  * ★proxy からも読むので server-only は付けない。
  */
+import { NextResponse } from "next/server";
 import type { AuthConfig } from "@/lib/account/config";
 import { readCookie, currentAuthConfig } from "@/lib/account/runtime";
 import { type SessionState, readSession } from "@/lib/account/session";
@@ -11,10 +12,14 @@ import { SESSION_COOKIE } from "@/lib/auth";
 
 export type SignedIn =
   | { ok: true; /** アカウントのログインID（旧合言葉・アカウントを使わない手元では null） */ id: string | null }
-  | { ok: false; response: Response };
+  /** ★どのルートの返事の型にも入るよう、NextResponse<never> にする（中身は文字の 401・503） */
+  | { ok: false; response: NextResponse<never> };
 
 const text = (status: number, body: string) =>
-  new Response(body, { status, headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" } });
+  new NextResponse(body, {
+    status,
+    headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
+  }) as NextResponse<never>;
 
 export async function sessionOf(request: Request, config: Extract<AuthConfig, { kind: "accounts" }>): Promise<SessionState> {
   return readSession(readCookie(request.headers.get("cookie"), SESSION_COOKIE), config, Math.floor(Date.now() / 1000));

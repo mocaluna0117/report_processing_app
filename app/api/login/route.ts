@@ -1,73 +1,45 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { isSameOriginPost, originInputOf } from "@/lib/account/origin";
-import {
-  SESSION_COOKIE,
-  SIGNED_IN_COOKIE,
-  createSessionToken,
-  isValidCredentials,
-  safeNextPath,
-  sessionMaxAgeSeconds,
-} from "@/lib/auth";
+import type { NextRequest } from "next/server";
+import { handleLogin } from "@/lib/account/login";
+import { originInputOf } from "@/lib/account/origin";
+import { createKeyedLimiter } from "@/lib/account/rate-limit";
+import { clientIp, isHttps, redirectWith } from "@/lib/account/respond";
+import { accountStoreFor, currentAuthConfig } from "@/lib/account/runtime";
+import { safeNextPath } from "@/lib/auth";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
+/** Redis の手前で止める回数（同じ場所から1分に20回まで。Redis の無料枠を使い切らせない） */
+const limiter = createKeyedLimiter({ windowMs: 60_000, max: 20 });
 
 /**
- * ログインフォームの送信先。
- * 画面遷移を伴うPOST → 303リダイレクトにすることで、
- * ブラウザの「パスワードを保存しますか」が出るようにしている。
+ * ログインフォームの送信先（一人ずつのアカウント。lib/account/login.ts）。
+ * 画面遷移を伴う POST → 303 にすることで、ブラウザの「パスワードを保存しますか」が出るようにしている。
+ * ★旧合言葉（APP_PASSWORD）での新しいログインは受け付けない（今ある旧合言葉のクッキーは、しばらく通す）。
  */
 export async function POST(request: NextRequest) {
-  // ★別のサイトのフォームから送られたログインは断る（他人を攻撃者の ID で入らせない）
-  if (!isSameOriginPost(originInputOf(request))) {
-    const login = new URL("/login", request.url);
-    login.searchParams.set("error", "origin");
-    return NextResponse.redirect(login, 303);
-  }
-  const password = process.env.APP_PASSWORD;
+  const config = currentAuthConfig();
   let form: FormData;
   try {
     form = await request.formData();
   } catch {
-    return NextResponse.redirect(new URL("/login?error=1", request.url), 303);
+    return redirectWith(request, "/login?error=1");
   }
-  const next = safeNextPath(form.get("next"));
+  // アカウントを使わない手元ではログイン自体が不要
+  if (config.kind === "off") return redirectWith(request, safeNextPath(form.get("next")));
+  if (config.kind === "broken") return redirectWith(request, "/login?error=broken");
 
-  // パスワード保護を使っていない環境ではログイン自体が不要
-  if (!password) return NextResponse.redirect(new URL(next, request.url), 303);
-
-  const expectedUser = process.env.APP_USER || "user";
-  const user = String(form.get("user") ?? "");
-  const input = String(form.get("password") ?? "");
-
-  if (!isValidCredentials(user, input, expectedUser, password)) {
-    const login = new URL("/login", request.url);
-    login.searchParams.set("error", "1");
-    if (next !== "/") login.searchParams.set("next", next);
-    return NextResponse.redirect(login, 303);
-  }
-
-  const maxAge = sessionMaxAgeSeconds();
-  const response = NextResponse.redirect(new URL(next, request.url), 303);
-  const secure = new URL(request.url).protocol === "https:";
-  response.cookies.set({
-    name: SESSION_COOKIE,
-    value: await createSessionToken(expectedUser, password, maxAge),
-    httpOnly: true,
-    sameSite: "lax",
-    secure,
-    path: "/",
-    maxAge,
-  });
-  // 画面に「ログアウト」を出すための印 (認証には使わないので httpOnly にしない)
-  response.cookies.set({
-    name: SIGNED_IN_COOKIE,
-    value: "1",
-    sameSite: "lax",
-    secure,
-    path: "/",
-    maxAge,
-  });
-  response.headers.set("Cache-Control", "no-store");
-  return response;
+  const result = await handleLogin(
+    {
+      config,
+      // ★同じサイトから送られたかは handleLogin の最初で確かめる（login CSRF を防ぐ）
+      origin: originInputOf(request),
+      form: { id: form.get("user"), password: form.get("password"), next: form.get("next") },
+      ip: clientIp(request),
+      secure: isHttps(request),
+      nowMs: Date.now(),
+    },
+    { store: accountStoreFor(config), limiter },
+  );
+  return redirectWith(request, result.location, result.cookies);
 }

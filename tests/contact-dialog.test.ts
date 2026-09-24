@@ -45,6 +45,15 @@ describe("開く・閉じる", () => {
     expect(getContactDraft()).toMatchObject({ page: "/tenmatsu", message: "書きかけ" });
   });
 
+  it("ログインしている人の表示名を、お名前に最初から入れる（書きかけがあれば変えない）", () => {
+    openContact({ page: "/after", name: "架空 太郎" });
+    expect(getContactDraft().name).toBe("架空 太郎");
+    saveContactDraft({ ...getContactDraft(), message: "書きかけ", name: "" });
+    closeContact();
+    openContact({ page: "/", name: "架空 太郎" });
+    expect(getContactDraft()).toMatchObject({ name: "", message: "書きかけ" });
+  });
+
   it("送れたら下書きを消す（選んだ画面は残す）", () => {
     openContact({ page: "/after" });
     saveContactDraft({ ...getContactDraft(), message: "内容", name: "架空　花子", category: "idea" });
@@ -83,7 +92,7 @@ describe("★送るもの・読むもの（中身を読んで見張る）", () =
   it("ヘッダーに1つだけ載せ、使い方の小窓からも開ける", () => {
     const nav = source("components/mode-nav.tsx");
     expect(nav.split("<ContactDialog />").length - 1).toBe(1);
-    expect(nav).toContain("openContact({ page: pathname })");
+    expect(nav).toContain("openContact({ page: pathname, name:");
     expect(source("components/help-dialog.tsx")).toContain("openContact(");
   });
 });
@@ -93,6 +102,7 @@ describe("使い方", () => {
     const item = COMMON_FAQ.find((f) => f.q.includes("不具合を見つけたとき"));
     expect(item?.a).toContain("問い合わせ");
     expect(item?.a).toContain("お客様の氏名・住所・電話番号は書かないでください");
-    expect(item?.a).toContain("ログインIDは送りません");
+    expect(item?.a).toContain("楽楽精算のログインIDは送りません");
+    expect(item?.a).toContain("Folio のアカウントの名前も入ります");
   });
 });

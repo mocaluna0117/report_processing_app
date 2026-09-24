@@ -1,7 +1,7 @@
 /**
  * 最初の管理者を作るためのコードを、手元で作る（Redis の鍵は要らない）。
  *
- *   npm run accounts:bootstrap -- --login <ログインID> [--days 30]
+ *   npm run accounts:bootstrap -- --login <ログインID> [--name <右上に出す名前>] [--days 30]
  *
  * 出すもの:
  *   1. コード（本人だけが控える。画面に1回だけ出す）
@@ -13,7 +13,7 @@
  */
 import { formatBootstrap } from "../../lib/account/bootstrap";
 import { canonicalTemp, generateTempPassword, hashPassword } from "../../lib/account/password";
-import { loginIdProblem, normalizeLoginId } from "../../lib/account/policy";
+import { displayNameProblem, loginIdProblem, normalizeLoginId } from "../../lib/account/policy";
 
 function arg(name: string): string | null {
   const i = process.argv.indexOf(`--${name}`);
@@ -26,6 +26,12 @@ if (problem) {
   console.error(`--login <ログインID> を付けてください（${problem}）`);
   process.exit(1);
 }
+const name = (arg("name") ?? "").trim() || null;
+const nameProblem = name ? displayNameProblem(name) : null;
+if (nameProblem) {
+  console.error(`--name: ${nameProblem}`);
+  process.exit(1);
+}
 const days = Number(arg("days") ?? 30);
 if (!Number.isFinite(days) || days <= 0 || days > 90) {
   console.error("--days は 1〜90 にしてください");
@@ -34,10 +40,10 @@ if (!Number.isFinite(days) || days <= 0 || days > 90) {
 
 const code = generateTempPassword();
 const expSec = Math.floor(Date.now() / 1000) + Math.round(days * 24 * 60 * 60);
-const value = formatBootstrap({ expSec, loginId, hash: await hashPassword(canonicalTemp(code)) });
+const value = formatBootstrap({ expSec, loginId, hash: await hashPassword(canonicalTemp(code)), name });
 
 console.log("");
-console.log(`ログインID: ${loginId}`);
+console.log(`ログインID: ${loginId}${name ? `（右上の名前: ${name}）` : ""}`);
 console.log(`コード:     ${code}   ← 本人だけが控える（大文字・小文字とハイフンは区別しません）`);
 console.log(`期限:       ${new Date(expSec * 1000).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}（日本時間）`);
 console.log("");

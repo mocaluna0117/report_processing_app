@@ -3,6 +3,7 @@ import { type ContactResponse, handleContact } from "@/lib/contact/handle";
 import { createRateLimiter } from "@/lib/contact/rate-limit";
 import { sendWithResend } from "@/lib/contact/send";
 import { assertSameOrigin } from "@/lib/rakuraku/guard";
+import { requireSignedIn } from "@/lib/account/current";
 
 /**
  * 問い合わせ（不具合・要望）を開発者へメールで送る口。
@@ -21,6 +22,9 @@ const json = (status: number, body: ContactResponse) =>
   NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 
 export async function POST(request: Request) {
+  // ★proxy だけに頼らず、ここでもログインを確かめる（署名と期限。仮のパスワードの人は通さない）
+  const signed = await requireSignedIn(request);
+  if (!signed.ok) return signed.response;
   try {
     assertSameOrigin(request);
   } catch {
@@ -43,6 +47,7 @@ export async function POST(request: Request) {
       from: process.env.CONTACT_FROM,
       commit: process.env.VERCEL_GIT_COMMIT_SHA,
       environment: process.env.VERCEL_ENV,
+      account: signed.id,
     },
     { send: sendWithResend, limiter, now: Date.now },
   );

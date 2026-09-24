@@ -2,6 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { NextResponse } from "next/server";
 import { GEMINI_KANA_CHAIN, callWithModelChain } from "@/lib/gemini-model";
 import { normalizeNameReading, type NameReadingResponse } from "@/lib/kana";
+import { requireSignedIn } from "@/lib/account/current";
 
 export const runtime = "nodejs";
 // Vercel等のサーバーレス環境での関数実行上限
@@ -78,6 +79,9 @@ async function callGemini(apiKey: string, name: string) {
 }
 
 export async function POST(request: Request): Promise<NextResponse<NameReadingResponse>> {
+  // ★proxy だけに頼らず、ここでもログインを確かめる（署名と期限。仮のパスワードの人は通さない）
+  const signed = await requireSignedIn(request);
+  if (!signed.ok) return signed.response;
   let name: string;
   try {
     name = sanitizeName(await request.json());

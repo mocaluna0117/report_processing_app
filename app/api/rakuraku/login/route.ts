@@ -7,6 +7,7 @@ import { autoLoginOnce } from "@/lib/rakuraku/login";
 import { log } from "@/lib/rakuraku/log";
 import { SESSION_TTL_MS, SessionError, seal } from "@/lib/rakuraku/session";
 import { hasViewTab } from "@/lib/rakuraku/tabs";
+import { requireSignedIn } from "@/lib/account/current";
 
 /**
  * 楽楽精算にログインし、その状態を封じた `sessionToken` を返す。
@@ -41,6 +42,9 @@ function fail(code: string, message: string, status = 200) {
 }
 
 export async function POST(request: Request) {
+  // ★proxy だけに頼らず、ここでもログインを確かめる（署名と期限。仮のパスワードの人は通さない）
+  const signed = await requireSignedIn(request);
+  if (!signed.ok) return signed.response;
   const started = Date.now();
   let tenant;
   try {

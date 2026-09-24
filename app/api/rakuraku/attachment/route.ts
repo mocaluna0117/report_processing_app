@@ -7,6 +7,7 @@ import { parseAttachmentRequest } from "@/lib/rakuraku/protocol";
 import { unseal } from "@/lib/rakuraku/session";
 import { withSessionPage } from "@/lib/rakuraku/session-browser";
 import { ndjsonResponse } from "@/lib/rakuraku/stream";
+import { requireSignedIn } from "@/lib/account/current";
 
 /**
  * 添付を1つだけ取り直す。`/fetch` の中で時間切れ（TIME_BUDGET_EXCEEDED）になった添付に使う。
@@ -20,6 +21,9 @@ export const maxDuration = 180;
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  // ★proxy だけに頼らず、ここでもログインを確かめる（署名と期限。仮のパスワードの人は通さない）
+  const signed = await requireSignedIn(request);
+  if (!signed.ok) return signed.response;
   const started = Date.now();
   const raw: unknown = await request.json().catch(() => null);
 
