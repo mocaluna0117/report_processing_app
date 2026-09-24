@@ -39,8 +39,9 @@ export default async function LoginPage({
           : null;
 
   return (
-    <main className="mx-auto flex min-h-[60vh] max-w-sm flex-col justify-center">
-      <p className="text-sm text-slate-600">{LOGIN_LEAD_TEXT}</p>
+    <main className="mx-auto flex min-h-[60vh] max-w-md flex-col justify-center">
+      {/* ★先頭の1文は折り返さない（幅が足りない電話の画面だけは折り返す） */}
+      <p className="text-sm text-slate-600 sm:whitespace-nowrap">{LOGIN_LEAD_TEXT}</p>
 
       <form
         method="post"
