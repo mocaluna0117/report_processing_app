@@ -73,7 +73,6 @@ describe("門番", () => {
     config: config(),
     pathname: "/after",
     search: "",
-    dest: "document",
     session: { kind: "account", claims },
     nowSec: NOW,
     ...over,
@@ -141,10 +140,11 @@ describe("門番", () => {
     });
   });
 
-  it("画像・フォントなどの読み込みでは確かめ直さない（回数を抑える）", async () => {
-    const lookup = lookupOf(null);
-    expect(await decideAccess(input({ dest: "font", nowSec: NOW + 3600 }), lookup)).toEqual({ kind: "pass" });
-    expect(lookup).not.toHaveBeenCalled();
+  it("★どのリクエストでも確かめ直す（送る側が書き換えられるヘッダーで省かない）", async () => {
+    const lookup = lookupOf(await member({ disabled: true }));
+    const decision = await decideAccess(input({ pathname: "/help/after-shared.webp", nowSec: NOW + 3600 }), lookup);
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(decision).toMatchObject({ kind: "redirect", clear: true });
   });
 
   it("★仮のパスワードの人は、パスワードを決める画面と送信先・ログアウトだけ", async () => {
@@ -198,9 +198,38 @@ describe("ログイン", () => {
     expect(locked).toEqual({ location: "/login?error=locked", cookies: [] });
   });
 
+  it("★場所（IP）の回数は失敗だけ数える（同じ事務所の人がログインしても積もらない）", async () => {
+    const { store, deps } = setup();
+    await store.create(await member());
+    for (let i = 0; i < 40; i += 1) {
+      // メモリの回数制限（1分に20回）に掛からないよう、1分ずつ空ける（見たいのは Redis の IP の回数）
+      const result = await login(deps, { id: "kasou-taro", password: "sakura-tanbo", next: "/after" }, { nowMs: NOW_MS + i * 61_000 });
+      expect(result.location).toBe("/after");
+    }
+  });
+
+  it("★同時に20回送られても、照合するのは5回まで（照合の前に数える）", async () => {
+    const { store, deps } = setup();
+    await store.create(await member());
+    const get = vi.spyOn(store, "get");
+    const results = await Promise.all(
+      Array.from({ length: 20 }, (_, i) => login(deps, { id: "kasou-taro", password: `wrong-password-${i}` })),
+    );
+    expect(get.mock.calls.length).toBeLessThanOrEqual(5);
+    expect(results.filter((r) => r.location === "/login?error=locked").length).toBeGreaterThanOrEqual(15);
+  });
+
+  it("★長さは決まりと同じ数え方（そろえたあとの文字数）。決めてよいパスワードなら入れる", async () => {
+    const { store, deps } = setup();
+    // 半角の濁点つきカナは、そろえる前は2倍の長さになる
+    const long = "ｶﾞ".repeat(100);
+    await store.create(await member({ hash: await hashPassword(long, FAST) }));
+    expect((await login(deps, { id: "kasou-taro", password: long })).location).toBe("/");
+  });
+
   it("★メモリの回数制限は Redis の手前で止める（連打で無料枠を使い切らせない）", async () => {
     const { store } = setup();
-    const snapshot = vi.spyOn(store, "loginSnapshot");
+    const snapshot = vi.spyOn(store, "reserveAttempt");
     const limiter = createKeyedLimiter({ windowMs: 60_000, max: 1 });
     await login({ store, limiter, scrypt: FAST }, { id: "kasou-taro", password: "x" });
     const second = await login({ store, limiter, scrypt: FAST }, { id: "kasou-taro", password: "x" });
@@ -233,7 +262,7 @@ describe("ログイン", () => {
 
   it("置き場所に届かなければ、いま確かめられないと出す", async () => {
     const { store, limiter } = setup();
-    vi.spyOn(store, "loginSnapshot").mockRejectedValue(new StoreUnavailableError());
+    vi.spyOn(store, "reserveAttempt").mockRejectedValue(new StoreUnavailableError());
     const result = await login({ store, limiter, scrypt: FAST }, { id: "kasou-taro", password: "sakura-tanbo" });
     expect(result.location).toBe("/login?error=unavailable");
   });
@@ -244,6 +273,10 @@ describe("最初の管理者", () => {
   const CODE = "kasu-2abc-3def";
   const bootstrapFor = async (exp = NOW + 3600) =>
     formatBootstrap({ expSec: exp, loginId: "kasou-admin", hash: await hashPassword(canonicalTemp(CODE), FAST), name: null });
+
+  it("★値に「$」を含めない（.env で読み込むと $1 などが展開されて壊れるため）", async () => {
+    expect(await bootstrapFor()).not.toContain("$");
+  });
 
   it("右上の名前も渡せる（日本語でも）", async () => {
     const hash = await hashPassword(canonicalTemp(CODE), FAST);
@@ -273,6 +306,39 @@ describe("最初の管理者", () => {
     await store.update("kasou-admin", (r) => ({ ...r, hash: "scrypt$1$10.8.1$x$y", mustChange: false }));
     const again = await login(deps, { id: "kasou-admin", password: CODE }, { config: cfg });
     expect(again.location).toBe("/login?error=1");
+  });
+
+  it("★印はコードの期限より長く残る（期限の前に印だけ消えて、同じコードでまた入れることが無い）", async () => {
+    const { deps } = setup();
+    const bootstrap = await bootstrapFor(NOW + 90 * 86_400);
+    const mark = vi.spyOn(deps.store, "markBootstrapUsed");
+    await login(deps, { id: "kasou-admin", password: CODE }, { config: config({ bootstrap }) });
+    expect(mark.mock.calls[0][1]).toBeGreaterThan(90 * 86_400);
+  });
+
+  it("★管理者を書けなかったら印を外す（コードを無駄にしない）", async () => {
+    const { store, deps } = setup();
+    const cfg = config({ bootstrap: await bootstrapFor() });
+    vi.spyOn(store, "upsert").mockResolvedValueOnce(null);
+    expect((await login(deps, { id: "kasou-admin", password: CODE }, { config: cfg })).location).toBe("/login?error=1");
+    expect((await login(deps, { id: "kasou-admin", password: CODE }, { config: cfg })).location).toBe("/account");
+  });
+
+  it("★その ID が止められていても、最初の管理者のコードでは入れる（回復の道を残す）", async () => {
+    const { deps } = setup();
+    const cfg = config({ bootstrap: await bootstrapFor() });
+    for (let i = 0; i < 6; i += 1) await login(deps, { id: "kasou-admin", password: `wrong-${i}` }, { config: cfg });
+    expect((await login(deps, { id: "kasou-admin", password: "still-wrong" }, { config: cfg })).location).toBe("/login?error=locked");
+    expect((await login(deps, { id: "kasou-admin", password: CODE }, { config: cfg })).location).toBe("/account");
+  });
+
+  it("★秘密を変えても、使った印は消えない（印のキーに秘密を混ぜない）", async () => {
+    const { deps } = setup();
+    const bootstrap = await bootstrapFor();
+    await login(deps, { id: "kasou-admin", password: CODE }, { config: config({ bootstrap }) });
+    await deps.store.update("kasou-admin", (r) => ({ ...r, mustChange: false, hash: "scrypt$1$10.8.1$x$y" }));
+    const rotated = config({ bootstrap, secret: `${SECRET}-rotated` });
+    expect((await login(deps, { id: "kasou-admin", password: CODE }, { config: rotated })).location).toBe("/login?error=1");
   });
 
   it("★ほかの ID の失敗では使い切られない。期限切れのコードは使えない", async () => {
@@ -338,6 +404,19 @@ describe("パスワードを変える", () => {
     );
     const ok = await change(deps, claims, { current: "sakura-tanbo", password: "yama-no-michi" });
     expect(ok.location).toBe("/account?done=1");
+  });
+
+  it("★今のパスワードの当てずっぽうは5回で止める（盗まれた印で当て続けさせない）", async () => {
+    const { store, deps } = setup();
+    const record = await member();
+    await store.create(record);
+    const claims: SessionClaims = { u: record.id, sv: record.sv, mc: 0, chk: NOW, exp: NOW + 3600 };
+    for (let i = 0; i < 5; i += 1) {
+      expect((await change(deps, claims, { current: `guess-${i}`, password: "yama-no-michi" })).location).toBe("/account?error=current");
+    }
+    expect((await change(deps, claims, { current: "sakura-tanbo", password: "yama-no-michi" })).location).toBe(
+      "/account?error=locked",
+    );
   });
 
   it("★別のサイトからは断る。古い印（版が違う）ならログインし直し", async () => {
@@ -435,9 +514,29 @@ describe("今ある API のルートの確かめ（Redis は使わない）", ()
 
   it("旧合言葉のクッキーは、APP_PASSWORD がある間だけ通す", async () => {
     const v1 = await createSessionToken("user", "kasou-shared", 3600);
-    const withLegacy = config({ legacy: { user: "user", password: "kasou-shared" } });
+    const withLegacy = config({ legacy: { user: "user", password: "kasou-shared", untilSec: Math.floor(Date.now() / 1000) + 3600 } });
     expect(await requireSignedIn(req(`folio_session=${v1}`), withLegacy)).toEqual({ ok: true, id: null });
     const without = await requireSignedIn(req(`folio_session=${v1}`), config());
     expect(without.ok).toBe(false);
+  });
+});
+
+describe("★前の合言葉の印（切り替えの間だけ）", () => {
+  it("期限を好きに書いた印は受け付けない（ログインを保つ日数より先の期限）", async () => {
+    const { readSession } = await import("@/lib/account/session");
+    const nowSec = Math.floor(Date.now() / 1000);
+    const withLegacy = config({ legacy: { user: "user", password: "kasou-shared", untilSec: nowSec + 7 * 86_400 } });
+    const normal = await createSessionToken("user", "kasou-shared", 30 * 86_400);
+    expect(await readSession(normal, withLegacy, nowSec)).toEqual({ kind: "legacy" });
+    const forged = await createSessionToken("user", "kasou-shared", 3650 * 86_400);
+    expect(await readSession(forged, withLegacy, nowSec)).toEqual({ kind: "none", hadToken: true });
+  });
+
+  it("★受け付ける期限（FOLIO_LEGACY_UNTIL）を過ぎたら、前の合言葉を消し忘れても通らない", async () => {
+    const { readSession } = await import("@/lib/account/session");
+    const nowSec = Math.floor(Date.now() / 1000);
+    const token = await createSessionToken("user", "kasou-shared", 86_400);
+    const expired = config({ legacy: { user: "user", password: "kasou-shared", untilSec: nowSec - 1 } });
+    expect(await readSession(token, expired, nowSec)).toEqual({ kind: "none", hadToken: true });
   });
 });

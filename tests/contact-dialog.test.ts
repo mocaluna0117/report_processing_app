@@ -45,6 +45,14 @@ describe("開く・閉じる", () => {
     expect(getContactDraft()).toMatchObject({ page: "/tenmatsu", message: "書きかけ" });
   });
 
+  it("★打ったお名前は、開き直しても上書きしない", () => {
+    openContact({ page: "/after", name: "架空 太郎" });
+    saveContactDraft({ ...getContactDraft(), name: "架空 太郎（経理）" });
+    closeContact();
+    openContact({ page: "/", name: "架空 太郎" });
+    expect(getContactDraft().name).toBe("架空 太郎（経理）");
+  });
+
   it("ログインしている人の表示名を、お名前に最初から入れる（書きかけがあれば変えない）", () => {
     openContact({ page: "/after", name: "架空 太郎" });
     expect(getContactDraft().name).toBe("架空 太郎");

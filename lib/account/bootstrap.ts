@@ -1,7 +1,8 @@
 /**
  * 最初の管理者を作るためのコード（FOLIO_BOOTSTRAP）。
  *
- * 形は `<期限(秒)>:<ログインID>:<コードの scrypt ハッシュ>[:<表示名の base64url>]`。
+ * 形は `<期限(秒)>:<ログインID>:<コードの scrypt ハッシュの base64url>[:<表示名の base64url>]`。
+ * ★ハッシュをそのまま入れると「$」が入り、.env の読み込みで壊れる（$1 などが展開される）ので、base64url にする。
  * 手元のコマンド（scripts/accounts/bootstrap-code.mts）が作る。
  * - コードそのものは env に入れない（ハッシュだけ）。Redis の鍵も手元に要らない
  * - 使えるのは1回だけ（Redis に使った印を置く）。ほかの ID の失敗では使い切られない
@@ -26,11 +27,12 @@ export function parseBootstrap(value: string | null | undefined): Bootstrap | nu
   if (first <= 0 || second <= first + 1) return null;
   const expSec = Number(value.slice(0, first));
   const loginId = value.slice(first + 1, second);
-  const [hash, encodedName, ...extra] = value.slice(second + 1).split(":");
-  if (extra.length > 0) return null;
+  const [encodedHash, encodedName, ...extra] = value.slice(second + 1).split(":");
+  if (extra.length > 0 || !encodedHash || !/^[A-Za-z0-9_-]+$/.test(encodedHash)) return null;
   if (!Number.isSafeInteger(expSec) || expSec <= 0) return null;
   if (!LOGIN_ID.test(loginId) || normalizeLoginId(loginId) !== loginId) return null;
-  if (!hash?.startsWith("scrypt$")) return null;
+  const hash = Buffer.from(encodedHash, "base64url").toString("utf8");
+  if (!hash.startsWith("scrypt$")) return null;
   let name: string | null = null;
   if (encodedName) {
     try {
@@ -44,5 +46,5 @@ export function parseBootstrap(value: string | null | undefined): Bootstrap | nu
 
 export function formatBootstrap(b: Bootstrap): string {
   const name = b.name ? `:${Buffer.from(b.name, "utf8").toString("base64url")}` : "";
-  return `${b.expSec}:${b.loginId}:${b.hash}${name}`;
+  return `${b.expSec}:${b.loginId}:${Buffer.from(b.hash, "utf8").toString("base64url")}${name}`;
 }

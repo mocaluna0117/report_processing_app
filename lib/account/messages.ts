@@ -60,6 +60,8 @@ export function changeErrorText(code: string | null | undefined, problems: strin
     }
     case "origin":
       return ["別のページから送られたため、変えませんでした。この画面から入れ直してください"];
+    case "locked":
+      return ["今のパスワードの間違いが続いたため、15分ほど変えられません"];
     case "busy":
       return ["続けて送られたか、同じときに別の変更がありました。少し待ってからもう一度入れてください"];
     case "unavailable":

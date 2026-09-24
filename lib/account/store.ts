@@ -2,7 +2,8 @@
  * アカウントの読み書き（Kv の上）。★置くのはアカウントの情報だけ（顧客データは置かない）。
  *
  * - 書き換えは compare-and-set。本人のパスワード変更が、同じときの管理者の停止を上書きしないように。
- * - ログインの失敗の回数は、打ち込まれた ID・IP をそのまま残さない（keyedHash でキー名にする）。
+ * - ログインの回数は、打ち込まれた ID・IP をそのまま残さない（keyedHash でキー名にする）。
+ *   ★照合する前に数える（reserveAttempt）。読んでから数えると、同時に送られた分が上限を超えて照合される。
  */
 import type { Kv } from "@/lib/account/kv";
 import { type AccountRecord, parseAccountRecord } from "@/lib/account/record";
@@ -17,7 +18,7 @@ export const KEYS = {
 
 /** 失敗を数える長さ（15分） */
 export const FAIL_TTL_SEC = 15 * 60;
-/** 同じ ID で5回、同じ場所（IP）から30回違えたら、15分止める */
+/** 同じ ID で5回、同じ場所（IP）から30回試したら、15分止める（正しく入れたら ID の分は数え直す） */
 export const FAIL_MAX_ID = 5;
 export const FAIL_MAX_IP = 30;
 /** アカウントの上限 */
@@ -27,13 +28,13 @@ export type UpdateResult = { ok: true; record: AccountRecord } | { ok: false; re
 
 export interface AccountStore {
   get(id: string): Promise<AccountRecord | null>;
-  /** ログインのときに1回で読む（アカウント・ID の失敗回数・IP の失敗回数） */
-  loginSnapshot(id: string, failIdKey: string, failIpKey: string): Promise<{
-    record: AccountRecord | null;
-    idFails: number;
-    ipFails: number;
-  }>;
-  recordFailure(keys: string[]): Promise<void>;
+  /**
+   * 試す前に1回分を数える（照合する前に数えるので、同時に何回送られても上限を超えて照合しない）。
+   * 数えたあとの回数を返す。
+   */
+  reserveAttempt(keys: string[]): Promise<number[]>;
+  /** 数えた1回分を戻す（正しく入れたとき。場所（IP）の数は失敗だけにする） */
+  releaseAttempt(key: string): Promise<void>;
   clearFailures(key: string): Promise<void>;
   create(record: AccountRecord): Promise<boolean>;
   /** change が null を返したら書かない */
@@ -42,14 +43,11 @@ export interface AccountStore {
   upsert(id: string, make: (current: AccountRecord | null) => AccountRecord): Promise<AccountRecord | null>;
   remove(id: string): Promise<void>;
   list(): Promise<AccountRecord[]>;
-  /** 最初の管理者のコードを使った印（1回だけ true） */
-  markBootstrapUsed(key: string): Promise<boolean>;
+  /** 最初の管理者のコードを使った印（1回だけ true）。★コードの期限より長く残す */
+  markBootstrapUsed(key: string, ttlSec: number): Promise<boolean>;
+  /** 印を置いたあとで管理者を書けなかったとき、印を外す（コードを無駄にしない） */
+  unmarkBootstrap(key: string): Promise<void>;
 }
-
-const count = (raw: string | null) => {
-  const n = Number(raw ?? 0);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-};
 
 export function createAccountStore(kv: Kv): AccountStore {
   const read = async (id: string) => {
@@ -58,12 +56,13 @@ export function createAccountStore(kv: Kv): AccountStore {
   };
   return {
     get: async (id) => (await read(id)).record,
-    loginSnapshot: async (id, failIdKey, failIpKey) => {
-      const [raw, idFails, ipFails] = await kv.mget([KEYS.account(id), failIdKey, failIpKey]);
-      return { record: parseAccountRecord(raw), idFails: count(idFails), ipFails: count(ipFails) };
+    reserveAttempt: async (keys) => {
+      const counts: number[] = [];
+      for (const key of keys) counts.push(await kv.incrWithTtl(key, FAIL_TTL_SEC));
+      return counts;
     },
-    recordFailure: async (keys) => {
-      for (const key of keys) await kv.incrWithTtl(key, FAIL_TTL_SEC);
+    releaseAttempt: async (key) => {
+      await kv.incrWithTtl(key, FAIL_TTL_SEC, -1);
     },
     clearFailures: (key) => kv.del(key),
     create: (record) => kv.setNx(KEYS.account(record.id), JSON.stringify(record)),
@@ -91,6 +90,7 @@ export function createAccountStore(kv: Kv): AccountStore {
       const raws = await kv.mget(keys);
       return raws.map(parseAccountRecord).filter((r): r is AccountRecord => r !== null);
     },
-    markBootstrapUsed: (key) => kv.setNx(key, "1", 30 * 24 * 60 * 60),
+    markBootstrapUsed: (key, ttlSec) => kv.setNx(key, "1", Math.max(60, Math.ceil(ttlSec))),
+    unmarkBootstrap: (key) => kv.del(key),
   };
 }

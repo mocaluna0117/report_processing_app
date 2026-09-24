@@ -8,7 +8,8 @@
  * 4. 旧合言葉のクッキー → 通す（APP_PASSWORD がある間だけ。readSession が判断する）
  * 5. 印が無い・壊れている → API は 401（文字）、ページは /login へ
  * 6. 前の確認から5分 → Redis で確かめ直す（止めた・パスワードを変えた・消した を届ける）
- *    落ちていれば12時間までは通す。画像・フォントなどの読み込みでは確かめ直さない
+ *    落ちていれば12時間までは通す。
+ *    ★どのリクエストでも確かめ直す（Sec-Fetch-Dest などの、送る側が書き換えられるヘッダーで省かない）
  * 7. 仮のパスワードの人は、パスワードを決める画面とその送信先・ログアウトだけ
  */
 import type { AuthConfig } from "@/lib/account/config";
@@ -31,15 +32,11 @@ export const UNAVAILABLE_TEXT = "いまログインを確かめられません�
 const OPEN_PATHS = new Set(["/login", "/api/login", "/api/logout"]);
 /** 仮のパスワードの人が使える口 */
 const MUST_CHANGE_PATHS = new Set(["/account", "/api/account/password", "/api/logout"]);
-/** 確かめ直さない読み込み（画像・フォントなど。Redis の回数を抑える） */
-const PASSIVE_DESTS = new Set(["image", "font", "script", "style", "audio", "video", "track", "manifest"]);
 
 export interface GateInput {
   config: AuthConfig;
   pathname: string;
   search: string;
-  /** Sec-Fetch-Dest */
-  dest: string | null;
   session: SessionState;
   nowSec: number;
 }
@@ -67,7 +64,7 @@ export async function decideAccess(input: GateInput, lookup: Lookup): Promise<Ga
   const { claims } = session;
   let reissue: AccountRecord | undefined;
   const stale = nowSec - claims.chk >= RECHECK_SEC;
-  if (stale && !(input.dest && PASSIVE_DESTS.has(input.dest))) {
+  if (stale) {
     const found = await lookup(claims.u);
     if (found === "unavailable") {
       if (nowSec - claims.chk >= OUTAGE_GRACE_SEC) {

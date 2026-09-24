@@ -63,9 +63,9 @@ export function subscribeContact(listener: (open: boolean) => void): () => void 
   return () => listeners.delete(listener);
 }
 
-/** 書きかけが無いか（無ければ、開いた画面とお名前を入れ直してよい） */
+/** 書きかけが無いか（無ければ、開いた画面を選び直してよい） */
 export function isDraftEmpty(d: ContactDraft): boolean {
-  return d.message.trim() === "" && d.photos.length === 0;
+  return d.message.trim() === "" && d.photos.length === 0 && d.name.trim() === "";
 }
 
 /**
@@ -74,7 +74,7 @@ export function isDraftEmpty(d: ContactDraft): boolean {
  */
 export function openContact(options: { page?: string | null; name?: string | null } = {}): void {
   if (isDraftEmpty(draft)) {
-    // ★ログインしている人の表示名を最初から入れる（消して送ってもよい）
+    // ★ログインしている人の表示名を最初から入れる（消して送ってもよい）。打ったお名前は上書きしない
     draft = { ...draft, page: knownPage(options.page), name: (options.name ?? "").slice(0, 50) };
   }
   open = true;

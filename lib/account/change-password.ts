@@ -14,11 +14,12 @@ import { canonicalTemp, hashPassword, type ScryptParams, verifyPassword } from "
 import { type PasswordProblem, passwordProblemCodes } from "@/lib/account/policy";
 import type { KeyedLimiter } from "@/lib/account/rate-limit";
 import { type CookieSpec, clearedCookies, issueSession } from "@/lib/account/session";
-import { type AccountStore, KEYS } from "@/lib/account/store";
+import { passwordTooLong } from "@/lib/account/login";
+import { type AccountStore, FAIL_MAX_ID, KEYS } from "@/lib/account/store";
 import { type SessionClaims, keyedHash } from "@/lib/account/token";
 import { safeNextPath } from "@/lib/auth";
 
-export type ChangeError = "origin" | "current" | "policy" | "busy" | "unavailable";
+export type ChangeError = "origin" | "current" | "policy" | "busy" | "locked" | "unavailable";
 
 export interface ChangeInput {
   config: Extract<AuthConfig, { kind: "accounts" }>;
@@ -65,12 +66,14 @@ export async function handleChangePassword(
     const password = str(input.form.password);
     const confirm = str(input.form.confirm);
     const current = str(input.form.current);
+    const failIdKey = KEYS.failId(keyedHash(input.config.secret, "fail-id", record.id));
     if (!forced) {
-      const ok = current.length > 0 && current.length <= 128 && (await verifyPassword(current, record.hash));
-      if (!ok) {
-        await deps.store.recordFailure([KEYS.failId(keyedHash(input.config.secret, "fail-id", record.id))]);
-        return back("current", [], next);
-      }
+      // ★今のパスワードの当てずっぽうも、ログインと同じ数え方で止める（照合する前に数える）
+      const [count] = await deps.store.reserveAttempt([failIdKey]);
+      if (count > FAIL_MAX_ID) return back("locked", [], next);
+      const ok = current.length > 0 && !passwordTooLong(current) && (await verifyPassword(current, record.hash));
+      if (!ok) return back("current", [], next);
+      await deps.store.clearFailures(failIdKey);
     }
     const problems = passwordProblemCodes({ password, confirm, loginId: record.id, current: forced ? null : current });
     // ★仮のパスワードと同じものは使わせない（仮は平文で持っていないので、ハッシュで比べる）

@@ -182,7 +182,7 @@ describe("★門番（中身を読んで見張る）", () => {
     expect(source("app/api/login/route.ts")).toContain("origin: originInputOf(request)");
     const login = code("lib/account/login.ts");
     expect(login.indexOf("isSameOriginPost(input.origin)")).toBeGreaterThan(-1);
-    expect(login.indexOf("isSameOriginPost(input.origin)")).toBeLessThan(login.indexOf("loginSnapshot"));
+    expect(login.indexOf("isSameOriginPost(input.origin)")).toBeLessThan(login.indexOf("reserveAttempt"));
   });
 
   it("lib/auth.ts は画面からも読まれるので、秘密や node:crypto を入れない", () => {

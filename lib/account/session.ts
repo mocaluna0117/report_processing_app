@@ -34,7 +34,13 @@ export async function readSession(token: string | undefined, config: AccountsCon
     const claims = verifySession(token, config.secret, nowSec);
     return claims ? { kind: "account", claims } : { kind: "none", hadToken: true };
   }
-  if (token.startsWith("v1.") && config.legacy) {
+  if (token.startsWith("v1.") && config.legacy && nowSec < config.legacy.untilSec) {
+    // ★前の合言葉を知っていれば、期限を好きに書いた印を作れてしまう。
+    //   受け付けるのは FOLIO_LEGACY_UNTIL（切り替えから7日）まで、かつ切り替えの前に出せた長さの期限だけ
+    const exp = Number(token.split(".")[1]);
+    if (!Number.isFinite(exp) || exp > Math.min(nowSec + sessionMaxAgeSeconds(), config.legacy.untilSec + sessionMaxAgeSeconds()) + 60) {
+      return { kind: "none", hadToken: true };
+    }
     const ok = await verifySessionToken(token, config.legacy.user, config.legacy.password, nowSec * 1000);
     if (ok) return { kind: "legacy" };
   }

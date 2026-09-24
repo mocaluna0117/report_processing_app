@@ -40,7 +40,11 @@ describe("設定の読み方", () => {
 
   it("手元でアカウントを使わないなら off（今までの開発と同じ）", () => {
     expect(readAuthConfig({})).toEqual({ kind: "off" });
-    expect(readAuthConfig({ NODE_ENV: "development", APP_PASSWORD: "x" })).toEqual({ kind: "off" });
+    expect(readAuthConfig({ NODE_ENV: "development" })).toEqual({ kind: "off" });
+  });
+
+  it("★手元で APP_PASSWORD だけ入れたら、開いたままにせず止める（前は APP_PASSWORD だけで守れた）", () => {
+    expect(readAuthConfig({ NODE_ENV: "development", APP_PASSWORD: "x" })).toEqual({ kind: "broken", missing: ["FOLIO_ACCOUNTS"] });
   });
 
   it("★Vercel の上で足りなければ broken（閉じる）。足りない名前だけを返し、値は出さない", () => {
@@ -56,15 +60,17 @@ describe("設定の読み方", () => {
     expect(readAuthConfig({ ...complete, KV_REST_API_URL: "http://kasou.invalid" }).kind).toBe("broken");
   });
 
-  it("そろっていれば accounts。旧合言葉があれば、その間だけ受け付ける", () => {
-    const config = readAuthConfig({ ...complete, APP_PASSWORD: "kasou-shared", FOLIO_BOOTSTRAP: " code " });
+  it("そろっていれば accounts。旧合言葉は、受け付ける期限（FOLIO_LEGACY_UNTIL）があるときだけ", () => {
+    const config = readAuthConfig({ ...complete, APP_PASSWORD: "kasou-shared", FOLIO_LEGACY_UNTIL: "1800000000", FOLIO_BOOTSTRAP: " code " });
     expect(config).toMatchObject({
       kind: "accounts",
       store: { kind: "redis", url: "https://kasou.upstash.invalid" },
-      legacy: { password: "kasou-shared", user: "user" },
+      legacy: { password: "kasou-shared", user: "user", untilSec: 1_800_000_000 },
       bootstrap: "code",
     });
     expect(readAuthConfig(complete)).toMatchObject({ kind: "accounts", legacy: null, bootstrap: null });
+    // ★期限が無ければ、前の合言葉があっても受け付けない
+    expect(readAuthConfig({ ...complete, APP_PASSWORD: "kasou-shared" })).toMatchObject({ legacy: null });
   });
 
   it("連携の名前が UPSTASH_REDIS_REST_* でも読む", () => {
@@ -96,6 +102,12 @@ describe("メモリの置き場所（テスト・開発と同じ動き）", () =
     expect(await kv.cas("b", null, "x")).toBe(true);
     expect(await kv.cas("b", null, "y")).toBe(false);
     expect(await kv.mget(["a", "b", "c"])).toEqual(["3", "x", null]);
+  });
+
+  it("戻す（1つ減らす）こともできる。期限は最初に作ったときのまま", async () => {
+    const kv = createMemoryKv();
+    expect(await kv.incrWithTtl("n", 10)).toBe(1);
+    expect(await kv.incrWithTtl("n", 10, -1)).toBe(0);
   });
 
   it("数えるものは期限つき。期限が来たら消える", async () => {
@@ -146,28 +158,48 @@ describe("アカウントの読み書き", () => {
     expect(await store.get("kasou-bad")).toBeNull();
   });
 
-  it("ログインのときは1回で読む。失敗は15分数えて、成功したら消す", async () => {
+  it("試す前に数える。15分で消え、正しく入れたら数え直す", async () => {
     let now = 0;
-    const kv = createMemoryKv(() => now);
-    const store = createAccountStore(kv);
-    await store.create(record());
-    await store.recordFailure(["fid", "fip"]);
-    await store.recordFailure(["fid", "fip"]);
-    expect(await store.loginSnapshot("kasou-taro", "fid", "fip")).toMatchObject({ idFails: 2, ipFails: 2 });
+    const store = createAccountStore(createMemoryKv(() => now));
+    expect(await store.reserveAttempt(["fid", "fip"])).toEqual([1, 1]);
+    expect(await store.reserveAttempt(["fid", "fip"])).toEqual([2, 2]);
     await store.clearFailures("fid");
-    expect(await store.loginSnapshot("kasou-taro", "fid", "fip")).toMatchObject({ idFails: 0, ipFails: 2 });
+    expect(await store.reserveAttempt(["fid", "fip"])).toEqual([1, 3]);
     now = FAIL_TTL_SEC * 1000 + 1;
-    expect(await store.loginSnapshot("kasou-taro", "fid", "fip")).toMatchObject({ ipFails: 0 });
+    expect(await store.reserveAttempt(["fid", "fip"])).toEqual([1, 1]);
   });
 
-  it("最初の管理者のコードは1回だけ使える", async () => {
+  it("★同時に数えても取りこぼさない（照合の前に数えるので、上限を超えて照合しない）", async () => {
     const store = createAccountStore(createMemoryKv());
-    expect(await store.markBootstrapUsed(KEYS.boot("h"))).toBe(true);
-    expect(await store.markBootstrapUsed(KEYS.boot("h"))).toBe(false);
+    const counts = await Promise.all(Array.from({ length: 20 }, () => store.reserveAttempt(["fid"])));
+    expect(counts.map(([n]) => n).sort((a, b) => a - b)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+  });
+
+  it("最初の管理者のコードの印は1回だけ置ける。外せば置き直せる", async () => {
+    const store = createAccountStore(createMemoryKv());
+    expect(await store.markBootstrapUsed(KEYS.boot("h"), 3600)).toBe(true);
+    expect(await store.markBootstrapUsed(KEYS.boot("h"), 3600)).toBe(false);
+    await store.unmarkBootstrap(KEYS.boot("h"));
+    expect(await store.markBootstrapUsed(KEYS.boot("h"), 3600)).toBe(true);
   });
 });
 
 describe("手元の開発用のファイル", () => {
+  it("★別々の束（proxy と API のルート）が同時に書いても、片方の書き込みが消えない", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "folio-kv-"));
+    try {
+      const path = join(dir, "accounts.json");
+      const a = createFileKv(path);
+      const b = createFileKv(path);
+      await Promise.all(Array.from({ length: 10 }, (_, i) => (i % 2 ? a : b).incrWithTtl("n", 60)));
+      await Promise.all([a.setNx("x", "1"), b.setNx("y", "2")]);
+      expect(await a.mget(["n", "x", "y"])).toEqual(["10", "1", "2"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+
   it("proxy と API のルート（別の束）で同じものを読める。ファイルは本人だけが読める", async () => {
     const dir = mkdtempSync(join(tmpdir(), "folio-kv-"));
     try {
@@ -200,7 +232,7 @@ describe("Upstash Redis（通信は作り物）", () => {
     const [cas, incr] = bodies as string[][];
     expect(cas[0].toLowerCase()).toBe("eval");
     expect(cas.slice(2)).toEqual([1, "folio:acct:kasou-taro", "", "{}"]);
-    expect(incr.slice(2)).toEqual([1, "folio:fail:id:x", "900"]);
+    expect(incr.slice(2)).toEqual([1, "folio:fail:id:x", "900", "1"]);
   });
 
   it("★届かないときは StoreUnavailableError。トークンも URL も文に出さない", async () => {

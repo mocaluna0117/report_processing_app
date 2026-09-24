@@ -26,7 +26,7 @@ export async function proxy(request: NextRequest) {
       : { kind: "none", hadToken: false };
 
   const decision = await decideAccess(
-    { config, pathname, search, dest: request.headers.get("sec-fetch-dest"), session, nowSec },
+    { config, pathname, search, session, nowSec },
     async (id) => {
       if (config.kind !== "accounts") return null;
       try {
