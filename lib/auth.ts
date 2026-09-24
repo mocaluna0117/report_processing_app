@@ -18,6 +18,45 @@ export const SESSION_COOKIE = "folio_session";
  */
 export const SIGNED_IN_COOKIE = "folio_signed_in";
 
+/**
+ * 表示用の印の中身（ヘッダーに名前を出す・管理の入口を出すため）。★認証には使わない（誰でも書き換えられる）。
+ * 旧合言葉のときは値が "1" なので、それは legacy として読む。
+ */
+export type SignedInMarker =
+  | { legacy: true }
+  | { legacy: false; id: string; name: string; admin: boolean; mustChange: boolean };
+
+const utf8ToB64url = (text: string): string => {
+  const bytes = new TextEncoder().encode(text);
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+
+const b64urlToUtf8 = (value: string): string => {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const bin = atob(padded);
+  return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+};
+
+export function encodeSignedInMarker(marker: { id: string; name: string; admin: boolean; mustChange: boolean }): string {
+  return utf8ToB64url(JSON.stringify({ u: marker.id, n: marker.name, a: marker.admin ? 1 : 0, m: marker.mustChange ? 1 : 0 }));
+}
+
+/** 読めなければ null（壊れた値・空）。★どんな値でも例外を出さない */
+export function readSignedInMarker(raw: string | null | undefined): SignedInMarker | null {
+  if (!raw) return null;
+  if (raw === "1") return { legacy: true };
+  if (raw.length > 512) return null;
+  try {
+    const v = JSON.parse(b64urlToUtf8(raw)) as Record<string, unknown>;
+    if (typeof v.u !== "string" || typeof v.n !== "string") return null;
+    return { legacy: false, id: v.u, name: v.n.slice(0, 40), admin: v.a === 1, mustChange: v.m === 1 };
+  } catch {
+    return null;
+  }
+}
+
 /** 既定のログイン保持期間 (日)。APP_SESSION_DAYS で変えられる */
 const DEFAULT_SESSION_DAYS = 30;
 
