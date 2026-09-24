@@ -2,6 +2,8 @@
  * ログイン・アカウントの画面に出す文。純関数と定数だけ（画面とサーバーの両方から読む）。
  * ★ログインに失敗したときは、ID が無いのか・パスワードが違うのかを言い分けない（ID を当てられないように）。
  */
+import { PASSWORD_PROBLEM_TEXT, type PasswordProblem } from "@/lib/account/policy";
+
 export type LoginErrorCode =
   | "1"
   | "locked"
@@ -43,3 +45,26 @@ export const MUST_CHANGE_TEXT =
 /** 仮のパスワードを出すときの注意 */
 export const TEMP_PASSWORD_NOTE =
   "この仮のパスワードは、いま1回だけ表示します。本人に直接（口頭か手渡しで）伝えてください。7日で切れます。";
+
+/** パスワードを変えられなかったときの文（URL の error=…&p=… から） */
+export function changeErrorText(code: string | null | undefined, problems: string | null | undefined): string[] {
+  switch (code) {
+    case "current":
+      return ["今のパスワードが違います"];
+    case "policy": {
+      const texts = (problems ?? "")
+        .split(",")
+        .filter((p): p is PasswordProblem => p in PASSWORD_PROBLEM_TEXT)
+        .map((p) => PASSWORD_PROBLEM_TEXT[p]);
+      return texts.length > 0 ? texts : ["パスワードの決まりに合いませんでした"];
+    }
+    case "origin":
+      return ["別のページから送られたため、変えませんでした。この画面から入れ直してください"];
+    case "busy":
+      return ["続けて送られたか、同じときに別の変更がありました。少し待ってからもう一度入れてください"];
+    case "unavailable":
+      return ["いまアカウントの置き場所に届きません。少し待ってからもう一度入れてください"];
+    default:
+      return [];
+  }
+}
