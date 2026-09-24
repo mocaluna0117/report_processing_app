@@ -3,6 +3,7 @@
 // 受付メモの要約 (アフターメンテナンス)。
 // 送る前に、選んでいる顧客の氏名・カナ・電話番号・住所・メールを伏せ字にする。
 // 顧客レコードが手元にあるので、サーバー側の推定 (redactPii) に頼らず確実に消せる。
+import { apiFailureText } from "@/lib/api-error";
 import { effectiveFields } from "@/lib/after/customer";
 import type { AfterCase, Customer, CustomerFields } from "@/lib/after/types";
 import {
@@ -133,7 +134,7 @@ export async function summarizeInquiry(
       // サーバー側の予算(30s)より少し長めに取る
       signal: AbortSignal.timeout(40_000),
     });
-    if (!res.ok) throw new Error(`summarize API ${res.status}`);
+    if (!res.ok) throw new Error(apiFailureText("summarize", res.status));
     const data = (await res.json()) as SummarizeResponse;
     return {
       summary: toHalfWidthAlnum(data.summary),

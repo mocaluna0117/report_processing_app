@@ -190,3 +190,22 @@ describe("★門番（中身を読んで見張る）", () => {
     expect(auth).not.toContain("process.env.APP_PASSWORD");
   });
 });
+
+describe("Folio のログインが切れたときの文", () => {
+  it("401 はログインが切れたと言う。ほかは今までどおり", async () => {
+    const { SESSION_LOST_TEXT, apiFailureText } = await import("@/lib/api-error");
+    expect(apiFailureText("summarize", 401)).toBe(SESSION_LOST_TEXT);
+    expect(SESSION_LOST_TEXT).toContain("読み込み直してログイン");
+    expect(apiFailureText("summarize", 500)).toBe("summarize API 500");
+  });
+
+  it("★要約・工事区分・カナ読み・アフターの要約の4か所が使う（中身を読んで見張る）", () => {
+    const read = (p: string) => readFileSync(resolve(__dirname, "..", p), "utf8");
+    const process = read("lib/process.ts");
+    for (const label of ["summarize", "work-categories", "name-reading"]) {
+      expect(process).toContain(`apiFailureText("${label}", res.status)`);
+    }
+    expect(read("lib/after/summarize-inquiry.ts")).toContain('apiFailureText("summarize", res.status)');
+    expect(process).not.toMatch(/API \$\{res\.status\}/);
+  });
+});

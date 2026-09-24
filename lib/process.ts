@@ -1,6 +1,7 @@
 "use client";
 
 // 1ペア分の処理パイプライン (すべてブラウザ内。/api へ送るのは 要約テキスト・点検報告書の切り抜き画像・施主名(カナ推定用) のみ)
+import { apiFailureText } from "@/lib/api-error";
 import { buildCells, blankCells, entry } from "@/lib/cells";
 import { formatLastUpdatedJst, formatRemarksJst } from "@/lib/jst-date";
 import type { NameReadingResponse } from "@/lib/kana";
@@ -89,7 +90,7 @@ async function requestSummary(req: SummarizeRequest): Promise<SummarizeResponse>
     // サーバー側の予算(30s)より少し長めに取り、通信不能時のハングを防ぐ
     signal: AbortSignal.timeout(40_000),
   });
-  if (!res.ok) throw new Error(`summarize API ${res.status}`);
+  if (!res.ok) throw new Error(apiFailureText("summarize", res.status));
   return (await res.json()) as SummarizeResponse;
 }
 
@@ -101,7 +102,7 @@ async function requestWorkCategories(images: string[]): Promise<WorkCategoriesRe
     // サーバー側の予算(45s)より少し長めに取る
     signal: AbortSignal.timeout(60_000),
   });
-  if (!res.ok) throw new Error(`work-categories API ${res.status}`);
+  if (!res.ok) throw new Error(apiFailureText("work-categories", res.status));
   return (await res.json()) as WorkCategoriesResponse;
 }
 
@@ -113,7 +114,7 @@ async function requestNameReading(name: string): Promise<NameReadingResponse> {
     // サーバー側の予算(30s)より少し長めに取る
     signal: AbortSignal.timeout(40_000),
   });
-  if (!res.ok) throw new Error(`name-reading API ${res.status}`);
+  if (!res.ok) throw new Error(apiFailureText("name-reading", res.status));
   return (await res.json()) as NameReadingResponse;
 }
 
