@@ -31,7 +31,9 @@ export default async function LoginPage({
         <input type="hidden" name="next" value={next ?? ""} />
         {error && (
           <p className="mb-3 rounded bg-red-50 px-2 py-1.5 text-sm text-red-700">
-            ユーザー名かパスワードが違います
+            {error === "origin"
+              ? "別のページから送られたため、ログインしませんでした。この画面から入り直してください"
+              : "ユーザー名かパスワードが違います"}
           </p>
         )}
         <label className="block text-sm">
@@ -67,7 +69,7 @@ export default async function LoginPage({
       </form>
 
       <p className="mt-3 text-xs text-slate-400">
-        このブラウザではログインしたままになります (共有の端末では、使い終わったら画面右上の「ログアウト」を押してください)。
+        このブラウザではログインしたままになります (共有の端末では、使い終わったら画面右上の「Folio からログアウト」を押してください)。
       </p>
     </main>
   );

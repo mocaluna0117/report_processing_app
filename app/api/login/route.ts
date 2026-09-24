@@ -1,20 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { isSameOriginPost, originInputOf } from "@/lib/account/origin";
 import {
   SESSION_COOKIE,
   SIGNED_IN_COOKIE,
   createSessionToken,
   isValidCredentials,
+  safeNextPath,
   sessionMaxAgeSeconds,
 } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-/** 送信された「戻り先」をアプリ内のパスだけに限る (外部サイトへ飛ばさない) */
-function safeNext(raw: FormDataEntryValue | null): string {
-  const value = typeof raw === "string" ? raw : "";
-  // 「//example.com」のような別ホストへの相対URLも弾く
-  return value.startsWith("/") && !value.startsWith("//") ? value : "/";
-}
 
 /**
  * ログインフォームの送信先。
@@ -22,9 +18,20 @@ function safeNext(raw: FormDataEntryValue | null): string {
  * ブラウザの「パスワードを保存しますか」が出るようにしている。
  */
 export async function POST(request: NextRequest) {
+  // ★別のサイトのフォームから送られたログインは断る（他人を攻撃者の ID で入らせない）
+  if (!isSameOriginPost(originInputOf(request))) {
+    const login = new URL("/login", request.url);
+    login.searchParams.set("error", "origin");
+    return NextResponse.redirect(login, 303);
+  }
   const password = process.env.APP_PASSWORD;
-  const form = await request.formData();
-  const next = safeNext(form.get("next"));
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return NextResponse.redirect(new URL("/login?error=1", request.url), 303);
+  }
+  const next = safeNextPath(form.get("next"));
 
   // パスワード保護を使っていない環境ではログイン自体が不要
   if (!password) return NextResponse.redirect(new URL(next, request.url), 303);

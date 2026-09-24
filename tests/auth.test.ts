@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { isSameOriginPost } from "@/lib/account/origin";
 import {
   createSessionToken,
   isValidCredentials,
-  parseBasicAuth,
   safeEqual,
+  safeNextPath,
   sessionMaxAgeSeconds,
   verifySessionToken,
 } from "@/lib/auth";
@@ -90,17 +93,100 @@ describe("safeEqual", () => {
   });
 });
 
-describe("parseBasicAuth", () => {
-  it("Basic ヘッダーからユーザー名とパスワードを取る", () => {
-    const header = `Basic ${btoa("user:pass:word")}`;
-    expect(parseBasicAuth(header)).toEqual({ user: "user", password: "pass:word" });
+describe("ログイン後の戻り先（外部サイトへ飛ばさない）", () => {
+  it("アプリの中のパスはそのまま戻す", () => {
+    expect(safeNextPath("/after")).toBe("/after");
+    expect(safeNextPath("/tenmatsu?x=1")).toBe("/tenmatsu?x=1");
+    expect(safeNextPath("/")).toBe("/");
   });
 
-  it("形式が違えば null", () => {
-    expect(parseBasicAuth("")).toBeNull();
-    expect(parseBasicAuth("Bearer xxx")).toBeNull();
-    expect(parseBasicAuth("Basic !!!")).toBeNull();
-    expect(parseBasicAuth(`Basic ${btoa("nocolon")}`)).toBeNull();
-    expect(parseBasicAuth(`Basic ${btoa(":pass")}`)).toBeNull();
+  it("★抜け道をすべて塞ぐ（ブラウザが別サイトと読むもの）", () => {
+    const vectors = [
+      "//evil.com",
+      "/\\evil.com",
+      "/\\/evil.com",
+      "/\t/evil.com",
+      "/\n/evil.com",
+      "/\r/evil.com",
+      "/.//evil.com",
+      "/..//evil.com",
+      "/%2e//evil.com",
+      "/a/..//evil.com",
+      "/%5cevil.com",
+      "https://evil.com/",
+      "http:/evil.com",
+      "evil.com",
+      "javascript:alert(1)",
+      " /after",
+    ];
+    for (const raw of vectors) expect(safeNextPath(raw), JSON.stringify(raw)).toBe("/");
+  });
+
+  it("ログインの画面・API・長すぎるもの・文字列でないものは戻り先にしない", () => {
+    expect(safeNextPath("/login")).toBe("/");
+    expect(safeNextPath("/login?next=/after")).toBe("/");
+    expect(safeNextPath("/api/logout")).toBe("/");
+    expect(safeNextPath(`/${"a".repeat(600)}`)).toBe("/");
+    expect(safeNextPath(null)).toBe("/");
+    expect(safeNextPath(undefined)).toBe("/");
+    expect(safeNextPath(["/after"])).toBe("/");
+  });
+
+  it("Next の内部の目印（_rsc）は捨てる", () => {
+    expect(safeNextPath("/after?_rsc=abc&x=1")).toBe("/after?x=1");
+  });
+});
+
+describe("別のサイトからの送信を断る", () => {
+  const url = "https://folio.example.vercel.app/api/login";
+
+  it("同じサイトからのフォームの送信は通す", () => {
+    expect(isSameOriginPost({ url, fetchSite: "same-origin", origin: "https://folio.example.vercel.app" })).toBe(true);
+    // Sec-Fetch-Site が無い古いブラウザでも、Origin が同じなら通す
+    expect(isSameOriginPost({ url, fetchSite: null, origin: "https://folio.example.vercel.app" })).toBe(true);
+  });
+
+  it("★別のサイト・分からないものは断る", () => {
+    expect(isSameOriginPost({ url, fetchSite: "cross-site", origin: "https://evil.example" })).toBe(false);
+    expect(isSameOriginPost({ url, fetchSite: "same-site", origin: "https://other.vercel.app" })).toBe(false);
+    expect(isSameOriginPost({ url, fetchSite: "none", origin: null })).toBe(false);
+    expect(isSameOriginPost({ url, fetchSite: null, origin: "https://evil.example" })).toBe(false);
+    expect(isSameOriginPost({ url, fetchSite: null, origin: null })).toBe(false);
+  });
+
+  it("★Origin: null や壊れた値でも例外を出さない", () => {
+    expect(() => isSameOriginPost({ url, fetchSite: null, origin: "null" })).not.toThrow();
+    expect(isSameOriginPost({ url, fetchSite: null, origin: "null" })).toBe(false);
+    expect(isSameOriginPost({ url, fetchSite: null, origin: "::::" })).toBe(false);
+  });
+});
+
+describe("★門番（中身を読んで見張る）", () => {
+  const source = (path: string) => readFileSync(resolve(__dirname, "..", path), "utf8");
+  /** 説明文（コメント）を除いた中身 */
+  const code = (path: string) => source(path).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+
+  it("Basic 認証は受け付けない", () => {
+    expect(code("proxy.ts")).not.toMatch(/parseBasicAuth|authorization/i);
+    expect(code("lib/auth.ts")).not.toContain("parseBasicAuth");
+  });
+
+  it("Vercel の上で設定が無ければ閉じる（開いたままにしない）", () => {
+    const proxy = source("proxy.ts");
+    expect(proxy).toContain('process.env.VERCEL === "1"');
+    expect(proxy).toContain("status: 503");
+  });
+
+  it("ログイン・ログアウトは、別のサイトからの送信を断る", () => {
+    for (const path of ["app/api/login/route.ts", "app/api/logout/route.ts"]) {
+      expect(source(path), path).toContain("isSameOriginPost(originInputOf(request))");
+    }
+  });
+
+  it("lib/auth.ts は画面からも読まれるので、秘密や node:crypto を入れない", () => {
+    const auth = code("lib/auth.ts");
+    expect(auth).not.toContain("node:crypto");
+    expect(auth).not.toContain("server-only");
+    expect(auth).not.toContain("process.env.APP_PASSWORD");
   });
 });

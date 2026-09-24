@@ -1,5 +1,6 @@
 /**
  * パスワード保護のセッション。純関数のみ (proxy.ts と /api/login から使う)。
+ * ★画面の部品（components/mode-nav.tsx）からも import されるので、秘密・node:crypto・server-only を入れない。
  *
  * HTTP Basic認証はブラウザ標準のダイアログを出すため、
  * パスワードマネージャーが保存・自動入力できず、ブラウザを閉じると資格情報も消える。
@@ -97,16 +98,34 @@ export function isValidCredentials(
   return userOk && passwordOk;
 }
 
-/** Basic認証ヘッダー (スクリプトからの利用・vercel curl 用に残している) */
-export function parseBasicAuth(header: string): { user: string; password: string } | null {
-  if (!header.startsWith("Basic ")) return null;
+/** 戻り先に使ってよい長さの上限 */
+const NEXT_PATH_MAX = 512;
+
+/**
+ * ログイン後の「戻り先」を、このアプリの中のパスだけに限る（外部サイトへ飛ばさない）。
+ * 使えないものはすべて "/" にする。
+ *
+ * ★`//evil.com` だけでなく、`/\evil.com`・`/\t/evil.com`（ブラウザはバックスラッシュをスラッシュと、
+ *   タブ・改行を無いものとして読む）や、`/.//evil.com`（読み直すと `//evil.com` になる）も弾く。
+ *   tests/auth.test.ts に抜け道の一覧がある。
+ */
+export function safeNextPath(raw: unknown): string {
+  if (typeof raw !== "string" || raw.length === 0 || raw.length > NEXT_PATH_MAX) return "/";
+  // 制御文字・バックスラッシュ・%5C（エンコードしたバックスラッシュ）は、それだけで断る
+  if (/[\u0000-\u001f\u007f\\]/.test(raw) || /%5c/i.test(raw)) return "/";
+  if (!raw.startsWith("/") || raw.startsWith("//")) return "/";
+  let url: URL;
   try {
-    const decoded = atob(header.slice(6));
-    const sep = decoded.indexOf(":");
-    if (sep <= 0) return null;
-    return { user: decoded.slice(0, sep), password: decoded.slice(sep + 1) };
+    url = new URL(raw, "http://folio.invalid");
   } catch {
-    // 不正なbase64は未認証として扱う
-    return null;
+    return "/";
   }
+  if (url.origin !== "http://folio.invalid") return "/";
+  // 読み直したあとに「//」で始まるもの（/.//evil.com・/%2e//evil.com など）も断る
+  if (url.pathname.startsWith("//")) return "/";
+  // ログインの画面・API へは戻さない（ぐるぐる回る・POST の口を GET で開く）
+  if (url.pathname === "/login" || url.pathname.startsWith("/api/")) return "/";
+  // Next の内部の目印は捨てる
+  url.searchParams.delete("_rsc");
+  return `${url.pathname}${url.search}`;
 }

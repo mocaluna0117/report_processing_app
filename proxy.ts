@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, parseBasicAuth, isValidCredentials, verifySessionToken } from "@/lib/auth";
+import { SESSION_COOKIE, safeNextPath, verifySessionToken } from "@/lib/auth";
 
 /**
  * 簡易パスワード保護。
@@ -9,11 +9,20 @@ import { SESSION_COOKIE, parseBasicAuth, isValidCredentials, verifySessionToken 
  * 認証はログインフォーム (/login) + 署名付きクッキー。
  * ブラウザ標準の Basic認証ダイアログはパスワードマネージャーが扱えず、
  * ブラウザを閉じると資格情報も消えてしまうため、通常のフォームにしている。
- * ただし Basic認証ヘッダーも受け付ける (スクリプトや vercel curl からの利用のため)。
+ * ★Basic認証ヘッダーは受け付けない（人ごとのアカウントに移すため。使っているところも無い）。
+ * ★Vercel の上で合言葉の設定が無いときは、開いたままにせず閉じる（fail closed）。
  */
 export async function proxy(request: NextRequest) {
   const password = process.env.APP_PASSWORD;
-  if (!password) return NextResponse.next();
+  if (!password) {
+    if (process.env.VERCEL === "1") {
+      return new NextResponse("Folio のログインの設定が足りないため、使えません（管理者へ連絡してください）", {
+        status: 503,
+        headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+    return NextResponse.next();
+  }
 
   const expectedUser = process.env.APP_USER || "user";
   const { pathname } = request.nextUrl;
@@ -27,11 +36,6 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const basic = parseBasicAuth(request.headers.get("authorization") ?? "");
-  if (basic && isValidCredentials(basic.user, basic.password, expectedUser, password)) {
-    return NextResponse.next();
-  }
-
   // APIは画面遷移できないので、リダイレクトではなく401で返す
   if (pathname.startsWith("/api/")) {
     return new NextResponse("認証が必要です", {
@@ -42,7 +46,7 @@ export async function proxy(request: NextRequest) {
 
   const login = new URL("/login", request.url);
   // ログイン後に元の画面へ戻す (パスだけを渡し、外部URLへは飛ばさない)
-  const next = `${pathname}${request.nextUrl.search}`;
+  const next = safeNextPath(`${pathname}${request.nextUrl.search}`);
   if (next !== "/") login.searchParams.set("next", next);
   const response = NextResponse.redirect(login);
   response.headers.set("Cache-Control", "no-store");
