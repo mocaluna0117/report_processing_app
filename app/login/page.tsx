@@ -75,7 +75,7 @@ export default async function LoginPage({
 
       <p className="mt-3 text-xs text-slate-500">{FORGOT_PASSWORD_TEXT}</p>
       <p className="mt-1 text-xs text-slate-400">
-        このブラウザではログインしたままになります (共有の端末では、使い終わったら画面右上の「Folio からログアウト」を押してください)。
+        このブラウザではログインしたままになります (共有の端末では、使い終わったら画面右上の人の形のアイコンから「Folio からログアウト」を押してください)。
       </p>
     </main>
   );

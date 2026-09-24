@@ -251,8 +251,10 @@ describe("Folio 自体のログアウト", () => {
 describe("★Folio からログアウトしたら・ログイン画面に来たら、このタブの楽楽精算のログインを消す（中身を読んで見張る）", () => {
   const nav = readFileSync("components/mode-nav.tsx", "utf8");
 
-  it("ログアウトのフォームを送る前に消す", () => {
-    const form = nav.slice(nav.indexOf('action="/api/logout"'));
+  it("ログアウトのフォームを送る前に消す（右上の人の形のアイコンのメニュー）", () => {
+    const menu = readFileSync("components/account-menu.tsx", "utf8");
+    const form = menu.slice(menu.indexOf('action="/api/logout"'));
+    expect(form.indexOf('action="/api/logout"')).toBe(0);
     expect(form.slice(0, form.indexOf("</form>"))).toContain("clearTabForAnotherPerson()");
   });
 

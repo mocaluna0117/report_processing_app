@@ -123,3 +123,37 @@ describe("★画面の作り（中身を読んで見張る）", () => {
     expect(read("app/account/page.tsx")).toContain('state.record.role === "admin" && !state.forced && <AccountAdmin');
   });
 });
+
+describe("右上の人の形のアイコンのメニュー", () => {
+  const read = (p: string) => readFileSync(resolve(__dirname, "..", p), "utf8");
+
+  it("名前とログインID、アカウントへの入口（管理者は管理も）を出す", async () => {
+    const { accountMenuView } = await import("@/lib/account/menu");
+    const member = { legacy: false as const, id: "kasou-hanako", name: "架空 花子", admin: false, mustChange: false };
+    expect(accountMenuView(member)).toEqual({
+      label: "アカウント（架空 花子）",
+      heading: "架空 花子",
+      sub: "ID: kasou-hanako",
+      accountLink: "アカウント（パスワードを変える）",
+    });
+    expect(accountMenuView({ ...member, admin: true })).toMatchObject({
+      sub: "ID: kasou-hanako・管理者",
+      accountLink: "アカウント（パスワード・管理）",
+    });
+  });
+
+  it("パスワードを決める前・前の合言葉のときは、アカウントへの入口を出さない（ログアウトだけ）", async () => {
+    const { accountMenuView } = await import("@/lib/account/menu");
+    expect(accountMenuView({ legacy: false, id: "kasou-x", name: "架空", admin: false, mustChange: true }).accountLink).toBeNull();
+    const legacy = accountMenuView({ legacy: true });
+    expect(legacy.accountLink).toBeNull();
+    expect(legacy.sub).toContain("自分のログインIDで入り直してください");
+  });
+
+  it("★アイコンは見出しと同じ行の右端に1つだけ（ヘッダーには置かない）", () => {
+    const layout = read("app/layout.tsx");
+    expect(layout.split("<AccountMenu />").length - 1).toBe(1);
+    expect(layout.indexOf("<AccountMenu />")).toBeGreaterThan(layout.indexOf("<ModeNav />"));
+    expect(read("components/mode-nav.tsx")).not.toContain('action="/api/logout"');
+  });
+});
