@@ -231,7 +231,7 @@ export function rakurakuChip(input: {
  */
 export const FOLIO_LOGOUT_LABEL = "Folio からログアウト";
 export const FOLIO_LOGOUT_TITLE =
-  "Folio 自体のログインを解除します（楽楽精算のログアウトは「楽楽精算」の表示から）。共有の端末では作業後に押してください";
+  "Folio 自体のログインを解除します。このタブの楽楽精算のログインも一緒に忘れます（楽楽精算だけログアウトするときは「楽楽精算」の表示から）。共有の端末では作業後に押してください";
 
 /** 押す前に知っておくこと。★「ロック」と「やり直しません」を落とさない */
 export const LOGIN_RULE_TEXT =

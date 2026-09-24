@@ -7,6 +7,7 @@ import { ContactDialog } from "@/components/contact-dialog";
 import { HelpDialog } from "@/components/help-dialog";
 import { RakurakuLoginDialog } from "@/components/rakuraku-login-dialog";
 import { SharedFolderDialog } from "@/components/shared-folder-dialog";
+import { clearTabForAnotherPerson } from "@/lib/account/sign-out";
 import { SIGNED_IN_COOKIE } from "@/lib/auth";
 import { CONTACT_BUTTON_ID, openContact, subscribeContact } from "@/lib/contact/dialog";
 import { HELP_SECTIONS } from "@/lib/help";
@@ -88,6 +89,12 @@ export function ModeNav() {
   }, []);
   const [loginOpen, setLoginOpen] = useState(false);
   useEffect(() => subscribeLoginDialog((s) => setLoginOpen(s.open)), []);
+
+  // ★ログイン画面に来たら（ログインが切れて移ってきたときも）、このタブの楽楽精算のログインを消す。
+  //   消さないと、次にログインした人に前の人の楽楽精算のログインが戻る
+  useEffect(() => {
+    if (pathname === "/login") clearTabForAnotherPerson();
+  }, [pathname]);
 
   /**
    * 共有フォルダー（Box など）のつながり。Folio 全体で1つ（lib/shared/connection.ts）。
@@ -218,7 +225,20 @@ export function ModeNav() {
         <>
           {/* ★楽楽精算のログアウトと取り違えないよう、間に区切りを入れて名前も分ける */}
           <span aria-hidden className="h-4 w-px shrink-0 bg-slate-300" />
-          <form method="post" action="/api/logout">
+          <form
+            method="post"
+            action="/api/logout"
+            onSubmit={(e) => {
+              // 処理中なら確かめる（画面を離れると、その分をやり直すことになる）
+              const guard = getNavigationGuard();
+              if (guard && !confirm(guard)) {
+                e.preventDefault();
+                return;
+              }
+              // ★このタブの楽楽精算のログインも忘れる（次にこの端末を使う人に残さない）
+              clearTabForAnotherPerson();
+            }}
+          >
             <button
               type="submit"
               title={FOLIO_LOGOUT_TITLE}

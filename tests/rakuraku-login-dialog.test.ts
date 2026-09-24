@@ -242,6 +242,31 @@ describe("Folio 自体のログアウト", () => {
   it("★楽楽精算側の文言とは別物（取り違えない）", () => {
     expect(FOLIO_LOGOUT_LABEL).not.toContain("パスワードを忘れる");
   });
+
+  it("★このタブの楽楽精算のログインも一緒に忘れることを書く", () => {
+    expect(FOLIO_LOGOUT_TITLE).toContain("このタブの楽楽精算のログインも一緒に忘れます");
+  });
+});
+
+describe("★Folio からログアウトしたら・ログイン画面に来たら、このタブの楽楽精算のログインを消す（中身を読んで見張る）", () => {
+  const nav = readFileSync("components/mode-nav.tsx", "utf8");
+
+  it("ログアウトのフォームを送る前に消す", () => {
+    const form = nav.slice(nav.indexOf('action="/api/logout"'));
+    expect(form.slice(0, form.indexOf("</form>"))).toContain("clearTabForAnotherPerson()");
+  });
+
+  it("★ログイン画面に移ってきたとき（読み込み直さない移動も）も消す。pathname を見る", () => {
+    expect(nav).toMatch(/if \(pathname === "\/login"\) clearTabForAnotherPerson\(\);\s*\}, \[pathname\]\);/);
+  });
+
+  it("消すのは、楽楽精算のログイン・閉じた印・問い合わせの下書き（ログインIDの覚えは消さない）", () => {
+    const signOut = readFileSync("lib/account/sign-out.ts", "utf8");
+    expect(signOut).toContain("forgetLogin();");
+    expect(signOut).toContain("clearLoginDismissal();");
+    expect(signOut).toContain("clearContactDraft();");
+    expect(signOut).not.toMatch(/clearUserId|saveUserId\(/);
+  });
 });
 
 describe("★ログインを勝手に呼ばない（画面のテスト基盤が無いので、中身を読んで見張る）", () => {

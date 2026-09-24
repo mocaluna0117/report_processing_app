@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { clearTabForAnotherPerson } from "@/lib/account/sign-out";
 import {
   LOGIN_STORAGE_KEY,
   forgetLogin,
@@ -153,5 +154,26 @@ describe("ログインに使ったID", () => {
     setLogin({ userId: "ID-1", password: "secret-pass", sessionToken: "sealed-1" });
     forgetLogin();
     expect(getLoginUserId()).toBeNull();
+  });
+});
+
+describe("★Folio からログアウトしたとき（次にこの端末を使う人に残さない）", () => {
+  it("このタブの楽楽精算のログインを消し、読み込み直しても戻らない", () => {
+    setLogin({ userId: "ID-1", password: "secret-pass", sessionToken: "sealed-1", expiresAt: Date.now() + 60_000 });
+    clearTabForAnotherPerson();
+    expect(getSessionToken()).toBeNull();
+    expect(getPassword()).toBeNull();
+    expect(storage.getItem(LOGIN_STORAGE_KEY)).toBeNull();
+    reload();
+    expect(restoreLogin()).toBe(false);
+  });
+
+  it("★ログイン画面で、前の人の控えを戻したあとに呼ばれても消える", () => {
+    setLogin({ sessionToken: "sealed-1", expiresAt: Date.now() + 60_000 });
+    reload();
+    expect(restoreLogin()).toBe(true);
+    clearTabForAnotherPerson();
+    expect(getSessionToken()).toBeNull();
+    expect(storage.getItem(LOGIN_STORAGE_KEY)).toBeNull();
   });
 });
