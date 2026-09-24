@@ -12,8 +12,7 @@ import { getNavigationGuard } from "@/lib/navigation-guard";
 
 /** ログインしている人の表示名（問い合わせのお名前に最初から入れる）。★表示にだけ使う */
 function signedInName(): string | null {
-  const marker = readSignedInCookie();
-  return marker && !marker.legacy ? marker.name : null;
+  return readSignedInCookie()?.name ?? null;
 }
 
 /** 「どの画面でも」タブの目印（HELP_SECTIONS の slug とはぶつからない） */

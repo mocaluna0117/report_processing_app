@@ -119,7 +119,7 @@ export function ModeNav() {
 
   // ★仮のパスワードで入った人は、パスワードを決めるまでほかの画面を使えないので、タブを出さない
   //   （ログアウトは右上の人の形のアイコンから）
-  if (signedIn && !signedIn.legacy && signedIn.mustChange) return null;
+  if (signedIn?.mustChange) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -164,7 +164,7 @@ export function ModeNav() {
       <button
         id={CONTACT_BUTTON_ID}
         type="button"
-        onClick={() => openContact({ page: pathname, name: signedIn && !signedIn.legacy ? signedIn.name : null })}
+        onClick={() => openContact({ page: pathname, name: signedIn?.name ?? null })}
         aria-haspopup="dialog"
         aria-pressed={contactOpen}
         className={

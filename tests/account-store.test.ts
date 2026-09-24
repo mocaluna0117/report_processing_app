@@ -60,17 +60,16 @@ describe("設定の読み方", () => {
     expect(readAuthConfig({ ...complete, KV_REST_API_URL: "http://kasou.invalid" }).kind).toBe("broken");
   });
 
-  it("そろっていれば accounts。旧合言葉は、受け付ける期限（FOLIO_LEGACY_UNTIL）があるときだけ", () => {
+  it("そろっていれば accounts。★前の合言葉（APP_PASSWORD・FOLIO_LEGACY_UNTIL）は、あっても使わない", () => {
     const config = readAuthConfig({ ...complete, APP_PASSWORD: "kasou-shared", FOLIO_LEGACY_UNTIL: "1800000000", FOLIO_BOOTSTRAP: " code " });
-    expect(config).toMatchObject({
+    expect(config).toEqual({
       kind: "accounts",
-      store: { kind: "redis", url: "https://kasou.upstash.invalid" },
-      legacy: { password: "kasou-shared", user: "user", untilSec: 1_800_000_000 },
+      store: { kind: "redis", url: "https://kasou.upstash.invalid", token: expect.any(String) },
+      secret: SECRET,
       bootstrap: "code",
     });
-    expect(readAuthConfig(complete)).toMatchObject({ kind: "accounts", legacy: null, bootstrap: null });
-    // ★期限が無ければ、前の合言葉があっても受け付けない
-    expect(readAuthConfig({ ...complete, APP_PASSWORD: "kasou-shared" })).toMatchObject({ legacy: null });
+    expect(JSON.stringify(config)).not.toContain("kasou-shared");
+    expect(readAuthConfig(complete)).toMatchObject({ kind: "accounts", bootstrap: null });
   });
 
   it("連携の名前が UPSTASH_REDIS_REST_* でも読む", () => {
@@ -135,12 +134,13 @@ describe("アカウントの読み書き", () => {
     const kv = createMemoryKv();
     const store = createAccountStore(kv);
     await store.create(record());
+    const [raw] = await kv.mget([KEYS.account("kasou-taro")]);
     let first = true;
     const result = await store.update("kasou-taro", (r) => {
       if (first) {
         first = false;
         // 読んだあとに、管理者が止めた（別の書き込み）
-        void kv.cas(KEYS.account("kasou-taro"), JSON.stringify(r), JSON.stringify({ ...r, disabled: true }));
+        void kv.cas(KEYS.account("kasou-taro"), raw, JSON.stringify({ ...r, disabled: true }));
       }
       return { ...r, name: "架空 太郎（改）" };
     });

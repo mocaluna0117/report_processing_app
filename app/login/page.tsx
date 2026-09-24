@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import {
   FORGOT_PASSWORD_TEXT,
+  LOGIN_ELSEWHERE_TEXT,
   LOGIN_EXPIRED_TEXT,
   LOGIN_LEAD_TEXT,
   SIGNED_OUT_TEXT,
@@ -27,7 +28,15 @@ export default async function LoginPage({
   const params = await searchParams;
   const next = safeNextPath(params.next);
   const error = loginErrorText(params.error);
-  const notice = error ? null : params.expired ? LOGIN_EXPIRED_TEXT : params["signed-out"] ? SIGNED_OUT_TEXT : null;
+  const notice = error
+    ? null
+    : params.expired === "elsewhere"
+      ? LOGIN_ELSEWHERE_TEXT
+      : params.expired
+        ? LOGIN_EXPIRED_TEXT
+        : params["signed-out"]
+          ? SIGNED_OUT_TEXT
+          : null;
 
   return (
     <main className="mx-auto flex min-h-[60vh] max-w-sm flex-col justify-center">

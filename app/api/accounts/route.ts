@@ -13,7 +13,7 @@ async function handle(request: NextRequest, method: "GET" | "POST") {
   if (config.kind !== "accounts") {
     return NextResponse.json({ ok: false, message: "この環境ではアカウントを使っていません" }, { status: 404 });
   }
-  const session = await sessionOf(request, config);
+  const session = sessionOf(request, config);
   let body: unknown = null;
   if (method === "POST") body = await request.json().catch(() => null);
   const result = await handleAccountsRequest(

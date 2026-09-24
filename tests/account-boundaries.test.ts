@@ -74,9 +74,30 @@ describe("画面とサーバーの境目", () => {
     expect(page).not.toContain("defaultValue");
   });
 
-  it("旧合言葉での新しいログインは受け付けない（v1 の印を作らない）", () => {
-    const users = [...walk("app"), ...walk("lib"), "proxy.ts"].filter((p) => /\.tsx?$/.test(p) && code(p).includes("createSessionToken("));
-    expect(users.map((p) => relative(ROOT, join(ROOT, p)))).toEqual(["lib/auth.ts"]);
+  it("★前の合言葉は、ログインにもクッキーにも使わない（APP_PASSWORD を読むのは、手元で閉じる判断だけ）", () => {
+    const users = [...walk("app"), ...walk("lib"), "proxy.ts"].filter(
+      (p) => /\.tsx?$/.test(p) && /createSessionToken|verifySessionToken|APP_USER|FOLIO_LEGACY_UNTIL/.test(code(p)),
+    );
+    expect(users).toEqual([]);
+    const readers = [...walk("app"), ...walk("lib"), "proxy.ts"].filter((p) => /\.tsx?$/.test(p) && code(p).includes("APP_PASSWORD"));
+    expect(readers.map((p) => relative(ROOT, join(ROOT, p)))).toEqual(["lib/account/config.ts"]);
+  });
+});
+
+describe("★ほかの端末でログインしたら、前の端末は読み込み直したときに切れる", () => {
+  it("proxy は画面の読み込み（Sec-Fetch-Dest: document）を門番に伝え、門番は確かめる回数を増やすのにだけ使う", () => {
+    const proxy = code("proxy.ts");
+    expect(proxy).toContain('request.headers.get("sec-fetch-dest") === "document"');
+    expect(proxy).toMatch(/decideAccess\(\s*\{[^}]*navigation[^}]*\}/);
+    const gate = code("lib/account/gate.ts");
+    expect(gate).toContain("const stale = input.navigation === true || nowSec - claims.chk >= RECHECK_SEC;");
+    expect(gate.match(/navigation/g)?.length).toBe(2);
+  });
+
+  it("ログインは、入れる前に版を進める（takeOver）", () => {
+    const login = code("lib/account/login.ts");
+    expect(login.indexOf("takeOver(deps.store, record")).toBeGreaterThan(-1);
+    expect(login.indexOf("takeOver(deps.store, record")).toBeLessThan(login.indexOf("return success(taken"));
   });
 });
 

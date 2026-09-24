@@ -1,30 +1,29 @@
 /**
- * パスワード保護のセッション。純関数のみ (proxy.ts と /api/login から使う)。
- * ★画面の部品（components/mode-nav.tsx）からも import されるので、秘密・node:crypto・server-only を入れない。
+ * ログインのクッキーの名前・表示用の印・戻り先の検査。純関数のみ。
+ * ★画面の部品（components/account-menu.tsx など）からも import されるので、秘密・node:crypto・server-only を入れない。
+ *   印の署名は lib/account/token.ts、読み書きは lib/account/session.ts。
  *
- * HTTP Basic認証はブラウザ標準のダイアログを出すため、
- * パスワードマネージャーが保存・自動入力できず、ブラウザを閉じると資格情報も消える。
- * そこで通常のログインフォーム + 署名付きの長期クッキーにする。
- *
- * 署名の鍵は APP_PASSWORD をそのまま使う (環境変数を増やさないため)。
- * パスワードを変えると、それまでのセッションはすべて無効になる。
+ * ★前の共通の合言葉（APP_PASSWORD）の印（v1）は、2026-09-25 に受け付けるのをやめた。
  */
 
-/** 署名付きのセッション (httpOnly。中身は有効期限と署名だけで、パスワードは入れない) */
+/** 署名付きのセッション (httpOnly。中身は ID・版・期限と署名だけで、パスワードは入れない) */
 export const SESSION_COOKIE = "folio_session";
 /**
- * ログイン中かどうかだけを表す印 (httpOnly ではない)。
- * 画面に「ログアウト」を出すかの判断に使う。認証には使わない。
+ * 誰がログインしているかを表す印 (httpOnly ではない)。
+ * 右上に名前を出すのに使う。認証には使わない。
  */
 export const SIGNED_IN_COOKIE = "folio_signed_in";
 
 /**
  * 表示用の印の中身（ヘッダーに名前を出す・管理の入口を出すため）。★認証には使わない（誰でも書き換えられる）。
- * 旧合言葉のときは値が "1" なので、それは legacy として読む。
+ * ★前の合言葉のときの値 "1" は、もう読まない（null）。「前の合言葉」とは出さない。
  */
-export type SignedInMarker =
-  | { legacy: true }
-  | { legacy: false; id: string; name: string; admin: boolean; mustChange: boolean };
+export interface SignedInMarker {
+  id: string;
+  name: string;
+  admin: boolean;
+  mustChange: boolean;
+}
 
 const utf8ToB64url = (text: string): string => {
   const bytes = new TextEncoder().encode(text);
@@ -45,13 +44,11 @@ export function encodeSignedInMarker(marker: { id: string; name: string; admin: 
 
 /** 読めなければ null（壊れた値・空）。★どんな値でも例外を出さない */
 export function readSignedInMarker(raw: string | null | undefined): SignedInMarker | null {
-  if (!raw) return null;
-  if (raw === "1") return { legacy: true };
-  if (raw.length > 512) return null;
+  if (!raw || raw.length > 512) return null;
   try {
     const v = JSON.parse(b64urlToUtf8(raw)) as Record<string, unknown>;
     if (typeof v.u !== "string" || typeof v.n !== "string") return null;
-    return { legacy: false, id: v.u, name: v.n.slice(0, 40), admin: v.a === 1, mustChange: v.m === 1 };
+    return { id: v.u, name: v.n.slice(0, 40), admin: v.a === 1, mustChange: v.m === 1 };
   } catch {
     return null;
   }
@@ -64,77 +61,6 @@ export function sessionMaxAgeSeconds(rawDays = process.env.APP_SESSION_DAYS): nu
   const days = Number(rawDays);
   const valid = Number.isFinite(days) && days > 0 && days <= 365 ? days : DEFAULT_SESSION_DAYS;
   return Math.floor(valid * 24 * 60 * 60);
-}
-
-const encoder = new TextEncoder();
-
-const toBase64Url = (bytes: ArrayBuffer): string =>
-  btoa(String.fromCharCode(...new Uint8Array(bytes)))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-
-async function sign(payload: string, secret: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  return toBase64Url(await crypto.subtle.sign("HMAC", key, encoder.encode(payload)));
-}
-
-/** 長さが違っても早く返さない比較 (パスワード・署名の照合用) */
-export function safeEqual(a: string, b: string): boolean {
-  const len = Math.max(a.length, b.length);
-  let diff = a.length ^ b.length;
-  for (let i = 0; i < len; i += 1) {
-    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
-  }
-  return diff === 0;
-}
-
-/**
- * セッションの値を作る。形式は `v1.<有効期限(秒)>.<署名>`。
- * 中身を見てもパスワードは分からず、署名が合わなければ弾ける。
- */
-export async function createSessionToken(
-  user: string,
-  password: string,
-  maxAgeSeconds: number,
-  now: number = Date.now(),
-): Promise<string> {
-  const exp = Math.floor(now / 1000) + maxAgeSeconds;
-  return `v1.${exp}.${await sign(`${user}:${exp}`, password)}`;
-}
-
-/** セッションの値が正しく、期限内かを見る */
-export async function verifySessionToken(
-  token: string | undefined,
-  user: string,
-  password: string,
-  now: number = Date.now(),
-): Promise<boolean> {
-  if (!token) return false;
-  const parts = token.split(".");
-  if (parts.length !== 3 || parts[0] !== "v1") return false;
-  const exp = Number(parts[1]);
-  if (!Number.isFinite(exp) || exp * 1000 <= now) return false;
-  return safeEqual(parts[2], await sign(`${user}:${exp}`, password));
-}
-
-/** ログインフォームから受け取った資格情報を照合する */
-export function isValidCredentials(
-  user: string,
-  password: string,
-  expectedUser: string,
-  expectedPassword: string,
-): boolean {
-  // どちらか一方だけ先に返さないよう、両方を必ず比較する
-  const userOk = safeEqual(user, expectedUser);
-  const passwordOk = safeEqual(password, expectedPassword);
-  return userOk && passwordOk;
 }
 
 /** 戻り先に使ってよい長さの上限 */

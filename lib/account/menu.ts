@@ -17,15 +17,6 @@ export interface AccountMenuView {
 }
 
 export function accountMenuView(marker: SignedInMarker): AccountMenuView {
-  if (marker.legacy) {
-    return {
-      label: "ログイン中（前の共通の合言葉）",
-      short: "前の合言葉",
-      heading: "前の共通の合言葉でログインしています",
-      sub: "管理者から受け取った自分のログインIDで入り直してください",
-      accountLink: null,
-    };
-  }
   return {
     label: `アカウント（${marker.name}）`,
     short: marker.name,

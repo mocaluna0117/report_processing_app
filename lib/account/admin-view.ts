@@ -42,7 +42,7 @@ export function adminConfirmText(action: "reset" | "disable" | "delete", account
     case "reset":
       return `${who}に新しい仮のパスワードを発行します。\n今のパスワードとログインは使えなくなります。よろしいですか？`;
     case "disable":
-      return `${who}を止めます。\n5分以内にログインが切れ、入れなくなります（あとで再開できます）。よろしいですか？`;
+      return `${who}を止めます。\n次に画面を開いたとき（遅くとも5分以内）にログインが切れ、入れなくなります（あとで再開できます）。よろしいですか？`;
     case "delete":
       return `${who}を消します。\n元に戻せません（同じIDで作り直すことはできます）。よろしいですか？`;
   }

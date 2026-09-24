@@ -33,11 +33,6 @@ export default async function AccountPage({
           この環境では、一人ずつのアカウントを使っていません（手元の開発）。
         </p>
       )}
-      {state.kind === "legacy" && (
-        <p className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-          いまは、前の共通の合言葉でログインしています。管理者から受け取った自分のログインIDで入り直してください（右上の「Folio からログアウト」を押してから）。
-        </p>
-      )}
       {state.kind === "expired" && (
         <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
           ログインが切れました。
@@ -79,7 +74,7 @@ export default async function AccountPage({
             <PasswordForm loginId={state.record.id} forced={state.forced} next={safeNextPath(next)} />
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            変えると、ほかの端末でログインしていた分は5分ほどで切れます。忘れたときは、管理者に仮のパスワードを発行してもらってください。
+            忘れたときは、管理者に仮のパスワードを発行してもらってください。1つのアカウントでログインできる端末は1つです（ほかの端末でログインすると、この端末は次に画面を開いたときにログアウトになります）。
           </p>
           {/* ★表示名は、パスワードを決めたあとに変えられる */}
           {!state.forced && (

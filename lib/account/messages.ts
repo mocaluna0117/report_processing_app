@@ -35,16 +35,20 @@ export function loginErrorText(code: string | null | undefined): string | null {
 }
 
 export const LOGIN_EXPIRED_TEXT = "ログインが切れました。もう一度ログインしてください。";
+/**
+ * ほかの端末で同じアカウントにログインがあったので、この端末が切れたとき（1つのアカウントで使える端末は1つ）
+ */
+export const LOGIN_ELSEWHERE_TEXT =
+  "同じアカウントで、ほかの端末からログインがあったため、この端末はログアウトしました。ここで続けるときは、もう一度ログインしてください（ほかの端末がログアウトになります）。心当たりが無いときは、ログインしてパスワードを変えてください。";
 export const SIGNED_OUT_TEXT = "ログアウトしました。";
 export const LOGIN_LEAD_TEXT = "顧客情報を扱うため、一人ずつのアカウントで保護しています。";
 export const FORGOT_PASSWORD_TEXT =
   "パスワードを忘れたときは、管理者に仮のパスワードを発行してもらってください。";
 
 /** パスワードを変えたあとの文 */
-export const PASSWORD_CHANGED_TEXT =
-  "パスワードを変えました。ほかの端末でログインしていた分は、5分ほどで切れます。";
+export const PASSWORD_CHANGED_TEXT = "パスワードを変えました。";
 /** 表示名を変えたあとの文 */
-export const NAME_CHANGED_TEXT = "表示名を変えました。ほかの端末の右上は、5分ほどで変わります。";
+export const NAME_CHANGED_TEXT = "表示名を変えました。";
 /** 仮のパスワードで入ったときの先頭の文 */
 export const MUST_CHANGE_TEXT =
   "仮のパスワードでログインしました。続けて使うには、自分のパスワードを決めてください。";

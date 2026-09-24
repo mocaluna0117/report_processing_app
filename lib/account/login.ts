@@ -11,6 +11,8 @@ import "server-only";
  *    正しく入れたら ID の分は数え直し、場所（IP）の分は1つ戻す（同じ事務所の人の失敗が積もって、全員が止まらないように）
  * 5. scrypt で照合（ID が無くてもダミーで計算する。時間の差で ID の有無を悟らせない）
  * 6. 最初の管理者のコードも確かめる（★ID に関わらず同じだけ計算する。時間の差で管理者の ID を悟らせない）
+ * 7. ★入れたら、そのアカウントの版（sv）を今に変える。1つのアカウントで使える端末は1つ。
+ *    前にログインしていたほかの端末は、次に画面を読み込んだときにログイン画面になる（lib/account/gate.ts）
  *
  * ★違ったときは「ログインIDかパスワードが違います」だけ（ID の有無・停止中を言い分けない）。
  *   停止中・仮のパスワードの期限切れは、パスワードが合っていたときだけ言う。
@@ -25,7 +27,7 @@ import { createHash } from "node:crypto";
 import { canonicalTemp, dummyHash, type ScryptParams, verifyPassword } from "@/lib/account/password";
 import { PASSWORD_MAX, normalizeLoginId, normalizePassword } from "@/lib/account/policy";
 import type { KeyedLimiter } from "@/lib/account/rate-limit";
-import type { AccountRecord } from "@/lib/account/record";
+import { type AccountRecord, nextVersion } from "@/lib/account/record";
 import { type CookieSpec, MUST_CHANGE_MAX_SEC, issueSession } from "@/lib/account/session";
 import { type AccountStore, FAIL_MAX_ID, FAIL_MAX_IP, KEYS } from "@/lib/account/store";
 import { keyedHash } from "@/lib/account/token";
@@ -124,13 +126,33 @@ export async function handleLogin(input: LoginInput, deps: LoginDeps): Promise<L
     if (record.mustChange && (record.tempExpiresAt === null || record.tempExpiresAt <= input.nowMs)) {
       return fail("temp-expired", next);
     }
+    const taken = await takeOver(deps.store, record, input.nowMs);
+    if (taken === "busy") return fail("unavailable", next);
+    if (!taken) return fail("1", next);
     await deps.store.clearFailures(failIdKey);
     await deps.store.releaseAttempt(failIpKey);
-    return success(record, input, next, nowSec);
+    return success(taken, input, next, nowSec);
   } catch (e) {
     if (e instanceof StoreUnavailableError) return fail("unavailable", next);
     throw e;
   }
+}
+
+/**
+ * このログインを、そのアカウントのただ1つのログインにする（版を変えて、ほかの端末の印を合わなくする）。
+ * ★照合したときのパスワードのまま・止められていないときだけ書く（その間に管理者が止めた・仮のパスワードを
+ *   発行し直したなら入れない）。書けなければ null（競り合いが続いたときは "busy"）。
+ */
+async function takeOver(store: AccountStore, record: AccountRecord, nowMs: number): Promise<AccountRecord | null | "busy"> {
+  let changed = false;
+  const result = await store.update(record.id, (current) => {
+    changed = current.hash === record.hash && !current.disabled && current.mustChange === record.mustChange;
+    if (!changed) return null;
+    const sv = nextVersion(current, nowMs);
+    return { ...current, sv, loginAt: sv };
+  });
+  if (!result.ok) return result.reason === "conflict" ? "busy" : null;
+  return changed ? result.record : null;
 }
 
 function success(record: AccountRecord, input: LoginInput, next: string, nowSec: number): LoginResult {
@@ -161,19 +183,23 @@ async function consumeBootstrap(input: LoginInput, deps: LoginDeps, boot: Bootst
   if (!(await deps.store.markBootstrapUsed(usedKey, remainingSec + 24 * 60 * 60))) return null;
   const now = input.nowMs;
   try {
-    const admin = await deps.store.upsert(id, (current) => ({
-      v: 1,
-      id,
-      name: boot.name ?? current?.name ?? "管理者",
-      role: "admin",
-      hash: boot.hash,
-      mustChange: true,
-      tempExpiresAt: now + MUST_CHANGE_MAX_SEC * 1000,
-      disabled: false,
-      sv: now,
-      createdAt: current?.createdAt ?? now,
-      passwordChangedAt: current?.passwordChangedAt ?? null,
-    }));
+    const admin = await deps.store.upsert(id, (current) => {
+      const sv = nextVersion(current, now);
+      return {
+        v: 1,
+        id,
+        name: boot.name ?? current?.name ?? "管理者",
+        role: "admin",
+        hash: boot.hash,
+        mustChange: true,
+        tempExpiresAt: now + MUST_CHANGE_MAX_SEC * 1000,
+        disabled: false,
+        sv,
+        createdAt: current?.createdAt ?? now,
+        passwordChangedAt: current?.passwordChangedAt ?? null,
+        loginAt: sv,
+      };
+    });
     if (!admin) await deps.store.unmarkBootstrap(usedKey).catch(() => undefined);
     return admin;
   } catch (e) {

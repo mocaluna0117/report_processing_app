@@ -13,7 +13,7 @@ import {
   normalizeLoginId,
   passwordProblems,
 } from "@/lib/account/policy";
-import { parseAccountRecord, summarizeAccount } from "@/lib/account/record";
+import { nextVersion, parseAccountRecord, replacedByLogin, sessionRevoked, summarizeAccount } from "@/lib/account/record";
 import { type SessionClaims, keyedHash, signSession, verifySession } from "@/lib/account/token";
 import { encodeSignedInMarker, readSignedInMarker } from "@/lib/auth";
 
@@ -164,13 +164,30 @@ describe("Redis に置くアカウントの検査", () => {
     passwordChangedAt: null,
   };
 
-  it("正しい形だけを受け付ける（文字列の JSON でも）", () => {
-    expect(parseAccountRecord(good)).toEqual(good);
-    expect(parseAccountRecord(JSON.stringify(good))).toEqual(good);
+  it("正しい形だけを受け付ける（文字列の JSON でも）。最後のログインの時刻が無い前のアカウントも読める", () => {
+    expect(parseAccountRecord(good)).toEqual({ ...good, loginAt: null });
+    expect(parseAccountRecord(JSON.stringify(good))).toEqual({ ...good, loginAt: null });
+    expect(parseAccountRecord({ ...good, loginAt: good.sv })).toEqual({ ...good, loginAt: good.sv });
+  });
+
+  it("★版は増えるだけ（時計が戻っても）。印の版のほうが新しいのは、読みが遅れているだけ", () => {
+    expect(nextVersion(null, 1000)).toBe(1000);
+    expect(nextVersion({ sv: 500 }, 1000)).toBe(1000);
+    expect(nextVersion({ sv: 5000 }, 1000)).toBe(5001);
+    const record = parseAccountRecord({ ...good, mustChange: false, loginAt: good.sv })!;
+    expect(sessionRevoked(record, good.sv)).toBe(false);
+    expect(sessionRevoked(record, good.sv + 1)).toBe(false);
+    expect(sessionRevoked(record, good.sv - 1)).toBe(true);
+    expect(sessionRevoked({ ...record, disabled: true }, good.sv)).toBe(true);
+    expect(sessionRevoked(null, good.sv)).toBe(true);
+    // 最後に版を進めたのがログインなら「ほかの端末でログインした」
+    expect(replacedByLogin(record)).toBe(true);
+    expect(replacedByLogin({ ...record, loginAt: good.sv - 1 })).toBe(false);
+    expect(replacedByLogin({ ...record, loginAt: null })).toBe(false);
   });
 
   it("★おかしなものは受け付けない（Redis の中身を信じない）", () => {
-    for (const over of [{ v: 2 }, { id: "X" }, { role: "owner" }, { hash: "plain" }, { sv: -1 }, { disabled: "no" }]) {
+    for (const over of [{ v: 2 }, { id: "X" }, { role: "owner" }, { hash: "plain" }, { sv: -1 }, { disabled: "no" }, { loginAt: "x" }]) {
       expect(parseAccountRecord({ ...good, ...over })).toBeNull();
     }
     expect(parseAccountRecord("{not json")).toBeNull();
@@ -188,7 +205,6 @@ describe("表示用の印（ヘッダー）", () => {
     const raw = encodeSignedInMarker({ id: "kasou-taro", name: "架空 太郎", admin: true, mustChange: false });
     expect(raw).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(readSignedInMarker(raw)).toEqual({
-      legacy: false,
       id: "kasou-taro",
       name: "架空 太郎",
       admin: true,
@@ -196,9 +212,8 @@ describe("表示用の印（ヘッダー）", () => {
     });
   });
 
-  it("旧合言葉の \"1\" は legacy、壊れた値は null（例外を出さない）", () => {
-    expect(readSignedInMarker("1")).toEqual({ legacy: true });
-    for (const raw of [undefined, null, "", "!!!", "e30", "x".repeat(600)]) {
+  it("★前の合言葉の \"1\" も、壊れた値も null（「前の合言葉」とは出さない。例外を出さない）", () => {
+    for (const raw of ["1", "MQ", "bnVsbA", undefined, null, "", "!!!", "e30", "x".repeat(600)]) {
       expect(readSignedInMarker(raw)).toBeNull();
     }
   });

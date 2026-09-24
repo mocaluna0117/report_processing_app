@@ -11,8 +11,8 @@ import { SESSION_COOKIE } from "@/lib/auth";
  * ★一人ずつのアカウント（2026-09-24）。判断は lib/account/gate.ts（純関数）にまとめてあり、ここは薄く呼ぶだけ。
  *   - 手元の開発で FOLIO_ACCOUNTS が無ければ全部通す（今までどおり）
  *   - Vercel の上で設定が足りなければ、開いたままにせず 503 にする（fail closed）
- *   - 旧合言葉のクッキーは、APP_PASSWORD が残っている間だけ通す（切り替えの間、1人目が使い続けられるように）
- * ★Basic 認証のヘッダーは受け付けない。
+ *   - 画面を開いた・読み込み直したときは、毎回 Redis で確かめる（ほかの端末でログインしたら、前の端末はここで切れる）
+ * ★前の共通の合言葉のクッキー・Basic 認証のヘッダーは受け付けない。
  */
 export async function proxy(request: NextRequest) {
   const config = currentAuthConfig();
@@ -22,11 +22,15 @@ export async function proxy(request: NextRequest) {
 
   const session: SessionState =
     config.kind === "accounts"
-      ? await readSession(request.cookies.get(SESSION_COOKIE)?.value, config, nowSec)
+      ? readSession(request.cookies.get(SESSION_COOKIE)?.value, config, nowSec)
       : { kind: "none", hadToken: false };
 
+  // ★画面そのものの読み込み（開いた・読み込み直した）。確かめる回数を増やすのにだけ使う（省くのには使わない）
+  const navigation =
+    request.headers.get("sec-fetch-dest") === "document" || request.headers.get("sec-fetch-mode") === "navigate";
+
   const decision = await decideAccess(
-    { config, pathname, search, session, nowSec },
+    { config, pathname, search, session, nowSec, navigation },
     async (id) => {
       if (config.kind !== "accounts") return null;
       try {

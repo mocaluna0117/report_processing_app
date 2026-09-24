@@ -15,7 +15,8 @@ const limiter = createKeyedLimiter({ windowMs: 60_000, max: 20 });
 /**
  * ログインフォームの送信先（一人ずつのアカウント。lib/account/login.ts）。
  * 画面遷移を伴う POST → 303 にすることで、ブラウザの「パスワードを保存しますか」が出るようにしている。
- * ★旧合言葉（APP_PASSWORD）での新しいログインは受け付けない（今ある旧合言葉のクッキーは、しばらく通す）。
+ * ★前の共通の合言葉（APP_PASSWORD）は、ログインにもクッキーにも使わない（2026-09-25 にやめた）。
+ * ★入れたら、ほかの端末のログインは切れる（lib/account/login.ts。1つのアカウントで使える端末は1つ）。
  */
 export async function POST(request: NextRequest) {
   const config = currentAuthConfig();

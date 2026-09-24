@@ -12,7 +12,7 @@ import { StoreUnavailableError } from "@/lib/account/kv";
 import { type OriginInput, isSameOriginPost } from "@/lib/account/origin";
 import { canonicalTemp, generateTempPassword, hashPassword, type ScryptParams } from "@/lib/account/password";
 import { displayNameProblem, loginIdProblem, normalizeLoginId } from "@/lib/account/policy";
-import { type AccountRecord, type AccountSummary, summarizeAccount } from "@/lib/account/record";
+import { type AccountRecord, type AccountSummary, nextVersion, sessionRevoked, summarizeAccount } from "@/lib/account/record";
 import { ACCOUNT_LIMIT, type AccountStore, KEYS } from "@/lib/account/store";
 import { type SessionClaims, keyedHash } from "@/lib/account/token";
 
@@ -95,7 +95,7 @@ export async function handleAccountsRequest(
   const { store } = deps;
   try {
     const me = await store.get(claims.u);
-    if (!me || me.disabled || me.sv !== claims.sv) return reply(401, { ok: false, message: "ログインし直してください" });
+    if (!me || sessionRevoked(me, claims.sv)) return reply(401, { ok: false, message: "ログインし直してください" });
     if (me.role !== "admin") return reply(403, { ok: false, message: "管理者だけが使えます" });
     if (input.method === "GET") return reply(200, { ok: true, message: "", accounts: await listAll(store) });
 
@@ -139,7 +139,7 @@ export async function handleAccountsRequest(
     }
 
     if (plan.action === "rename") {
-      // ★表示名だけを変える（版は変えないので、その人のログインは切れない。右上は5分以内に変わる）
+      // ★表示名だけを変える（版は変えないので、その人のログインは切れない。右上は次に画面を開いたときに変わる）
       const renamed = await store.update(plan.id, (r) => (r.name === plan.name ? null : { ...r, name: plan.name }));
       if (!renamed.ok) {
         return reply(renamed.reason === "missing" ? 404 : 409, {
@@ -149,7 +149,7 @@ export async function handleAccountsRequest(
       }
       return reply(200, {
         ok: true,
-        message: `${plan.id} の表示名を「${plan.name}」にしました（本人の右上は5分以内に変わります）`,
+        message: `${plan.id} の表示名を「${plan.name}」にしました（本人の右上は、次に画面を開いたときに変わります）`,
         accounts: await listAll(store),
       });
     }
@@ -157,8 +157,10 @@ export async function handleAccountsRequest(
     let temp: string | undefined;
     const hash = plan.action === "reset" ? await hashPassword(canonicalTemp((temp = generateTempPassword())), deps.scrypt) : null;
     const updated = await store.update(plan.id, (r) => {
-      if (plan.action === "reset") return { ...r, hash: hash as string, mustChange: true, tempExpiresAt: now + TEMP_VALID_MS, sv: now };
-      if (plan.action === "disable") return r.disabled ? null : { ...r, disabled: true, sv: now };
+      if (plan.action === "reset") {
+        return { ...r, hash: hash as string, mustChange: true, tempExpiresAt: now + TEMP_VALID_MS, sv: nextVersion(r, now) };
+      }
+      if (plan.action === "disable") return r.disabled ? null : { ...r, disabled: true, sv: nextVersion(r, now) };
       return r.disabled ? { ...r, disabled: false } : null;
     });
     if (!updated.ok) {
@@ -180,7 +182,7 @@ export async function handleAccountsRequest(
     }
     return reply(200, {
       ok: true,
-      message: plan.action === "disable" ? `${plan.id} を止めました（5分以内にログインが切れます）` : `${plan.id} を使えるようにしました`,
+      message: plan.action === "disable" ? `${plan.id} を止めました（次に画面を開いたとき、遅くとも5分以内にログインが切れます）` : `${plan.id} を使えるようにしました`,
       accounts: await listAll(store),
     });
   } catch (e) {

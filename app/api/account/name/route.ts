@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   const config = currentAuthConfig();
   if (config.kind !== "accounts") return redirectWith(request, "/account");
-  const session = await sessionOf(request, config);
+  const session = sessionOf(request, config);
   let form: FormData;
   try {
     form = await request.formData();

@@ -6,15 +6,13 @@ import "server-only";
  */
 import type { AuthConfig } from "@/lib/account/config";
 import { StoreUnavailableError } from "@/lib/account/kv";
-import type { AccountRecord } from "@/lib/account/record";
+import { type AccountRecord, sessionRevoked } from "@/lib/account/record";
 import { readSession } from "@/lib/account/session";
 import type { AccountStore } from "@/lib/account/store";
 
 export type AccountPageState =
   /** 手元の開発で、アカウントを使っていない */
   | { kind: "off" }
-  /** 旧合言葉で入っている（切り替えの前後） */
-  | { kind: "legacy"; switched: boolean }
   /** 入り直しが要る */
   | { kind: "expired" }
   | { kind: "unavailable" }
@@ -28,12 +26,11 @@ export async function accountPageState(
 ): Promise<AccountPageState> {
   if (config.kind === "off") return { kind: "off" };
   if (config.kind === "broken") return { kind: "unavailable" };
-  const session = await readSession(token, config, nowSec);
-  if (session.kind === "legacy") return { kind: "legacy", switched: true };
+  const session = readSession(token, config, nowSec);
   if (session.kind === "none") return { kind: "expired" };
   try {
     const record = await store(config).get(session.claims.u);
-    if (!record || record.disabled || record.sv !== session.claims.sv) return { kind: "expired" };
+    if (!record || sessionRevoked(record, session.claims.sv)) return { kind: "expired" };
     return { kind: "account", record, forced: session.claims.mc === 1 };
   } catch (e) {
     if (e instanceof StoreUnavailableError) return { kind: "unavailable" };

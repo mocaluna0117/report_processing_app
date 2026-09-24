@@ -16,7 +16,7 @@ const limiter = createKeyedLimiter({ windowMs: 60_000, max: 10 });
 export async function POST(request: NextRequest) {
   const config = currentAuthConfig();
   if (config.kind !== "accounts") return redirectWith(request, "/account");
-  const session = await sessionOf(request, config);
+  const session = sessionOf(request, config);
   let form: FormData;
   try {
     form = await request.formData();

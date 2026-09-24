@@ -14,11 +14,6 @@ export type AuthConfig =
       kind: "accounts";
       store: { kind: "redis"; url: string; token: string } | { kind: "file"; path: string };
       secret: string;
-      /**
-       * 旧合言葉のクッキー（v1）を受け付ける間だけ入る。
-       * ★APP_PASSWORD と、受け付ける期限 FOLIO_LEGACY_UNTIL（秒）の両方があるときだけ。期限を過ぎたら自動で止まる
-       */
-      legacy: { password: string; user: string; untilSec: number } | null;
       /** 最初の管理者のコード（使い終わったら env から消す） */
       bootstrap: string | null;
     };
@@ -63,16 +58,6 @@ export function readAuthConfig(env: Env): AuthConfig {
   }
   if (missing.length > 0 || !store) return { kind: "broken", missing };
 
-  const legacyPassword = env.APP_PASSWORD ?? "";
-  const legacyUntil = Number(env.FOLIO_LEGACY_UNTIL ?? "");
-  return {
-    kind: "accounts",
-    store,
-    secret,
-    legacy:
-      legacyPassword && Number.isSafeInteger(legacyUntil) && legacyUntil > 0
-        ? { password: legacyPassword, user: env.APP_USER || "user", untilSec: legacyUntil }
-        : null,
-    bootstrap: env.FOLIO_BOOTSTRAP?.trim() || null,
-  };
+  // ★前の共通の合言葉（APP_PASSWORD・APP_USER・FOLIO_LEGACY_UNTIL）は、あっても使わない（2026-09-25 にやめた）
+  return { kind: "accounts", store, secret, bootstrap: env.FOLIO_BOOTSTRAP?.trim() || null };
 }

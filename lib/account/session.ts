@@ -10,41 +10,29 @@ import {
   SIGNED_IN_COOKIE,
   encodeSignedInMarker,
   sessionMaxAgeSeconds,
-  verifySessionToken,
 } from "@/lib/auth";
 
-/** 前に確かめてから、この秒数たったら Redis で確かめ直す（止めた・パスワードを変えたのが届くまで） */
+/**
+ * 前に確かめてから、この秒数たったら Redis で確かめ直す（止めた・パスワードを変えた・ほかの端末でログインしたのが届くまで）。
+ * ★画面を開いた・読み込み直したときは、これを待たずに毎回確かめる（lib/account/gate.ts）
+ */
 export const RECHECK_SEC = 5 * 60;
 /** Redis が落ちているとき、前に確かめてからこの秒数までは通す */
 export const OUTAGE_GRACE_SEC = 12 * 60 * 60;
 /** 仮のパスワードで入ったときの印の長さ（パスワードを決めるまで） */
 export const MUST_CHANGE_MAX_SEC = 12 * 60 * 60;
 
-export type SessionState =
-  | { kind: "none"; hadToken: boolean }
-  /** 旧合言葉のクッキー（APP_PASSWORD がある間だけ） */
-  | { kind: "legacy" }
-  | { kind: "account"; claims: SessionClaims };
+export type SessionState = { kind: "none"; hadToken: boolean } | { kind: "account"; claims: SessionClaims };
 
 type AccountsConfig = Extract<AuthConfig, { kind: "accounts" }>;
 
-export async function readSession(token: string | undefined, config: AccountsConfig, nowSec: number): Promise<SessionState> {
+/**
+ * ★前の共通の合言葉の印（v1.…）は、2026-09-25 に受け付けるのをやめた。持っている端末は「切れた」扱いでログイン画面へ。
+ */
+export function readSession(token: string | undefined, config: AccountsConfig, nowSec: number): SessionState {
   if (!token) return { kind: "none", hadToken: false };
-  if (token.startsWith("v2.")) {
-    const claims = verifySession(token, config.secret, nowSec);
-    return claims ? { kind: "account", claims } : { kind: "none", hadToken: true };
-  }
-  if (token.startsWith("v1.") && config.legacy && nowSec < config.legacy.untilSec) {
-    // ★前の合言葉を知っていれば、期限を好きに書いた印を作れてしまう。
-    //   受け付けるのは FOLIO_LEGACY_UNTIL（切り替えから7日）まで、かつ切り替えの前に出せた長さの期限だけ
-    const exp = Number(token.split(".")[1]);
-    if (!Number.isFinite(exp) || exp > Math.min(nowSec + sessionMaxAgeSeconds(), config.legacy.untilSec + sessionMaxAgeSeconds()) + 60) {
-      return { kind: "none", hadToken: true };
-    }
-    const ok = await verifySessionToken(token, config.legacy.user, config.legacy.password, nowSec * 1000);
-    if (ok) return { kind: "legacy" };
-  }
-  return { kind: "none", hadToken: true };
+  const claims = token.startsWith("v2.") ? verifySession(token, config.secret, nowSec) : null;
+  return claims ? { kind: "account", claims } : { kind: "none", hadToken: true };
 }
 
 export interface CookieSpec {

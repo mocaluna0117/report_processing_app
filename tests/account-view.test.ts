@@ -38,7 +38,7 @@ describe("管理の欄の文", () => {
 
   it("★押す前の確認に、誰に何が起きるかを書く", () => {
     expect(adminConfirmText("reset", summary())).toContain("今のパスワードとログインは使えなくなります");
-    expect(adminConfirmText("disable", summary())).toContain("5分以内にログインが切れ");
+    expect(adminConfirmText("disable", summary())).toContain("次に画面を開いたとき（遅くとも5分以内）にログインが切れ");
     expect(adminConfirmText("delete", summary())).toContain("元に戻せません");
     expect(adminConfirmText("delete", summary())).toContain("「架空 太郎」（kasou-taro）");
   });
@@ -72,7 +72,6 @@ describe("/account の画面の状態", () => {
     kind: "accounts",
     store: { kind: "file", path: "/dev/null" },
     secret: SECRET,
-    legacy: null,
     bootstrap: null,
   };
   const record: AccountRecord = {
@@ -91,13 +90,16 @@ describe("/account の画面の状態", () => {
   const nowSec = Math.floor(Date.now() / 1000);
   const token = (sv = 5, mc: 0 | 1 = 0) => signSession({ u: "kasou-taro", sv, mc, chk: nowSec, exp: nowSec + 3600 }, SECRET);
 
-  it("本人の今の状態を Redis で確かめる（版が違う・止めた・無いなら、入り直し）", async () => {
+  it("本人の今の状態を Redis で確かめる（版が進んだ・止めた・無いなら、入り直し）", async () => {
     const store = createAccountStore(createMemoryKv());
     await store.create(record);
     const of = () => store;
     expect(await accountPageState(config, token(), of, nowSec)).toMatchObject({ kind: "account", forced: false });
     expect(await accountPageState(config, token(5, 1), of, nowSec)).toMatchObject({ kind: "account", forced: true });
-    expect(await accountPageState(config, token(6), of, nowSec)).toEqual({ kind: "expired" });
+    // ほかの端末でログインした・パスワードを変えた（置き場所の版が進んだ）
+    expect(await accountPageState(config, token(4), of, nowSec)).toEqual({ kind: "expired" });
+    // ★印の版のほうが新しいのは、置き場所の読みが遅れているだけ（ログインした直後に切れたと出さない）
+    expect(await accountPageState(config, token(6), of, nowSec)).toMatchObject({ kind: "account" });
     expect(await accountPageState(config, undefined, of, nowSec)).toEqual({ kind: "expired" });
     expect(await accountPageState({ kind: "off" }, undefined, of, nowSec)).toEqual({ kind: "off" });
   });
@@ -137,7 +139,7 @@ describe("右上の人の形のアイコンのメニュー", () => {
 
   it("名前とログインID、アカウントへの入口（管理者は管理も）を出す", async () => {
     const { accountMenuView } = await import("@/lib/account/menu");
-    const member = { legacy: false as const, id: "kasou-hanako", name: "架空 花子", admin: false, mustChange: false };
+    const member = { id: "kasou-hanako", name: "架空 花子", admin: false, mustChange: false };
     expect(accountMenuView(member)).toEqual({
       label: "アカウント（架空 花子）",
       short: "架空 花子",
@@ -151,13 +153,16 @@ describe("右上の人の形のアイコンのメニュー", () => {
     });
   });
 
-  it("パスワードを決める前・前の合言葉のときは、アカウントへの入口を出さない（ログアウトだけ）", async () => {
+  it("パスワードを決める前は、アカウントへの入口を出さない（ログアウトだけ）", async () => {
     const { accountMenuView } = await import("@/lib/account/menu");
-    expect(accountMenuView({ legacy: false, id: "kasou-x", name: "架空", admin: false, mustChange: true }).accountLink).toBeNull();
-    const legacy = accountMenuView({ legacy: true });
-    expect(legacy.accountLink).toBeNull();
-    expect(legacy.short).toBe("前の合言葉");
-    expect(legacy.sub).toContain("自分のログインIDで入り直してください");
+    expect(accountMenuView({ id: "kasou-x", name: "架空", admin: false, mustChange: true }).accountLink).toBeNull();
+  });
+
+  it("★「前の合言葉」とはどこにも出さない（前の合言葉のログインはやめた）", () => {
+    for (const p of ["lib/account/menu.ts", "components/account-menu.tsx", "components/mode-nav.tsx", "app/account/page.tsx"]) {
+      expect(read(p), p).not.toContain("前の合言葉");
+      expect(read(p), p).not.toContain("前の共通の合言葉");
+    }
   });
 
   it("★名前はいつもアイコンの横に出す（乗せたり押したりしなくても分かる）", () => {

@@ -1,6 +1,6 @@
 /**
  * API のルートが、自分でもログインを確かめる（proxy だけに頼らない）。★Redis は使わない（署名と期限だけ）。
- * 止めた・パスワードを変えたのは、proxy の確かめ直し（5分ごと）で届く。
+ * 止めた・パスワードを変えた・ほかの端末でログインしたのは、proxy の確かめ直し（画面を開いたとき・5分ごと）で届く。
  * ★proxy からも読むので server-only は付けない。
  */
 import { NextResponse } from "next/server";
@@ -11,7 +11,7 @@ import { BROKEN_TEXT, UNAUTHORIZED_TEXT } from "@/lib/account/gate";
 import { SESSION_COOKIE } from "@/lib/auth";
 
 export type SignedIn =
-  | { ok: true; /** アカウントのログインID（旧合言葉・アカウントを使わない手元では null） */ id: string | null }
+  | { ok: true; /** アカウントのログインID（アカウントを使わない手元では null） */ id: string | null }
   /** ★どのルートの返事の型にも入るよう、NextResponse<never> にする（中身は文字の 401・503） */
   | { ok: false; response: NextResponse<never> };
 
@@ -21,15 +21,14 @@ const text = (status: number, body: string) =>
     headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
   }) as NextResponse<never>;
 
-export async function sessionOf(request: Request, config: Extract<AuthConfig, { kind: "accounts" }>): Promise<SessionState> {
+export function sessionOf(request: Request, config: Extract<AuthConfig, { kind: "accounts" }>): SessionState {
   return readSession(readCookie(request.headers.get("cookie"), SESSION_COOKIE), config, Math.floor(Date.now() / 1000));
 }
 
 export async function requireSignedIn(request: Request, config: AuthConfig = currentAuthConfig()): Promise<SignedIn> {
   if (config.kind === "off") return { ok: true, id: null };
   if (config.kind === "broken") return { ok: false, response: text(503, BROKEN_TEXT) };
-  const session = await sessionOf(request, config);
-  if (session.kind === "legacy") return { ok: true, id: null };
+  const session = sessionOf(request, config);
   // ★仮のパスワードの人は、パスワードを決めるまで使えない
   if (session.kind === "account" && session.claims.mc === 0) return { ok: true, id: session.claims.u };
   return { ok: false, response: text(401, UNAUTHORIZED_TEXT) };

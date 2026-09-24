@@ -5,7 +5,7 @@ import "server-only";
  *
  * - 仮のパスワードで入った人（印の mc=1）: 今のパスワードは聞かない。仮と同じものは使わせない
  * - いつでも変える人: 今のパスワードを確かめる（違えば失敗として数える）
- * - 変えたら版（sv）を今に → ほかの端末のログインは5分以内に切れる。この端末は新しい印を出す
+ * - 変えたら版（sv）を進める → ほかの端末は、次に画面を開いたとき（遅くとも5分以内）に切れる。この端末は新しい印を出す
  */
 import type { AuthConfig } from "@/lib/account/config";
 import { StoreUnavailableError } from "@/lib/account/kv";
@@ -13,6 +13,7 @@ import { type OriginInput, isSameOriginPost } from "@/lib/account/origin";
 import { canonicalTemp, hashPassword, type ScryptParams, verifyPassword } from "@/lib/account/password";
 import { type PasswordProblem, passwordProblemCodes } from "@/lib/account/policy";
 import type { KeyedLimiter } from "@/lib/account/rate-limit";
+import { nextVersion } from "@/lib/account/record";
 import { type CookieSpec, clearedCookies, issueSession } from "@/lib/account/session";
 import { passwordTooLong } from "@/lib/account/login";
 import { type AccountStore, FAIL_MAX_ID, KEYS } from "@/lib/account/store";
@@ -82,12 +83,12 @@ export async function handleChangePassword(
 
     const hash = await hashPassword(password, deps.scrypt);
     const now = input.nowMs;
-    const updated = await deps.store.update(record.id, (r) =>
-      r.sv !== claims.sv
-        ? null
-        : { ...r, hash, mustChange: false, tempExpiresAt: null, sv: now, passwordChangedAt: now },
-    );
-    if (!updated.ok || updated.record.sv !== now) return back("busy", [], next);
+    let written = false;
+    const updated = await deps.store.update(record.id, (r) => {
+      written = r.sv === claims.sv;
+      return written ? { ...r, hash, mustChange: false, tempExpiresAt: null, sv: nextVersion(r, now), passwordChangedAt: now } : null;
+    });
+    if (!updated.ok || !written) return back("busy", [], next);
     const { cookies } = issueSession({
       record: updated.record,
       secret: input.config.secret,

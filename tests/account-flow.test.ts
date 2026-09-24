@@ -14,7 +14,7 @@ import type { AccountRecord } from "@/lib/account/record";
 import { OUTAGE_GRACE_SEC, RECHECK_SEC, type SessionState } from "@/lib/account/session";
 import { type AccountStore, createAccountStore } from "@/lib/account/store";
 import { type SessionClaims, signSession, verifySession } from "@/lib/account/token";
-import { createSessionToken, readSignedInMarker } from "@/lib/auth";
+import { readSignedInMarker } from "@/lib/auth";
 
 // 人ごとのアカウントの流れ（2026-09-24）。★値はすべて架空（公開リポジトリ）。
 const FAST = { log2N: 10, r: 8, p: 1 };
@@ -28,7 +28,6 @@ const config = (over: Partial<Extract<AuthConfig, { kind: "accounts" }>> = {}): 
   kind: "accounts",
   store: { kind: "file", path: "/dev/null" },
   secret: SECRET,
-  legacy: null,
   bootstrap: null,
   ...over,
 });
@@ -86,12 +85,11 @@ describe("門番", () => {
     expect(broken).toMatchObject({ kind: "text", status: 503 });
   });
 
-  it("ログインの口は通す。旧合言葉のクッキーは通す", async () => {
+  it("ログインの口は通す", async () => {
     const none: SessionState = { kind: "none", hadToken: false };
     for (const pathname of ["/login", "/api/login", "/api/logout"]) {
       expect(await decideAccess(input({ pathname, session: none }), lookupOf(null))).toEqual({ kind: "pass" });
     }
-    expect(await decideAccess(input({ session: { kind: "legacy" } }), lookupOf(null))).toEqual({ kind: "pass" });
   });
 
   it("印が無ければ、API は 401（文字）、ページはログインへ（戻り先つき）", async () => {
@@ -141,6 +139,39 @@ describe("門番", () => {
     });
   });
 
+  it("★画面を開いた・読み込み直したときは、5分を待たずに毎回確かめる", async () => {
+    const record = await member();
+    const ok = lookupOf(record);
+    expect(await decideAccess(input({ navigation: true, nowSec: NOW + 1 }), ok)).toEqual({ kind: "pass", reissue: record });
+    expect(ok).toHaveBeenCalledTimes(1);
+    const off = lookupOf(await member({ disabled: true }));
+    expect(await decideAccess(input({ navigation: true, nowSec: NOW + 1 }), off)).toMatchObject({ kind: "redirect", clear: true });
+    // 画面の中の読み込み（API・画像）は5分ごと
+    const api = lookupOf(await member({ disabled: true }));
+    expect(await decideAccess(input({ pathname: "/api/summarize", nowSec: NOW + 1 }), api)).toEqual({ kind: "pass" });
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it("★ほかの端末でログインして切れたときは、ログイン画面にそう出す（止めた・パスワードが変わったのとは言い分ける）", async () => {
+    const later = NOW_MS + 60_000;
+    const elsewhere = await decideAccess(input({ navigation: true }), lookupOf(await member({ sv: later, loginAt: later })));
+    expect(elsewhere).toEqual({ kind: "redirect", location: "/login?next=%2Fafter&expired=elsewhere", clear: true });
+    const changed = await decideAccess(input({ navigation: true }), lookupOf(await member({ sv: later, loginAt: later - 5 })));
+    expect(changed).toMatchObject({ location: "/login?next=%2Fafter&expired=1" });
+    const disabled = await decideAccess(input({ navigation: true }), lookupOf(await member({ sv: later, loginAt: later, disabled: true })));
+    expect(disabled).toMatchObject({ location: "/login?next=%2Fafter&expired=1" });
+    // API は今までどおり 401 の文字
+    const api = await decideAccess(input({ pathname: "/api/summarize", nowSec: NOW + RECHECK_SEC }), lookupOf(await member({ sv: later, loginAt: later })));
+    expect(api).toMatchObject({ kind: "text", status: 401, clear: true });
+  });
+
+  it("★印の版のほうが新しいとき（置き場所の読みが少し遅れている）は、切らずに通す。出し直さない", async () => {
+    const lagging = await member({ sv: claims.sv - 1 });
+    expect(await decideAccess(input({ navigation: true }), lookupOf(lagging))).toEqual({ kind: "pass" });
+    // 止めたのは、版に関わらず切る
+    expect(await decideAccess(input({ navigation: true }), lookupOf({ ...lagging, disabled: true }))).toMatchObject({ kind: "redirect" });
+  });
+
   it("★どのリクエストでも確かめ直す（送る側が書き換えられるヘッダーで省かない）", async () => {
     const lookup = lookupOf(await member({ disabled: true }));
     const decision = await decideAccess(input({ pathname: "/help/after-shared.webp", nowSec: NOW + 3600 }), lookup);
@@ -170,6 +201,55 @@ describe("ログイン", () => {
     expect(session).toMatchObject({ httpOnly: true, secure: true, sameSite: "lax", path: "/" });
     const marker = readSignedInMarker(result.cookies.find((c) => c.name === "folio_signed_in")?.value);
     expect(marker).toMatchObject({ id: "kasou-taro", name: "架空 太郎", admin: false });
+  });
+
+  it("★ほかの端末でログインすると、前の端末の印は使えなくなる（1つのアカウントで使える端末は1つ）", async () => {
+    const { store, deps } = setup();
+    await store.create(await member());
+    const a = await login(deps, { id: "kasou-taro", password: "sakura-tanbo" });
+    const b = await login(deps, { id: "kasou-taro", password: "sakura-tanbo" }, { ip: "192.0.2.2", nowMs: NOW_MS + 60_000 });
+    const claimsA = claimsFrom(a.cookies);
+    const claimsB = verifySession(b.cookies.find((c) => c.name === "folio_session")?.value, SECRET, NOW + 60);
+    expect(claimsA && claimsB && claimsB.sv > claimsA.sv).toBe(true);
+    const saved = await store.get("kasou-taro");
+    expect(saved).toMatchObject({ sv: claimsB?.sv, loginAt: claimsB?.sv });
+
+    // 前の端末（A）は、読み込み直すとログイン画面へ。ほかの端末からログインがあったと出す
+    const gate = (claims: SessionClaims) =>
+      decideAccess(
+        { config: config(), pathname: "/", search: "", session: { kind: "account", claims }, nowSec: NOW + 61, navigation: true },
+        (id) => store.get(id),
+      );
+    expect(await gate(claimsA as SessionClaims)).toEqual({ kind: "redirect", location: "/login?expired=elsewhere", clear: true });
+    // 新しい端末（B）はそのまま使える
+    expect(await gate(claimsB as SessionClaims)).toMatchObject({ kind: "pass", reissue: { sv: claimsB?.sv } });
+  });
+
+  it("★同じミリ秒に2回ログインしても、版は必ず変わる（時計が戻っても戻らない）", async () => {
+    const { store, deps } = setup();
+    await store.create(await member({ sv: NOW_MS + 5000 }));
+    const first = claimsFrom((await login(deps, { id: "kasou-taro", password: "sakura-tanbo" })).cookies);
+    const second = claimsFrom((await login(deps, { id: "kasou-taro", password: "sakura-tanbo" })).cookies);
+    expect(first?.sv).toBe(NOW_MS + 5001);
+    expect(second?.sv).toBe(NOW_MS + 5002);
+  });
+
+  it("★照合のあとで管理者が止めた・仮のパスワードを出し直したなら、入れない（版も変えない）", async () => {
+    const { store, deps } = setup();
+    const original = await member();
+    await store.create(original);
+    for (const change of [
+      (r: AccountRecord) => ({ ...r, disabled: true, sv: r.sv + 1 }),
+      (r: AccountRecord) => ({ ...r, disabled: false, hash: "scrypt$1$10.8.1$other$other", sv: r.sv + 2 }),
+    ]) {
+      await store.update(original.id, change);
+      const before = await store.get(original.id);
+      // 照合するときには、まだ前のアカウントが読めていた
+      vi.spyOn(store, "get").mockResolvedValueOnce(original);
+      const result = await login(deps, { id: "kasou-taro", password: "sakura-tanbo" });
+      expect(result).toEqual({ location: "/login?error=1", cookies: [] });
+      expect((await store.get(original.id))?.sv).toBe(before?.sv);
+    }
   });
 
   it("★別のサイトから送られたログインは断る", async () => {
@@ -513,32 +593,24 @@ describe("今ある API のルートの確かめ（Redis は使わない）", ()
     expect(temp.ok ? 0 : temp.response.status).toBe(401);
   });
 
-  it("旧合言葉のクッキーは、APP_PASSWORD がある間だけ通す", async () => {
-    const v1 = await createSessionToken("user", "kasou-shared", 3600);
-    const withLegacy = config({ legacy: { user: "user", password: "kasou-shared", untilSec: Math.floor(Date.now() / 1000) + 3600 } });
-    expect(await requireSignedIn(req(`folio_session=${v1}`), withLegacy)).toEqual({ ok: true, id: null });
-    const without = await requireSignedIn(req(`folio_session=${v1}`), config());
-    expect(without.ok).toBe(false);
+  it("★前の合言葉のクッキー（v1）は通さない（2026-09-25 にやめた）", async () => {
+    const v1 = "v1.1900000000.kasou-signature";
+    const result = await requireSignedIn(req(`folio_session=${v1}`), config());
+    expect(result.ok ? 0 : result.response.status).toBe(401);
   });
 });
 
-describe("★前の合言葉の印（切り替えの間だけ）", () => {
-  it("期限を好きに書いた印は受け付けない（ログインを保つ日数より先の期限）", async () => {
+describe("★前の合言葉の印（v1）", () => {
+  it("持っている端末は「切れた」扱い（クッキーを消してログイン画面へ）。「前の合言葉」では通さない", async () => {
     const { readSession } = await import("@/lib/account/session");
     const nowSec = Math.floor(Date.now() / 1000);
-    const withLegacy = config({ legacy: { user: "user", password: "kasou-shared", untilSec: nowSec + 7 * 86_400 } });
-    const normal = await createSessionToken("user", "kasou-shared", 30 * 86_400);
-    expect(await readSession(normal, withLegacy, nowSec)).toEqual({ kind: "legacy" });
-    const forged = await createSessionToken("user", "kasou-shared", 3650 * 86_400);
-    expect(await readSession(forged, withLegacy, nowSec)).toEqual({ kind: "none", hadToken: true });
-  });
-
-  it("★受け付ける期限（FOLIO_LEGACY_UNTIL）を過ぎたら、前の合言葉を消し忘れても通らない", async () => {
-    const { readSession } = await import("@/lib/account/session");
-    const nowSec = Math.floor(Date.now() / 1000);
-    const token = await createSessionToken("user", "kasou-shared", 86_400);
-    const expired = config({ legacy: { user: "user", password: "kasou-shared", untilSec: nowSec - 1 } });
-    expect(await readSession(token, expired, nowSec)).toEqual({ kind: "none", hadToken: true });
+    const session = readSession("v1.1900000000.kasou-signature", config(), nowSec);
+    expect(session).toEqual({ kind: "none", hadToken: true });
+    const decision = await decideAccess(
+      { config: config(), pathname: "/", search: "", session, nowSec, navigation: true },
+      vi.fn(async () => null),
+    );
+    expect(decision).toEqual({ kind: "redirect", location: "/login?expired=1", clear: true });
   });
 });
 
