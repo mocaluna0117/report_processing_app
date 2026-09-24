@@ -7,6 +7,8 @@ import type { SignedInMarker } from "@/lib/auth";
 export interface AccountMenuView {
   /** アイコンのボタンの読み上げ名・吹き出し */
   label: string;
+  /** アイコンの横に出す名前（ひと目で誰か分かるように） */
+  short: string;
   /** メニューの上に出す行（名前・ID など） */
   heading: string;
   sub: string;
@@ -18,6 +20,7 @@ export function accountMenuView(marker: SignedInMarker): AccountMenuView {
   if (marker.legacy) {
     return {
       label: "ログイン中（前の共通の合言葉）",
+      short: "前の合言葉",
       heading: "前の共通の合言葉でログインしています",
       sub: "管理者から受け取った自分のログインIDで入り直してください",
       accountLink: null,
@@ -25,6 +28,7 @@ export function accountMenuView(marker: SignedInMarker): AccountMenuView {
   }
   return {
     label: `アカウント（${marker.name}）`,
+    short: marker.name,
     heading: marker.name,
     sub: `ID: ${marker.id}${marker.admin ? "・管理者" : ""}`,
     // ★パスワードを決める前は、その画面にいるので出さない

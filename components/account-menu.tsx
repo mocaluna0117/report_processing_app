@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 右上（「Folio」の見出しと同じ行の右端）の、人の形のアイコン。押すと小さなメニューが開く。
+ * 右上（「Folio」の見出しと同じ行の右端）の、人の形のアイコンと名前。押すと小さなメニューが開く。
  * - 名前とログインID
  * - アカウント（パスワードを変える。管理者はアカウントの管理も）
  * - Folio からログアウト（★このタブの楽楽精算のログインも一緒に忘れる）
@@ -74,13 +74,17 @@ export function AccountMenu() {
         aria-expanded={open}
         aria-label={view.label}
         title={view.label}
-        className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border shadow-sm ${
+        className={`flex h-9 max-w-44 cursor-pointer items-center gap-1.5 rounded-full border py-1 pl-1 pr-3 shadow-sm ${
           open || pathname === "/account"
             ? "border-slate-400 bg-slate-100 text-slate-800"
-            : "border-slate-300 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+            : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-800"
         }`}
       >
-        <UserIcon />
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+          <UserIcon />
+        </span>
+        {/* ★名前はいつも出す（押したり乗せたりしなくても、誰でログインしているか分かるように） */}
+        <span className="truncate text-sm font-medium">{view.short}</span>
       </button>
 
       {open && (

@@ -132,6 +132,7 @@ describe("右上の人の形のアイコンのメニュー", () => {
     const member = { legacy: false as const, id: "kasou-hanako", name: "架空 花子", admin: false, mustChange: false };
     expect(accountMenuView(member)).toEqual({
       label: "アカウント（架空 花子）",
+      short: "架空 花子",
       heading: "架空 花子",
       sub: "ID: kasou-hanako",
       accountLink: "アカウント（パスワードを変える）",
@@ -147,7 +148,14 @@ describe("右上の人の形のアイコンのメニュー", () => {
     expect(accountMenuView({ legacy: false, id: "kasou-x", name: "架空", admin: false, mustChange: true }).accountLink).toBeNull();
     const legacy = accountMenuView({ legacy: true });
     expect(legacy.accountLink).toBeNull();
+    expect(legacy.short).toBe("前の合言葉");
     expect(legacy.sub).toContain("自分のログインIDで入り直してください");
+  });
+
+  it("★名前はいつもアイコンの横に出す（乗せたり押したりしなくても分かる）", () => {
+    const menu = read("components/account-menu.tsx");
+    const button = menu.slice(menu.indexOf('id="account-menu-button"'), menu.indexOf("</button>"));
+    expect(button).toContain("{view.short}");
   });
 
   it("★アイコンは見出しと同じ行の右端に1つだけ（ヘッダーには置かない）", () => {
