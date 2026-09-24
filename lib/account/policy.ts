@@ -67,32 +67,50 @@ export function normalizePassword(raw: string): string {
   return raw.normalize("NFKC");
 }
 
+export type PasswordProblem = "short" | "long" | "repeat" | "common" | "contains-id" | "same" | "mismatch";
+
+export const PASSWORD_PROBLEM_TEXT: Record<PasswordProblem, string> = {
+  short: `パスワードは${PASSWORD_MIN}文字以上にしてください`,
+  long: `パスワードは${PASSWORD_MAX}文字までです`,
+  repeat: "同じ文字だけのパスワードは使えません",
+  common: "よく使われるパスワードなので使えません。別のものにしてください",
+  "contains-id": "ログインIDを含むパスワードは使えません",
+  same: "今のパスワードと違うものにしてください",
+  mismatch: "確認のために入れたパスワードが一致しません",
+};
+
 /**
- * 新しいパスワードの問題（無ければ空）。画面にそのまま出す。
+ * 新しいパスワードの問題の記号（無ければ空）。サーバーと画面で同じものを使う。
  * current は今のパスワード（または仮のパスワード）。同じものは使わせない。
  */
-export function passwordProblems(input: {
+export function passwordProblemCodes(input: {
   password: string;
   confirm: string;
   loginId: string;
   current?: string | null;
-}): string[] {
+}): PasswordProblem[] {
   const password = normalizePassword(input.password);
   const length = [...password].length;
-  const problems: string[] = [];
-  if (length < PASSWORD_MIN) problems.push(`パスワードは${PASSWORD_MIN}文字以上にしてください（いま${length}文字）`);
-  if (length > PASSWORD_MAX) problems.push(`パスワードは${PASSWORD_MAX}文字までです`);
+  const problems: PasswordProblem[] = [];
+  if (length < PASSWORD_MIN) problems.push("short");
+  if (length > PASSWORD_MAX) problems.push("long");
   if (length >= PASSWORD_MIN) {
     const lower = password.toLowerCase();
-    if (/^(.)\1*$/u.test(password)) problems.push("同じ文字だけのパスワードは使えません");
-    else if (COMMON_PASSWORDS.has(lower)) problems.push("よく使われるパスワードなので使えません。別のものにしてください");
-    if (input.loginId && lower.includes(input.loginId.toLowerCase())) {
-      problems.push("ログインIDを含むパスワードは使えません");
-    }
+    if (/^(.)\1*$/u.test(password)) problems.push("repeat");
+    else if (COMMON_PASSWORDS.has(lower)) problems.push("common");
+    if (input.loginId && lower.includes(input.loginId.toLowerCase())) problems.push("contains-id");
   }
   if (input.current != null && input.current !== "" && normalizePassword(input.current) === password) {
-    problems.push("今のパスワードと違うものにしてください");
+    problems.push("same");
   }
-  if (normalizePassword(input.confirm) !== password) problems.push("確認のために入れたパスワードが一致しません");
+  if (normalizePassword(input.confirm) !== password) problems.push("mismatch");
   return problems;
+}
+
+/** 新しいパスワードの問題（無ければ空）。画面にそのまま出す */
+export function passwordProblems(input: Parameters<typeof passwordProblemCodes>[0]): string[] {
+  const length = [...normalizePassword(input.password)].length;
+  return passwordProblemCodes(input).map((code) =>
+    code === "short" ? `${PASSWORD_PROBLEM_TEXT.short}（いま${length}文字）` : PASSWORD_PROBLEM_TEXT[code],
+  );
 }
