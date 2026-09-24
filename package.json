@@ -15,7 +15,8 @@
     "report:assets": "python3 scripts/build_report_template.py && python3 scripts/build_report_fonts.py",
     "report:geometry": "python3 scripts/extract_report_geometry.py",
     "report:dump": "tsx scripts/dump-report.mts",
-    "dev:lan": "node scripts/dev-lan.mjs"
+    "dev:lan": "node scripts/dev-lan.mjs",
+    "accounts:bootstrap": "tsx scripts/accounts/bootstrap-code.mts"
   },
   "keywords": [],
   "author": "",

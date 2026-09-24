@@ -1,7 +1,7 @@
-import "server-only";
-
 /**
  * パスワードをしまう（scrypt。node:crypto だけで、新しい部品は入れない）。
+ * ★server-only は付けない（手元のコマンド scripts/accounts/bootstrap-code.mts からも使うため）。
+ *   node:crypto を使うので、画面の部品から import すると組み立てで止まる。
  *
  * ★しまうのは元に戻せない形（ハッシュ）だけ。パスワードそのものは、どこにも残さない。
  * ★仮のパスワードは「xxxx-xxxx-xxxx」の形で出し、照合では大文字・小文字・ハイフン・空白を区別しない
