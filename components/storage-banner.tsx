@@ -33,7 +33,8 @@ export function StorageBanner({
   onClearFont: () => void;
 }) {
   return (
-    <div className="mt-8 flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
+    // ★上の枠との間は、枠と枠の間と同じ 24px（2026-09-25）
+    <div className="mt-6 flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
       {/* ★span ではなく div。中に「くわしく」の折りたたみ (details) を置くため */}
       <div>
         {description}

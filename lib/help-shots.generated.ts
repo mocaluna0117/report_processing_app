@@ -30,8 +30,8 @@ export const HELP_SHOT_GEOMETRY: Readonly<Record<string, HelpShotGeometry>> = {
   },
   "after-intake": {
     width: 2496,
-    height: 1625,
-    hotspots: [{ x: 25, y: 8.4 }, { x: 50, y: 77.5 }, { x: 6.4, y: 94.7 }],
+    height: 1641,
+    hotspots: [{ x: 24.8, y: 8.3 }, { x: 50, y: 77.7 }, { x: 6.4, y: 94.8 }],
   },
   "after-cases": {
     width: 2496,

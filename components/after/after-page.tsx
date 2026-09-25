@@ -400,7 +400,8 @@ export function AfterPage() {
         </p>
       )}
 
-      <div className="mt-6 space-y-4">
+      {/* ★枠と枠の間はどれも同じ幅（24px。手順の帯の下・受付一覧・下の保存の欄の上とも揃える。2026-09-25） */}
+      <div className="mt-6 space-y-6">
         <CustomerImport
           id="after-import"
           summary={summary}
@@ -419,7 +420,7 @@ export function AfterPage() {
         <SharedFolderPanel id="after-shared" shared={shared} canPersist={storage.canPersist} />
 
         {customers.length > 0 && (
-          <div id="after-search" tabIndex={-1} className="grid scroll-mt-4 gap-4 lg:grid-cols-2">
+          <div id="after-search" tabIndex={-1} className="grid scroll-mt-4 gap-6 lg:grid-cols-2">
             <CustomerSearch
               customers={customers}
               query={query}
@@ -440,33 +441,34 @@ export function AfterPage() {
         )}
 
         {customers.length > 0 && (
-          <AfterIntake
-            id="after-intake"
-            customer={selected}
-            value={inquiryText}
-            onChange={setInquiryText}
-            onSubmit={register}
-            busy={registering}
-            error={registerError}
-            notice={registerNotice}
-          />
-        )}
-        {customers.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-            <span>要約の書き方を学習: {examples.length}件</span>
-            <button
-              type="button"
-              onClick={() => learning.setOpen(true)}
-              className="cursor-pointer rounded-md border border-slate-300 bg-white px-2 py-0.5 font-medium text-slate-700 hover:bg-slate-50"
-            >
-              一覧・消去
-            </button>
+          // ★学習の1行は受付の枠に付いているものなので、枠と枠の間の幅で離さない
+          <div>
+            <AfterIntake
+              id="after-intake"
+              customer={selected}
+              value={inquiryText}
+              onChange={setInquiryText}
+              onSubmit={register}
+              busy={registering}
+              error={registerError}
+              notice={registerNotice}
+            />
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <span>要約の書き方を学習: {examples.length}件</span>
+              <button
+                type="button"
+                onClick={() => learning.setOpen(true)}
+                className="cursor-pointer rounded-md border border-slate-300 bg-white px-2 py-0.5 font-medium text-slate-700 hover:bg-slate-50"
+              >
+                一覧・消去
+              </button>
+            </div>
           </div>
         )}
       </div>
 
       {cases.length > 0 && (
-        <section id="after-cases" tabIndex={-1} className="mt-8 scroll-mt-4">
+        <section id="after-cases" tabIndex={-1} className="mt-6 scroll-mt-4">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-semibold">
               受付一覧

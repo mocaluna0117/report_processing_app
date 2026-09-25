@@ -712,7 +712,7 @@ export function TenmatsuLocalServerPage({ kind: kindId, header }: { kind: DocKin
 
       {storage.storageError && <p className={WARN_CLASS}>{storage.storageError}</p>}
 
-      <div className="mt-6 space-y-4">
+      <div className="mt-6 space-y-6">
         {/* ---------- ローカルサーバー ---------- */}
         <section className={SECTION_CLASS}>
           <div className="flex flex-wrap items-start justify-between gap-3">

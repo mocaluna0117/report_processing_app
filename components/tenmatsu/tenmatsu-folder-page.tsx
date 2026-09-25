@@ -935,7 +935,8 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
 
       {storage.storageError && <p className={WARN_CLASS}>{storage.storageError}</p>}
 
-      <div className="mt-6 space-y-4">
+      {/* ★枠と枠の間はどれも同じ幅（24px。手順の帯の下・下の保存の欄の上とも揃える。2026-09-25） */}
+      <div className="mt-6 space-y-6">
         {/* ---------- 保存先フォルダー ---------- */}
         <section id={sectionId("folder")} tabIndex={-1} className={`${SECTION_CLASS} scroll-mt-4`}>
           <div className="flex flex-wrap items-start justify-between gap-3">

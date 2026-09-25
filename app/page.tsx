@@ -791,7 +791,8 @@ export default function Home() {
       )}
 
       {allRows.length > 0 && (
-        <section id="inspection-results" tabIndex={-1} className="mt-8 scroll-mt-4">
+        <section id="inspection-results" tabIndex={-1} className="mt-6 scroll-mt-4">
+          {/* ★枠と枠の間はどれも同じ幅（24px。2026-09-25） */}
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-semibold">
               抽出結果
