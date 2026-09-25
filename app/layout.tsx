@@ -30,11 +30,13 @@ export default function RootLayout({
           {/* ★1段目は見出しと、右端の人の形のアイコン（アカウント・ログアウト）。
               2段目に画面のタブとボタン（見出しの1段下。利用者の希望 2026-09-24）。
               HEADER_ONE_ROW のときは、広い画面でタブとボタンを1段目の中央へ入れる（CSS の格子で置き場所だけ変える） */}
+          {/* ★ヘッダーの下は少し空ける（各画面の最初の説明の文と詰まって見えたため。2026-09-25）。
+              ★margin だと各画面の最初の文の mt-4 と重なって（相殺されて）広がらないので、padding で空ける */}
           <header
             className={
               HEADER_ONE_ROW
-                ? "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 min-[1240px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
-                : undefined
+                ? "pb-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 min-[1240px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
+                : "pb-3"
             }
           >
             <div className={HEADER_ONE_ROW ? "contents" : "flex items-center justify-between gap-4"}>
