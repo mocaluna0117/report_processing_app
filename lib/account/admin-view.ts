@@ -37,7 +37,7 @@ export function roleText(account: AccountSummary): string {
 
 /** 押す前に確かめる文（window.confirm に出す） */
 export function adminConfirmText(action: "reset" | "disable" | "delete", account: AccountSummary): string {
-  const who = `「${account.name}」（${account.id}）`;
+  const who = `「${account.name}」（ログインID: ${account.id}）`;
   switch (action) {
     case "reset":
       return `${who}に新しい仮のパスワードを発行します。\n今のパスワードとログインは使えなくなります。よろしいですか？`;

@@ -53,6 +53,13 @@ export const NAME_CHANGED_TEXT = "表示名を変えました。";
 export const MUST_CHANGE_TEXT =
   "仮のパスワードでログインしました。続けて使うには、自分のパスワードを決めてください。";
 
+/**
+ * アカウントの画面の見出しの下に出す、ログインIDの行（2026-09-25）。
+ * ★同じ画面に「楽楽精算のログインID」もあるので、ただ「ログインID」とは書かない
+ */
+export const FOLIO_LOGIN_ID_LABEL = "Folio のログインID";
+export const FOLIO_LOGIN_ID_NOTE = "Folio にログインするときに入れるIDです。変えられません";
+
 /** 仮のパスワードを出すときの注意 */
 export const TEMP_PASSWORD_NOTE =
   "この仮のパスワードは、いま1回だけ表示します。本人に直接（口頭か手渡しで）伝えてください。7日で切れます。";

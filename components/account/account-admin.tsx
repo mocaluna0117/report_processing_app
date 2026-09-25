@@ -119,7 +119,7 @@ export function AccountAdmin({ selfId }: { selfId: string }) {
                             disabled={busy}
                             className={SMALL_BUTTON}
                             onClick={() => {
-                              const name = prompt(`「${account.name}」（${account.id}）の新しい表示名`, account.name);
+                              const name = prompt(`「${account.name}」（ログインID: ${account.id}）の新しい表示名`, account.name);
                               if (name !== null && name.trim() !== "" && name.trim() !== account.name) {
                                 void run({ action: "rename", id: account.id, name: name.trim() });
                               }

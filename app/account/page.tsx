@@ -5,7 +5,14 @@ import { AccountAdmin } from "@/components/account/account-admin";
 import { NameForm } from "@/components/account/name-form";
 import { PasswordForm } from "@/components/account/password-form";
 import { RakurakuCredentialSection } from "@/components/account/rakuraku-credential";
-import { MUST_CHANGE_TEXT, NAME_CHANGED_TEXT, PASSWORD_CHANGED_TEXT, changeErrorText } from "@/lib/account/messages";
+import {
+  FOLIO_LOGIN_ID_LABEL,
+  FOLIO_LOGIN_ID_NOTE,
+  MUST_CHANGE_TEXT,
+  NAME_CHANGED_TEXT,
+  PASSWORD_CHANGED_TEXT,
+  changeErrorText,
+} from "@/lib/account/messages";
 import { accountPageState } from "@/lib/account/page-state";
 import { accountStoreFor, currentAuthConfig } from "@/lib/account/runtime";
 import { SESSION_COOKIE, safeNextPath } from "@/lib/auth";
@@ -54,10 +61,13 @@ export default async function AccountPage({
       )}
       {state.kind === "account" && (
         <>
-          <h1 className="text-xl font-bold text-slate-900">
-            {state.record.name}
-            <span className="ml-2 font-mono text-sm font-normal text-slate-500">{state.record.id}</span>
-          </h1>
+          <h1 className="text-xl font-bold text-slate-900">{state.record.name}</h1>
+          {/* ★見出しに ID を並べると何か分からないので、名前を付けて下に1行で出す（2026-09-25） */}
+          <p className="mt-1 text-sm text-slate-600">
+            {FOLIO_LOGIN_ID_LABEL}: <span className="font-mono text-slate-800">{state.record.id}</span>
+            {state.record.role === "admin" && <span className="ml-1">・管理者</span>}
+            <span className="ml-2 text-xs text-slate-500">（{FOLIO_LOGIN_ID_NOTE}）</span>
+          </p>
           {state.forced ? (
             <p className="mt-3 rounded bg-amber-50 px-3 py-2 text-sm text-amber-900">{MUST_CHANGE_TEXT}</p>
           ) : (

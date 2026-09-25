@@ -4,6 +4,7 @@
  * 右上（「Folio」の見出しと同じ行の右端）の、人の形のアイコンと名前。押すと小さなメニューが開く。
  * - 名前とログインID
  * - アカウント（パスワードを変える・楽楽精算のIDとパスワードの登録。管理者はアカウントの管理も）
+ * - 問い合わせ（2026-09-25 にヘッダーの段から移した。小窓そのものは components/mode-nav.tsx に1つだけ置いてある）
  * - Folio からログアウト（★このタブの楽楽精算のログインも一緒に忘れる）
  * ログインしていない画面・ログイン画面では出さない。
  */
@@ -13,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { FOLIO_LOGOUT_LABEL, FOLIO_LOGOUT_TITLE, accountMenuView } from "@/lib/account/menu";
 import { clearTabForAnotherPerson } from "@/lib/account/sign-out";
 import { useSignedIn } from "@/lib/account/use-signed-in";
+import { openContact } from "@/lib/contact/dialog";
 import { getNavigationGuard } from "@/lib/navigation-guard";
 
 /** よくある人の形（頭と肩） */
@@ -100,6 +102,22 @@ export function AccountMenu() {
             <Link href="/account" role="menuitem" onNavigate={guard} className={ITEM_CLASS}>
               {view.accountLink}
             </Link>
+          )}
+          {view.contact && (
+            <button
+              type="button"
+              role="menuitem"
+              aria-haspopup="dialog"
+              onClick={() => {
+                // ★先にメニューを閉じる（メニューの外を押したら閉じる仕掛けと、小窓の仕掛けを同時に動かさない）
+                setOpen(false);
+                // 開いた画面を最初から選び、お名前に表示名を入れる（下書きが空のときだけ。lib/contact/dialog.ts）
+                openContact({ page: pathname, name: signedIn.name });
+              }}
+              className={ITEM_CLASS}
+            >
+              {view.contact}
+            </button>
           )}
           <div aria-hidden className="my-1 h-px bg-slate-200" />
           <form

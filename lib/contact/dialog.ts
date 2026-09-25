@@ -2,7 +2,7 @@
 
 /**
  * 問い合わせのモーダルの開け閉めと、書きかけの下書き。
- * ヘッダーの「問い合わせ」と、使い方のモーダルの「解決しないときは」の両方から開く
+ * 右上の人の形のアイコンのメニューの「問い合わせ」と、使い方のモーダルの「解決しないときは」の両方から開く
  * （lib/shared/dialog.ts と同じやり方）。
  *
  * ★下書きは**このタブのメモリにだけ**置く。閉じても消えず、送れたら消す。
@@ -10,9 +10,6 @@
  *   読み込み直すと消える。
  */
 import { CONTACT_PAGES, type ContactCategoryId } from "@/lib/contact/form";
-
-/** ヘッダーのボタンの目印 */
-export const CONTACT_BUTTON_ID = "contact-button";
 
 export interface ContactPhoto {
   id: string;
@@ -69,7 +66,7 @@ export function isDraftEmpty(d: ContactDraft): boolean {
 }
 
 /**
- * 開く。page は開いた画面（ヘッダーなら今の画面、使い方なら選んでいたタブ）。
+ * 開く。page は開いた画面（右上のメニューなら今の画面、使い方なら選んでいたタブ）。
  * ★書きかけがあるときは、前に選んだ画面のまま（書いている途中で勝手に変えない）。
  */
 export function openContact(options: { page?: string | null; name?: string | null } = {}): void {

@@ -40,7 +40,7 @@ describe("管理の欄の文", () => {
     expect(adminConfirmText("reset", summary())).toContain("今のパスワードとログインは使えなくなります");
     expect(adminConfirmText("disable", summary())).toContain("次に画面を開いたとき（遅くとも5分以内）にログインが切れ");
     expect(adminConfirmText("delete", summary())).toContain("元に戻せません");
-    expect(adminConfirmText("delete", summary())).toContain("「架空 太郎」（kasou-taro）");
+    expect(adminConfirmText("delete", summary())).toContain("「架空 太郎」（ログインID: kasou-taro）");
   });
 
   it("追加の欄の、押せない理由", () => {
@@ -144,18 +144,29 @@ describe("右上の人の形のアイコンのメニュー", () => {
       label: "アカウント（架空 花子）",
       short: "架空 花子",
       heading: "架空 花子",
-      sub: "ID: kasou-hanako",
+      sub: "ログインID: kasou-hanako",
       accountLink: "アカウント（パスワード・楽楽精算）",
+      contact: "問い合わせ",
     });
     expect(accountMenuView({ ...member, admin: true })).toMatchObject({
-      sub: "ID: kasou-hanako・管理者",
+      sub: "ログインID: kasou-hanako・管理者",
       accountLink: "アカウント（パスワード・楽楽精算・管理）",
     });
   });
 
-  it("パスワードを決める前は、アカウントへの入口を出さない（ログアウトだけ）", async () => {
+  it("パスワードを決める前は、アカウントへの入口も問い合わせも出さない（ログアウトだけ）", async () => {
     const { accountMenuView } = await import("@/lib/account/menu");
-    expect(accountMenuView({ id: "kasou-x", name: "架空", admin: false, mustChange: true }).accountLink).toBeNull();
+    const view = accountMenuView({ id: "kasou-x", name: "架空", admin: false, mustChange: true });
+    expect(view.accountLink).toBeNull();
+    expect(view.contact).toBeNull();
+  });
+
+  it("★アカウントの画面: 見出しは表示名だけ。ログインIDは「Folio のログインID」と名前を付けて下に出す", () => {
+    const page = read("app/account/page.tsx");
+    const h1 = page.slice(page.indexOf("<h1"), page.indexOf("</h1>"));
+    expect(h1).toContain("{state.record.name}");
+    expect(h1).not.toContain("state.record.id");
+    expect(page).toContain("{FOLIO_LOGIN_ID_LABEL}: <span");
   });
 
   it("★「前の合言葉」とはどこにも出さない（前の合言葉のログインはやめた）", () => {

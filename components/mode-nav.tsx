@@ -8,7 +8,6 @@ import { HelpDialog } from "@/components/help-dialog";
 import { SharedFolderDialog } from "@/components/shared-folder-dialog";
 import { clearTabForAnotherPerson } from "@/lib/account/sign-out";
 import { useSignedIn } from "@/lib/account/use-signed-in";
-import { CONTACT_BUTTON_ID, openContact, subscribeContact } from "@/lib/contact/dialog";
 import { HELP_SECTIONS } from "@/lib/help";
 import { getHelpDialogState, openHelp, subscribeHelpDialog } from "@/lib/help-dialog";
 import { getNavigationGuard } from "@/lib/navigation-guard";
@@ -66,8 +65,6 @@ export function ModeNav() {
   }, [pathname]);
   const [sharedOpen, setSharedOpen] = useState(false);
   useEffect(() => subscribeSharedDialog(setSharedOpen), []);
-  const [contactOpen, setContactOpen] = useState(false);
-  useEffect(() => subscribeContact(setContactOpen), []);
   /** いま見ている画面の使い方を、開いたときの既定タブにする */
   const currentSlug = HELP_SECTIONS.find((s) => s.href === pathname)?.slug ?? null;
   const shared = sharedChip({ ...connection, canPersist: true, usesShared: usesSharedFolder(pathname) });
@@ -125,21 +122,6 @@ export function ModeNav() {
       >
         使い方
       </button>
-      {/* ★不具合・要望を開発者へ送る（Folio 全体で1つ）。開いた画面を最初から選んでおく */}
-      <button
-        id={CONTACT_BUTTON_ID}
-        type="button"
-        onClick={() => openContact({ page: pathname, name: signedIn?.name ?? null })}
-        aria-haspopup="dialog"
-        aria-pressed={contactOpen}
-        className={
-          contactOpen
-            ? "cursor-pointer rounded-md border border-slate-400 bg-white px-2.5 py-1 text-xs font-semibold text-slate-900"
-            : "cursor-pointer rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
-        }
-      >
-        問い合わせ
-      </button>
       {/* ★共有フォルダー（データベースの役割）。どの画面からでもつなげるよう、ここに1つだけ置く。
           専決決裁書・捺印決裁書では使わないので、つながっていなくても目立たせない */}
       <button
@@ -161,6 +143,8 @@ export function ModeNav() {
       </button>
       <HelpDialog />
       <SharedFolderDialog />
+      {/* ★問い合わせの小窓は Folio 全体でここに1つ。開くのは右上の人の形のアイコンのメニューと、使い方の小窓のいちばん下
+          （2026-09-25 にヘッダーのボタンはメニューへ移した。アカウントを使わない手元ではメニューが出ないので、使い方から開く） */}
       <ContactDialog />
     </div>
   );

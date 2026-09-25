@@ -97,10 +97,19 @@ describe("★送るもの・読むもの（中身を読んで見張る）", () =
     }
   });
 
-  it("ヘッダーに1つだけ載せ、使い方の小窓からも開ける", () => {
+  it("★小窓はヘッダー（mode-nav）に1つだけ置き、右上の人の形のアイコンのメニューと使い方の小窓から開く", () => {
     const nav = source("components/mode-nav.tsx");
     expect(nav.split("<ContactDialog />").length - 1).toBe(1);
-    expect(nav).toContain("openContact({ page: pathname, name:");
+    // 2026-09-25: ヘッダーの段の「問い合わせ」ボタンはメニューへ移した
+    expect(nav).not.toContain("openContact(");
+    const menu = source("components/account-menu.tsx");
+    expect(menu).toContain("openContact({ page: pathname, name: signedIn.name })");
+    expect(menu).not.toContain("<ContactDialog");
+    // ★メニューを閉じてから開く・ログアウトのフォームの外に置く
+    const item = menu.slice(menu.indexOf("{view.contact && ("), menu.indexOf("<form"));
+    expect(item).toContain("setOpen(false);");
+    expect(item.indexOf("setOpen(false);")).toBeLessThan(item.indexOf("openContact("));
+    expect(menu.indexOf("{view.contact && (")).toBeGreaterThan(menu.indexOf("{view.accountLink && ("));
     expect(source("components/help-dialog.tsx")).toContain("openContact(");
   });
 });
