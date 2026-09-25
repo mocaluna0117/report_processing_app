@@ -1,17 +1,19 @@
-import { isSummarySplit, type SummarySplitSource } from "@/lib/summary";
-import { PROPERTY_COUNT_COL, SUMMARY_COL, WORK_COL } from "@/lib/tsv";
+import { isSummarySplit } from "@/lib/summary";
+import { PROPERTY_COUNT_COL, SUMMARY_COL, TREATMENT_COL, WORK_COL } from "@/lib/tsv";
 
-/** 行に展開するときの工事区分1件分 (summary があればその行の点検内容を差し替える) */
+/** 行に展開するときの工事区分1件分 (summary・treatment があればその行の点検内容・処置を差し替える) */
 export interface RowCategory {
   value: string;
   /** 工事区分ごとに点検内容を分けているときの本文。undefined なら共通のセルを使う */
   summary?: string;
+  /** 工事区分ごとに処置を分けているときの処置。undefined なら共通のセルを使う */
+  treatment?: string;
 }
 
 /**
  * 1報告書分のセルを工事区分の数だけ行に展開する。
  * 工事区分が0件なら工事区分が空欄の1行を返す (他の列はすべて同じ値)。
- * summary を持つ区分は、その行の点検内容だけを差し替える。
+ * summary・treatment を持つ区分は、その行の点検内容・処置だけを差し替える。
  * 物件数の★は記録1件につき1つなので、2行目以降は空欄にする
  * (★を入れるのはセルを作るとき。ここでは先頭の行の値をそのまま残すだけ)。
  */
@@ -21,20 +23,23 @@ export function expandRow(cells: string[], categories: readonly RowCategory[]): 
     cells.map((v, i) => {
       if (i === WORK_COL) return c.value;
       if (i === SUMMARY_COL && c.summary !== undefined) return c.summary;
+      if (i === TREATMENT_COL && c.treatment !== undefined) return c.treatment;
       if (i === PROPERTY_COUNT_COL && k > 0) return "";
       return v;
     }),
   );
 }
 
-/** ResultRow を貼り付け用の行に展開する (分けていれば区分ごとの点検内容を使う) */
-export function expandResultRow(
-  row: SummarySplitSource & { categories: readonly RowCategory[] },
-): string[][] {
+/** ResultRow を貼り付け用の行に展開する (分けていれば区分ごとの点検内容・処置を使う) */
+export function expandResultRow(row: { cells: string[]; categories: readonly RowCategory[] }): string[][] {
   const split = isSummarySplit(row);
   return expandRow(
     row.cells,
-    row.categories.map((c) => (split ? { value: c.value, summary: c.summary ?? "" } : { value: c.value })),
+    row.categories.map((c) =>
+      split
+        ? { value: c.value, summary: c.summary ?? "", treatment: c.treatment ?? "" }
+        : { value: c.value },
+    ),
   );
 }
 

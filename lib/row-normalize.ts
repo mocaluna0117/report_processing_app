@@ -5,6 +5,7 @@
  * 「古いデータをどう読み替えるか」をこのファイルに集める。冪等 (何度通しても同じ結果)。
  */
 import { attachSummaries, syncSummaryCell, withoutSummaries } from "@/lib/summary";
+import { attachTreatments } from "@/lib/treatment";
 import { PROPERTY_COUNT_COL, PROPERTY_COUNT_MARK } from "@/lib/tsv";
 import type { WorkCategoryEntry } from "@/lib/types";
 
@@ -36,18 +37,20 @@ type StoredRow = {
  * - 工事区分2件以上で本文の無い区分があれば、共通のセルから振り分ける (分ける前の形式)
  * - 分けている行は共通のセルを鏡に揃える (フラグ時代は「分ける前の本文」がセルに残っていた)
  * - 1件以下なら区分に残った本文を外す (共通のセルが唯一の本文)
+ * - 処置も同じ決まりで揃える (lib/treatment.ts)。行ごとに分ける前の保存データは、共通の処置を先頭の行に入れる
  * - 使わなくなった splitSummary フラグは落とす
  */
 export function normalizeStoredRow<R extends StoredRow>(row: R): R {
   const { splitSummary: _legacyFlag, ...rest } = row;
   const cells = withPropertyCountMark(row);
   const legacy = row.categories.some((c) => c.summary === undefined);
-  const next =
+  const summaries =
     row.categories.length < 2
       ? { cells, categories: withoutSummaries(row.categories) }
       : legacy
         ? attachSummaries(cells, row.categories)
         : { cells: syncSummaryCell(cells, row.categories), categories: row.categories };
+  const next = attachTreatments(summaries.cells, summaries.categories);
   // 読み替え済みの印を残す (次の読み込みで、消した★を勝手に戻さないため)
   return { ...(rest as unknown as R), ...next, propertyCountMarked: true };
 }

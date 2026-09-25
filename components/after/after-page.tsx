@@ -514,6 +514,7 @@ export function AfterPage() {
             onCategoryAdd={editors.onCategoryAdd}
             onCategoryRemove={editors.onCategoryRemove}
             onCategorySummaryChange={editors.onCategorySummaryChange}
+            onCategoryTreatmentChange={editors.onCategoryTreatmentChange}
             onOpenMail={(row) => setMailCaseId(row.pairId)}
             onOpenReport={(row) => setReportCaseId(row.pairId)}
             onPrefetchReport={prefetchReportAssets}

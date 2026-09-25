@@ -119,6 +119,7 @@ export function ResultsTable<R extends ResultRow>({
   onCategoryAdd,
   onCategoryRemove,
   onCategorySummaryChange,
+  onCategoryTreatmentChange,
   onOpenMail,
   onOpenReport,
   onPrefetchReport,
@@ -144,6 +145,8 @@ export function ResultsTable<R extends ResultRow>({
   onCategoryRemove: (pairId: string, index: number) => void;
   /** 工事区分が2件以上のときの、その区分の行の点検内容 */
   onCategorySummaryChange: (pairId: string, index: number, value: string) => void;
+  /** 工事区分が2件以上のときの、その区分の行の処置 */
+  onCategoryTreatmentChange: (pairId: string, index: number, value: string) => void;
   onOpenMail: (row: R) => void;
   onOpenReport: (row: R) => void;
   /** 完了報告書のテンプレート・フォントを先読みする (ボタンにカーソルを乗せた時) */
@@ -214,9 +217,10 @@ export function ResultsTable<R extends ResultRow>({
               // 同じ報告書の行は工事区分の数だけ展開し、共通列は rowSpan でまとめて表示する
               const cats = row.categories.length > 0 ? row.categories : [EMPTY_CATEGORY];
               const span = cats.length;
-              // 工事区分が2件以上あれば、点検内容は常に区分ごとの入力欄になる
+              // 工事区分が2件以上あれば、点検内容・処置は常に区分ごとの入力欄になる
               const split = isSummarySplit(row);
               const summaryLabel = columnLabels?.[SUMMARY_COL] ?? COLUMNS[SUMMARY_COL];
+              const treatmentLabel = columnLabels?.[TREATMENT_COL] ?? COLUMNS[TREATMENT_COL];
               // 点検内容の下の注記 (要約エンジンのバッジ)
               const summaryFooter = row.engine && (
                 <div className="mt-0.5">
@@ -282,10 +286,16 @@ export function ResultsTable<R extends ResultRow>({
                                     type="button"
                                     title="この工事区分の行を削除"
                                     onClick={() => {
+                                      // 分けているときは、その行に書いた点検内容・処置も一緒に消える
+                                      const written = split
+                                        ? [
+                                            (cat.summary ?? "").trim() ? summaryLabel : null,
+                                            (cat.treatment ?? "").trim() ? treatmentLabel : null,
+                                          ].filter((label) => label !== null)
+                                        : [];
                                       if (
-                                        split &&
-                                        (cat.summary ?? "").trim() &&
-                                        !confirm(`この行に書いた${summaryLabel}も削除します。よろしいですか？`)
+                                        written.length > 0 &&
+                                        !confirm(`この行に書いた${written.join("・")}も削除します。よろしいですか？`)
                                       ) {
                                         return;
                                       }
@@ -326,6 +336,24 @@ export function ResultsTable<R extends ResultRow>({
                               className={`${BIG_CELL_CLASS} ${cellClass(row.confidences[col])}`}
                             />
                             {k === 0 && summaryFooter}
+                          </td>
+                        );
+                      }
+                      // 処置も同じく、工事区分が2件以上なら行ごとの入力欄にする (貼り付けも行ごと)
+                      if (col === TREATMENT_COL && split) {
+                        return (
+                          <td key={COLUMNS[col]} className="px-1 py-1.5">
+                            <textarea
+                              value={cat.treatment ?? ""}
+                              rows={4}
+                              placeholder={
+                                cat.value ? `${cat.value}の${treatmentLabel}` : treatmentLabel
+                              }
+                              onChange={(e) =>
+                                onCategoryTreatmentChange(row.pairId, k, e.target.value)
+                              }
+                              className={`${BIG_CELL_CLASS} ${cellClass(row.confidences[col])}`}
+                            />
                           </td>
                         );
                       }

@@ -23,6 +23,7 @@ import {
 } from "@/lib/summarize/examples";
 import { attachSummaries } from "@/lib/summary";
 import { toDateNoPad, toDateZeroPad, toFullWidthSpace, toHalfWidthAlnum } from "@/lib/text";
+import { attachTreatments } from "@/lib/treatment";
 import { PROPERTY_COUNT_MARK } from "@/lib/tsv";
 import type { Confidence, Contact, WorkCategoryEntry } from "@/lib/types";
 import type { WorkCategoriesResponse } from "@/lib/work-categories";
@@ -316,8 +317,10 @@ export async function processPair(
     });
 
     // 工事区分が2件以上なら点検内容を区分ごとに振り分け、共通のセルはその鏡にする (常に区分ごとに分ける)。
-    // 要約が取れなかったときは全行が空欄になり、confidences は fail のまま各行に赤で出る
-    const attached = attachSummaries(built.cells, categories);
+    // 要約が取れなかったときは全行が空欄になり、confidences は fail のまま各行に赤で出る。
+    // 処置も行ごとに持たせる (処理した直後は空欄)
+    const summarized = attachSummaries(built.cells, categories);
+    const attached = attachTreatments(summarized.cells, summarized.categories);
 
     return {
       pairId,

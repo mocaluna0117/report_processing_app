@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeStoredRow } from "@/lib/row-normalize";
-import { COLUMNS, PROPERTY_COUNT_COL, PROPERTY_COUNT_MARK, SUMMARY_COL } from "@/lib/tsv";
+import { COLUMNS, PROPERTY_COUNT_COL, PROPERTY_COUNT_MARK, SUMMARY_COL, TREATMENT_COL } from "@/lib/tsv";
 import type { WorkCategoryEntry } from "@/lib/types";
 
 const cells = (summary: string, propertyCount = PROPERTY_COUNT_MARK) =>
@@ -117,6 +117,43 @@ describe("normalizeStoredRow", () => {
       }),
     );
     expect(normalizeStoredRow(once)).toEqual(once);
+  });
+
+  it("★処置を行ごとに分ける前の保存データ (区分2件) は、共通の処置を先頭の行に入れる。何度通しても同じ", () => {
+    const stored = row({
+      summary: "①クロスに凹凸\n②サッシの結露",
+      categories: [
+        { value: "クロス", confidence: "ok", summary: "クロスに凹凸" },
+        { value: "サッシ", confidence: "ok", summary: "サッシの結露" },
+      ],
+    });
+    const before = { ...stored, cells: stored.cells.map((c, i) => (i === TREATMENT_COL ? "張替え済み" : c)) };
+    const once = normalizeStoredRow(before);
+    expect(once.categories.map((c) => c.treatment)).toEqual(["張替え済み", ""]);
+    expect(once.cells[TREATMENT_COL]).toBe("張替え済み");
+    expect(normalizeStoredRow(once)).toEqual(once);
+  });
+
+  it("行ごとの処置を持っている行は変えず、共通のセルを鏡に揃える", () => {
+    const after = normalizeStoredRow(
+      row({
+        summary: "①クロスに凹凸\n②サッシの結露",
+        categories: [
+          { value: "クロス", confidence: "ok", summary: "クロスに凹凸", treatment: "張替え" },
+          { value: "サッシ", confidence: "ok", summary: "サッシの結露", treatment: "調整" },
+        ],
+      }),
+    );
+    expect(after.categories.map((c) => c.treatment)).toEqual(["張替え", "調整"]);
+    expect(after.cells[TREATMENT_COL]).toBe("張替え\n調整");
+  });
+
+  it("工事区分が1件以下なら区分に残った処置を外し、共通の処置は触らない", () => {
+    const after = normalizeStoredRow(
+      row({ categories: [{ value: "クロス", confidence: "ok", treatment: "古い処置" }] }),
+    );
+    expect(after.categories[0].treatment).toBeUndefined();
+    expect(after.cells[TREATMENT_COL]).toBe(`v:${COLUMNS[TREATMENT_COL]}`);
   });
 
   it("pairId など他のフィールドは残す", () => {

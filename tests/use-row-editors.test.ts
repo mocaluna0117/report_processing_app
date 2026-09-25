@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ResultRow } from "@/lib/process";
 import { DEFAULT_REPORT_OPTIONS } from "@/lib/report/model";
 import { mergeSplitSummary } from "@/lib/summary";
-import { COLUMNS, SUMMARY_COL } from "@/lib/tsv";
+import { mergeTreatments } from "@/lib/treatment";
+import { COLUMNS, SUMMARY_COL, TREATMENT_COL } from "@/lib/tsv";
 import type { Contact, WorkCategoryEntry } from "@/lib/types";
 import { useRowEditors } from "@/lib/use-row-editors";
 
@@ -130,6 +131,72 @@ describe("点検内容は工事区分の数で分かれる", () => {
   it("分ける / まとめるの切り替えは持たない (工事区分の数で決まる)", () => {
     const editors = useRowEditors<ResultRow>(() => {});
     expect("onSplitSummaryChange" in editors).toBe(false);
+  });
+});
+
+describe("処置も工事区分の数で分かれる (2026-09-25)", () => {
+  const withTreatment = (row: ResultRow, treatment: string) => ({
+    ...row,
+    cells: row.cells.map((c, i) => (i === TREATMENT_COL ? treatment : c)),
+  });
+  /** 2件で、各行に処置があり、共通のセルはその鏡 */
+  const splitRow = () =>
+    makeRow({
+      cells: cellsWith(MERGED).map((c, i) => (i === TREATMENT_COL ? "クロス張替え\nパッキン交換" : c)),
+      categories: [
+        { value: "クロス", confidence: "ok", summary: "1階洋室のクロスに凹凸", treatment: "クロス張替え" },
+        { value: "サッシ", confidence: "ok", summary: "玄関サッシの結露", treatment: "パッキン交換" },
+      ],
+    });
+  const treatments = (row: ResultRow) => row.categories.map((c: WorkCategoryEntry) => c.treatment);
+  const isTreatmentMirrored = (row: ResultRow) =>
+    row.cells[TREATMENT_COL] === mergeTreatments(row.categories);
+
+  it("1件→2件に足すと、共通の処置は元の行 (先頭) に残り、足した行は空欄", () => {
+    const next = edit(withTreatment(singleRow(), "クロス張替え"), (e) => e.onCategoryAdd("p-1"));
+    expect(treatments(next)).toEqual(["クロス張替え", ""]);
+    expect(next.cells[TREATMENT_COL]).toBe("クロス張替え");
+  });
+
+  it("2件以上のときに足した行は処置も空欄", () => {
+    const next = edit(splitRow(), (e) => e.onCategoryAdd("p-1"));
+    expect(treatments(next)).toEqual(["クロス張替え", "パッキン交換", ""]);
+    expect(isTreatmentMirrored(next)).toBe(true);
+  });
+
+  it("行の処置を直すと、その行だけが変わり、共通のセルも追従する", () => {
+    const next = edit(splitRow(), (e) => e.onCategoryTreatmentChange("p-1", 1, "建付け調整"));
+    expect(treatments(next)).toEqual(["クロス張替え", "建付け調整"]);
+    expect(next.cells[TREATMENT_COL]).toBe("クロス張替え\n建付け調整");
+    // 点検内容は変わらない
+    expect(summaries(next)).toEqual(["1階洋室のクロスに凹凸", "玄関サッシの結露"]);
+    expect(next.cells[SUMMARY_COL]).toBe(MERGED);
+  });
+
+  it("行の点検内容を直しても、処置は変わらない", () => {
+    const next = edit(splitRow(), (e) => e.onCategorySummaryChange("p-1", 0, "クロスの剥がれ"));
+    expect(treatments(next)).toEqual(["クロス張替え", "パッキン交換"]);
+    expect(isTreatmentMirrored(next)).toBe(true);
+  });
+
+  it("区分を選び直しても処置は残る", () => {
+    const next = edit(splitRow(), (e) => e.onCategoryChange("p-1", 1, "玄関ドア"));
+    expect(next.categories[1]).toMatchObject({ value: "玄関ドア", treatment: "パッキン交換" });
+  });
+
+  it("区分を消して1件になったら、残った行の処置を共通のセルに戻し、区分から外す", () => {
+    const next = edit(splitRow(), (e) => e.onCategoryRemove("p-1", 1));
+    expect(treatments(next)).toEqual([undefined]);
+    expect(next.cells[TREATMENT_COL]).toBe("クロス張替え");
+  });
+
+  it("3件から1件消しても分けたまま、処置の鏡は更新される", () => {
+    const next = edit(
+      edit(splitRow(), (e) => e.onCategoryAdd("p-1")),
+      (e) => e.onCategoryRemove("p-1", 0),
+    );
+    expect(treatments(next)).toEqual(["パッキン交換", ""]);
+    expect(next.cells[TREATMENT_COL]).toBe("パッキン交換");
   });
 });
 

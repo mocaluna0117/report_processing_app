@@ -924,6 +924,7 @@ export default function Home() {
             onCategoryAdd={editors.onCategoryAdd}
             onCategoryRemove={editors.onCategoryRemove}
             onCategorySummaryChange={editors.onCategorySummaryChange}
+            onCategoryTreatmentChange={editors.onCategoryTreatmentChange}
             onOpenMail={(row) => setMailPairId(row.pairId)}
             onOpenReport={(row) => setReportPairId(row.pairId)}
             onPrefetchReport={prefetchReportAssets}

@@ -55,6 +55,11 @@ export interface WorkCategoryEntry {
    * 1件以下なら undefined で、共通の cells[SUMMARY_COL] が唯一の本文。
    */
   summary?: string;
+  /**
+   * この区分の行の処置。持つかどうかの決まりは summary と同じ (lib/treatment.ts)。
+   * 1件以下なら undefined で、共通の cells[TREATMENT_COL] が唯一の処置。
+   */
+  treatment?: string;
 }
 
 /**

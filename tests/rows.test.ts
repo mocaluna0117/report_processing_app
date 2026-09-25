@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { dropColumns, expandResultRow, expandRow } from "@/lib/rows";
-import { COLUMNS, PROPERTY_COUNT_COL, PROPERTY_COUNT_MARK, SUMMARY_COL, WORK_COL } from "@/lib/tsv";
+import {
+  COLUMNS,
+  PROPERTY_COUNT_COL,
+  PROPERTY_COUNT_MARK,
+  SUMMARY_COL,
+  TREATMENT_COL,
+  WORK_COL,
+} from "@/lib/tsv";
 
 const base = COLUMNS.map((c) =>
   c === "PJ"
@@ -92,6 +99,39 @@ describe("expandResultRow", () => {
       resultRow([{ value: "クロス", summary: "A" }, { value: "サッシ" }]),
     );
     expect(rows.map((r) => r[SUMMARY_COL])).toEqual(["A", ""]);
+  });
+});
+
+describe("処置は工事区分ごとに分かれる", () => {
+  const cells = base.map((v, i) =>
+    i === SUMMARY_COL ? "共通の点検内容" : i === TREATMENT_COL ? "共通の処置" : v,
+  );
+
+  it("treatment を持つ区分は処置だけ差し替える", () => {
+    const rows = expandRow(cells, [
+      { value: "クロス", summary: "A", treatment: "クロス張替え" },
+      { value: "サッシ", summary: "B", treatment: "" },
+    ]);
+    expect(rows.map((r) => r[TREATMENT_COL])).toEqual(["クロス張替え", ""]);
+    expect(rows.map((r) => r[SUMMARY_COL])).toEqual(["A", "B"]);
+  });
+
+  it("工事区分が2件以上なら、貼り付けの各行に区分ごとの処置が入る", () => {
+    const rows = expandResultRow({
+      cells,
+      categories: [
+        { value: "クロス", summary: "A", treatment: "クロス張替え" },
+        { value: "サッシ", summary: "B", treatment: "パッキン交換" },
+      ],
+    });
+    expect(rows.map((r) => r[TREATMENT_COL])).toEqual(["クロス張替え", "パッキン交換"]);
+  });
+
+  it("工事区分が1件以下なら共通の処置を使う", () => {
+    expect(expandResultRow({ cells, categories: [{ value: "クロス" }] })[0][TREATMENT_COL]).toBe(
+      "共通の処置",
+    );
+    expect(expandResultRow({ cells, categories: [] })[0][TREATMENT_COL]).toBe("共通の処置");
   });
 });
 

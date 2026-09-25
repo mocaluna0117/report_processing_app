@@ -11,7 +11,8 @@ import {
   syncSummaryCell,
   withoutSummaries,
 } from "@/lib/summary";
-import { SUMMARY_COL } from "@/lib/tsv";
+import { attachTreatments, mergeTreatments, withoutTreatments } from "@/lib/treatment";
+import { SUMMARY_COL, TREATMENT_COL } from "@/lib/tsv";
 import type { Contact, WorkCategoryEntry } from "@/lib/types";
 
 export interface RowEditors {
@@ -25,16 +26,17 @@ export interface RowEditors {
   onCategoryRemove: (pairId: string, index: number) => void;
   /** 工事区分が2件以上のときの、その区分の行の点検内容 */
   onCategorySummaryChange: (pairId: string, index: number, value: string) => void;
+  /** 工事区分が2件以上のときの、その区分の行の処置 */
+  onCategoryTreatmentChange: (pairId: string, index: number, value: string) => void;
 }
 
 export function useRowEditors<R extends ResultRow>(
   update: (pairId: string, fn: (row: R) => R) => void,
 ): RowEditors {
-  /** 工事区分を差し替え、2件以上なら共通のセルを各行の本文の鏡に保つ */
+  /** 工事区分を差し替え、2件以上なら共通のセルを各行の本文・処置の鏡に保つ */
   const setCategories = (row: R, categories: WorkCategoryEntry[]): R => ({
     ...row,
-    categories,
-    cells: syncSummaryCell(row.cells, categories),
+    ...attachTreatments(syncSummaryCell(row.cells, categories), categories),
   });
 
   return {
@@ -54,9 +56,14 @@ export function useRowEditors<R extends ResultRow>(
       update(pairId, (row) => {
         const next: WorkCategoryEntry[] =
           row.categories.length > 0 ? [...row.categories] : [{ value: "", confidence: "ok" }];
-        // 区分を選び直しても、その行に書いた点検内容は残す (本文が変わらないので鏡もそのまま)
-        const summary = next[index]?.summary;
-        next[index] = { value, confidence: "ok", ...(summary !== undefined ? { summary } : {}) };
+        // 区分を選び直しても、その行に書いた点検内容・処置は残す (中身が変わらないので鏡もそのまま)
+        const { summary, treatment } = next[index] ?? {};
+        next[index] = {
+          value,
+          confidence: "ok",
+          ...(summary !== undefined ? { summary } : {}),
+          ...(treatment !== undefined ? { treatment } : {}),
+        };
         return { ...row, categories: next };
       }),
     onCategoryAdd: (pairId) =>
@@ -65,20 +72,27 @@ export function useRowEditors<R extends ResultRow>(
           row.categories.length > 0 ? row.categories : [{ value: "", confidence: "ok" as const }];
         const added: WorkCategoryEntry = { value: "", confidence: "ok" };
         // 1件→2件になった瞬間に、共通のセルの本文を区分ごとに振り分ける
-        // (足した行は区分が空欄なので、事象はいったん元の行に残る)
-        if (cats.length < 2) return { ...row, ...attachSummaries(row.cells, [...cats, added]) };
-        // 既に分けていれば、足した行は点検内容も空欄から書き始める
-        return setCategories(row, [...cats, { ...added, summary: "" }]);
+        // (足した行は区分が空欄なので、事象はいったん元の行に残る)。処置は元の行 (先頭) に残す
+        if (cats.length < 2) {
+          const attached = attachSummaries(row.cells, [...cats, added]);
+          return { ...row, ...attachTreatments(attached.cells, attached.categories) };
+        }
+        // 既に分けていれば、足した行は点検内容・処置も空欄から書き始める
+        return setCategories(row, [...cats, { ...added, summary: "", treatment: "" }]);
       }),
     onCategoryRemove: (pairId, index) =>
       update(pairId, (row) => {
         const next = row.categories.filter((_, i) => i !== index);
         if (isSummarySplit(row) && next.length < 2) {
-          // 分ける相手がいなくなったら、残った行の本文を共通のセルに戻す (消した行の本文は落とす)
+          // 分ける相手がいなくなったら、残った行の本文・処置を共通のセルに戻す (消した行の分は落とす)
+          const merged: Record<number, string> = {
+            [SUMMARY_COL]: mergeSplitSummary(next),
+            [TREATMENT_COL]: mergeTreatments(next),
+          };
           return {
             ...row,
-            cells: row.cells.map((c, i) => (i === SUMMARY_COL ? mergeSplitSummary(next) : c)),
-            categories: withoutSummaries(next),
+            cells: row.cells.map((c, i) => merged[i] ?? c),
+            categories: withoutTreatments(withoutSummaries(next)),
           };
         }
         return setCategories(row, next);
@@ -88,6 +102,13 @@ export function useRowEditors<R extends ResultRow>(
         setCategories(
           row,
           row.categories.map((c, i) => (i === index ? { ...c, summary: value } : c)),
+        ),
+      ),
+    onCategoryTreatmentChange: (pairId, index, value) =>
+      update(pairId, (row) =>
+        setCategories(
+          row,
+          row.categories.map((c, i) => (i === index ? { ...c, treatment: value } : c)),
         ),
       ),
   };
