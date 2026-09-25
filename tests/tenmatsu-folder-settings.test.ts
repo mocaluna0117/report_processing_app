@@ -6,7 +6,6 @@ import { UPLOADABLE_EXTS } from "@/lib/tenmatsu/local/merge";
 import {
   forgetLogin,
   getFolderSession,
-  getPassword,
   getSessionToken,
   keepFolderSession,
   resetFolderSessions,
@@ -17,7 +16,8 @@ import { idbStatsCache } from "@/lib/tenmatsu/local/stats-cache";
 import {
   clearFolderHandle,
   clearFolderList,
-  clearUserId,
+  clearLegacyRakurakuUserId,
+  clearRakurakuCredential,
   defaultSource,
   hasFolderData,
   loadDept,
@@ -25,14 +25,14 @@ import {
   loadFolderList,
   loadPdfStats,
   loadRoutePin,
+  loadRakurakuCredential,
   loadSource,
-  loadUserId,
   saveDept,
   saveFolderHandle,
   saveFolderList,
   saveRoutePin,
+  saveRakurakuCredential,
   saveSource,
-  saveUserId,
 } from "@/lib/tenmatsu/store";
 
 const KEYS = [
@@ -46,6 +46,8 @@ const KEYS = [
   "tenmatsu:route",
   "senketsu:route",
   "rakuraku:userId",
+  "rakuraku:credential:kasou-taro",
+  "rakuraku:credential:kasou-hanako",
   "tenmatsu:list",
 ];
 
@@ -95,13 +97,25 @@ describe("新しい方式の設定", () => {
     expect(await loadDept("senketsu")).toBeNull();
   });
 
-  it("★ログインIDは保存するが、パスワードの入れ物は無い", async () => {
-    await saveUserId("99-test");
-    expect(await loadUserId()).toBe("99-test");
-    expect(await hasFolderData("tenmatsu")).toBe(true);
-    await clearUserId();
-    expect(await loadUserId()).toBeNull();
-    expect(await hasFolderData("tenmatsu")).toBe(false);
+  it("★楽楽精算の登録は、暗号の控えだけを Folio のアカウントごとに置く（平文のIDとパスワードの入れ物は無い）", async () => {
+    const stored = { sealed: "c1.kasou.sealed.value", ver: "ver-1", idHint: "••••01", savedAt: 1_800_000_000_000 };
+    await saveRakurakuCredential("kasou-taro", { ...stored, password: "架空" } as never);
+    // ★余計な欄（パスワードなど）は書かない
+    expect(await loadMeta("rakuraku:credential:kasou-taro")).toEqual(stored);
+    expect(await loadRakurakuCredential("kasou-taro")).toEqual(stored);
+    // ほかの人の Folio のアカウントでは見えない
+    expect(await loadRakurakuCredential("kasou-hanako")).toBeNull();
+    // 形が合わないものは無いものとして扱う
+    await saveMeta("rakuraku:credential:kasou-hanako", { sealed: "", ver: 1 });
+    expect(await loadRakurakuCredential("kasou-hanako")).toBeNull();
+    await clearRakurakuCredential("kasou-taro");
+    expect(await loadRakurakuCredential("kasou-taro")).toBeNull();
+  });
+
+  it("前の方式で覚えていたログインID（平文）は消せる", async () => {
+    await saveMeta("rakuraku:userId", "99-test");
+    await clearLegacyRakurakuUserId();
+    expect(await loadMeta("rakuraku:userId")).toBeUndefined();
   });
 });
 
@@ -123,16 +137,16 @@ describe("一覧の経路の固定（このブラウザに置く）", () => {
   });
 });
 
-describe("★パスワードとログイン状態はメモリにだけ置く", () => {
+describe("★ログイン状態はこのタブにだけ置く", () => {
   it("覚えて、忘れる。変わったら知らせる", () => {
     const seen: string[] = [];
-    const stop = subscribeLogin(() => seen.push(`${getPassword()}/${getSessionToken()}`));
-    setLogin({ password: "架空", sessionToken: "sealed" });
+    const stop = subscribeLogin(() => seen.push(`${getSessionToken()}`));
+    setLogin({ sessionToken: "sealed" });
     setLogin({ sessionToken: "refreshed" });
     getFolderSession("tenmatsu").departments = [{ code: "1800", label: "アフター(1800)" }];
     forgetLogin();
     stop();
-    expect(seen).toEqual(["架空/sealed", "架空/refreshed", "null/null"]);
+    expect(seen).toEqual(["sealed", "refreshed", "null"]);
     // ログインを忘れたら、読んだ部門も読み直させる
     expect(getFolderSession("tenmatsu").departments).toBeNull();
   });

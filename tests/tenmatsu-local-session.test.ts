@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { clearTabForAnotherPerson } from "@/lib/account/sign-out";
 import {
   LOGIN_STORAGE_KEY,
+  ensureSession,
   forgetLogin,
-  getLoginUserId,
-  getPassword,
+  getLoginProblem,
   getSessionToken,
+  getViewTab,
+  isLoggingIn,
   rememberDepartments,
   resetFolderSessions,
   restoreLogin,
@@ -51,19 +53,18 @@ afterEach(() => {
 
 describe("楽楽精算のログインをタブに残す", () => {
   it("ログインするとタブに控えを書き、再読み込みしても戻る", () => {
-    setLogin({ password: "secret-pass", sessionToken: "sealed-1", expiresAt: Date.now() + 60_000 });
+    setLogin({ sessionToken: "sealed-1", expiresAt: Date.now() + 60_000 });
     reload();
     expect(getSessionToken()).toBeNull();
     expect(restoreLogin()).toBe(true);
     expect(getSessionToken()).toBe("sealed-1");
   });
 
-  it("★パスワードはタブの控えに入れない (再読み込みすると消える)", () => {
-    setLogin({ password: "secret-pass", sessionToken: "sealed-1", expiresAt: Date.now() + 60_000 });
-    expect(storage.getItem(LOGIN_STORAGE_KEY)).not.toContain("secret-pass");
-    reload();
-    restoreLogin();
-    expect(getPassword()).toBeNull();
+  it("★タブの控えに入るのは封じたログイン状態と期限・部門だけ", () => {
+    setLogin({ sessionToken: "sealed-1", expiresAt: Date.now() + 60_000, viewTab: true });
+    expect(Object.keys(JSON.parse(storage.getItem(LOGIN_STORAGE_KEY) as string)).sort()).toEqual(
+      ["departments", "expiresAt", "sessionToken", "viewTab"].sort(),
+    );
   });
 
   it("★期限を過ぎた控えは戻さずに消す", () => {
@@ -136,33 +137,53 @@ describe("楽楽精算のログインをタブに残す", () => {
   });
 });
 
-describe("ログインに使ったID", () => {
-  it("取得の途中の入り直しに使えるよう、メモリに覚える", () => {
-    setLogin({ userId: "ID-1", password: "secret-pass", sessionToken: "sealed-1" });
-    expect(getLoginUserId()).toBe("ID-1");
+describe("★登録した控えでのログイン（ensureSession。押したときだけ呼ばれる）", () => {
+  const ok = (token = "sealed-1") => async () => ({ sessionToken: token, expiresAt: Date.now() + 60_000, viewTab: false });
+
+  it("ログインしていればそのまま返す（楽楽精算へは行かない）", async () => {
+    setLogin({ sessionToken: "sealed-0" });
+    let called = 0;
+    expect(await ensureSession(async () => {
+      called += 1;
+      return { sessionToken: "x", expiresAt: null, viewTab: null };
+    })).toBe("sealed-0");
+    expect(called).toBe(0);
   });
 
-  it("★タブの控えには入れない (再読み込みすると消える)", () => {
-    setLogin({ userId: "ID-1", sessionToken: "sealed-1", expiresAt: Date.now() + 60_000 });
-    expect(storage.getItem(LOGIN_STORAGE_KEY)).not.toContain("ID-1");
-    reload();
-    restoreLogin();
-    expect(getLoginUserId()).toBeNull();
+  it("★同時に何か所から呼ばれても、ログインは1回にまとめる。期限・「閲覧」タブも覚える", async () => {
+    let called = 0;
+    const login = async () => {
+      called += 1;
+      await new Promise((r) => setTimeout(r, 5));
+      return ok()();
+    };
+    const [a, b] = await Promise.all([ensureSession(login), ensureSession(login)]);
+    expect([a, b]).toEqual(["sealed-1", "sealed-1"]);
+    expect(called).toBe(1);
+    expect(getViewTab()).toBe(false);
+    expect(isLoggingIn()).toBe(false);
   });
 
-  it("ログアウトすると消える", () => {
-    setLogin({ userId: "ID-1", password: "secret-pass", sessionToken: "sealed-1" });
-    forgetLogin();
-    expect(getLoginUserId()).toBeNull();
+  it("★失敗したらやり直さずにそのまま返し、画面に出す理由を覚える。成功したら消える", async () => {
+    const failure = Object.assign(new Error("前回ログインできませんでした"), { code: "CREDENTIAL_REJECTED" });
+    let called = 0;
+    await expect(ensureSession(async () => {
+      called += 1;
+      throw failure;
+    })).rejects.toBe(failure);
+    expect(called).toBe(1);
+    expect(getLoginProblem()).toEqual({ code: "CREDENTIAL_REJECTED", message: "前回ログインできませんでした" });
+    expect(getSessionToken()).toBeNull();
+    await ensureSession(ok());
+    expect(getLoginProblem()).toBeNull();
   });
 });
 
 describe("★Folio からログアウトしたとき（次にこの端末を使う人に残さない）", () => {
   it("このタブの楽楽精算のログインを消し、読み込み直しても戻らない", () => {
-    setLogin({ userId: "ID-1", password: "secret-pass", sessionToken: "sealed-1", expiresAt: Date.now() + 60_000 });
+    setLogin({ sessionToken: "sealed-1", expiresAt: Date.now() + 60_000 });
     clearTabForAnotherPerson();
     expect(getSessionToken()).toBeNull();
-    expect(getPassword()).toBeNull();
     expect(storage.getItem(LOGIN_STORAGE_KEY)).toBeNull();
     reload();
     expect(restoreLogin()).toBe(false);

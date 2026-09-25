@@ -38,9 +38,11 @@ export class RakurakuError extends Error {
   }
 }
 
-/** ログインが切れていた。★自動でログインし直さない（やり直しはブラウザ側が1回だけ判断する） */
+/**
+ * ログインが切れていた。★ここではログインし直さない（取得の中で1回だけ、ブラウザ側が登録した控えで入り直す）
+ */
 export function sessionExpiredError(): RakurakuError {
-  return new RakurakuError("SESSION_EXPIRED", "楽楽精算のログインが切れました。ログインし直してください", {
+  return new RakurakuError("SESSION_EXPIRED", "楽楽精算のログインが切れました", {
     sessionLost: true,
   });
 }

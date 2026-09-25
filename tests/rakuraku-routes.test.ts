@@ -20,6 +20,7 @@ import {
 import type { RouteHow } from "@/lib/rakuraku/protocol";
 import { accountRouteText } from "@/lib/rakuraku/parse/route";
 import { landingCounters, readLandingMarkers } from "@/lib/rakuraku/landing";
+import { autoLoginOnce } from "@/lib/rakuraku/login";
 import { hasViewTab, isTabNamed } from "@/lib/rakuraku/tabs";
 import { tryLaunch } from "./rakuraku/helpers/browser";
 import { type FixtureServer, startFixtureServer } from "./rakuraku/helpers/fixture-server";
@@ -238,6 +239,60 @@ describe("★ログインしたあとに着いた画面の目印（数えるだ�
     const counters = landingCounters({ frames: 3, mainFrame: true, workflowTab: false, passwordFields: 0, unreadableFrames: 1 });
     expect(counters).toEqual({ n_frames: 3, n_main_frame: 1, n_workflow_tab: 0, n_password_field: 0, n_unreadable_frame: 1 });
   });
+});
+
+describe("★ログイン（1回だけ試す。着いた画面で成功をはっきり確かめる。2026-09-25）", () => {
+  const loginTenant = (): TenantConfig => ({ loginUrl: url("login_form.html") });
+  const tryLogin = async (password: string, beforeSubmit?: () => Promise<boolean>) => {
+    const page = await browser!.newPage();
+    const result = await autoLoginOnce(page, loginTenant(), { userId: "99-0001", password }, { beforeSubmit, confirmWaitMs: 1_500 });
+    return { page, result };
+  };
+
+  it.runIf(browser)("ログイン後のトップに着いたら成功（「ワークフロー」タブが見える）", async () => {
+    const { page, result } = await tryLogin("kasou-ok");
+    expect(result).toMatchObject({ code: "OK", submitted: true, markers: { workflowTab: true, passwordFields: 0 } });
+    await page.close();
+  }, 30_000);
+
+  it.runIf(browser)("ログイン画面のままなら失敗", async () => {
+    const { page, result } = await tryLogin("wrong-kasou");
+    expect(result).toMatchObject({ code: "LOGIN_FAILED", submitted: true });
+    await page.close();
+  }, 30_000);
+
+  it.runIf(browser)("★お知らせだけの画面（パスワード欄が無い）は、成功とみなさない", async () => {
+    const { page, result } = await tryLogin("kasou-notice");
+    expect(result).toMatchObject({ code: "LOGIN_UNCONFIRMED", submitted: true });
+    await page.close();
+  }, 30_000);
+
+  it.runIf(browser)("★打つ前に「送った」と書けなければ、パスワードを打たずにやめる", async () => {
+    const seen: string[] = [];
+    const page = await browser!.newPage();
+    const result = await autoLoginOnce(page, loginTenant(), { userId: "99-0001", password: "kasou-ok" }, {
+      beforeSubmit: async () => {
+        // 呼ばれた時点では、まだ何も打っていない
+        seen.push(await page.inputValue('input[type="password"]'));
+        return false;
+      },
+    });
+    expect(result).toMatchObject({ code: "LOGIN_ABORTED", submitted: false });
+    expect(seen).toEqual([""]);
+    expect(await page.inputValue('input[type="password"]')).toBe("");
+    await page.close();
+  }, 30_000);
+
+  it.runIf(browser)("「送った」と書けたら、1回だけ打って送る", async () => {
+    let calls = 0;
+    const { page, result } = await tryLogin("kasou-ok", async () => {
+      calls += 1;
+      return true;
+    });
+    expect(result.code).toBe("OK");
+    expect(calls).toBe(1);
+    await page.close();
+  }, 30_000);
 });
 
 describe("「閲覧」タブがあるアカウントかを見る", () => {

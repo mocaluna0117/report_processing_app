@@ -7,14 +7,13 @@
  *   （共有の端末で、前の人の楽楽精算に入れてしまう）。
  * ★ログイン画面へは、ログインが切れて画面の切り替え（ページを読み込み直さない移動）で来ることもある。
  *   ヘッダー（components/mode-nav.tsx）が pathname を見て呼ぶ。
- * ★楽楽精算のログインIDの覚え（このブラウザの保存）は消さない（1人1台の決定。2026-09-24）。
+ * ★登録した楽楽精算のIDとパスワード（このPCの暗号の控え）は消さない。Folio のアカウントごとに分けてあり、
+ *   ほかの人の Folio のログインでは使えない（1人1台の決定。2026-09-24・2026-09-25）。
  */
 import { clearContactDraft } from "@/lib/contact/dialog";
-import { clearLoginDismissal } from "@/lib/rakuraku-login-dialog";
 import { forgetLogin } from "@/lib/tenmatsu/local/session";
 
 export function clearTabForAnotherPerson(): void {
   forgetLogin();
-  clearLoginDismissal();
   clearContactDraft();
 }

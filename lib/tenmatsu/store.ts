@@ -4,16 +4,18 @@
 //   1. ローカルサーバーのトークン (旧方式。1回登録すれば次回から入力不要)
 //   2. 取得済み一覧のキャッシュ (つなぐ前でも前回の内容を出せるように。旧方式と新方式で別々)
 //   3. 1回に取る件数 (次回も同じ件数から始められるように)
-//   4. 取得の方法・保存先フォルダー・部門・楽楽精算のログインID (新方式)
+//   4. 取得の方法・保存先フォルダー・部門 (新方式)
+//   5. 楽楽精算のIDとパスワードの控え (Folio のサーバーの鍵で暗号にしたもの。2026-09-25)
 // どれもこの端末のこのブラウザの中だけに置く。folio のサーバー (Vercel) へは送らない。
 // 一覧には伝票№とファイル名が入るので、「一覧を消去」で消せるようにしている。
 // PDFの実体はここには入れない (PCの保存先フォルダにあり、見るときだけ取りに行く)。
-// ★楽楽精算のパスワードはここに置かない (メモリにだけ持つ。lib/tenmatsu/local/session.ts)。
+// ★楽楽精算のIDとパスワードは、暗号にした控えだけを置く (平文では置かない。lib/rakuraku-credential.ts)。
 import {
   META_NATSUIN_LIST,
   META_SENKETSU_LIST,
   META_TENMATSU_LIST,
   SETTING_KEY_NATSUIN_MAX_PER_RUN,
+  SETTING_KEY_RAKURAKU_CREDENTIAL_PREFIX,
   SETTING_KEY_RAKURAKU_USER_ID,
   SETTING_KEY_SENKETSU_MAX_PER_RUN,
   SETTING_KEY_TENMATSU_MAX_PER_RUN,
@@ -220,18 +222,52 @@ export async function saveRoutePin(kind: DocKindId, route: RouteId | null): Prom
   else await saveMeta(KEYS[kind].route, route);
 }
 
-/** 楽楽精算のログインID（種類で分けない。★パスワードは保存しない） */
-export async function loadUserId(): Promise<string | null> {
-  const raw = await loadMeta<unknown>(SETTING_KEY_RAKURAKU_USER_ID);
-  return typeof raw === "string" && raw.trim() !== "" ? raw : null;
-}
-
-export async function saveUserId(userId: string): Promise<void> {
-  await saveMeta(SETTING_KEY_RAKURAKU_USER_ID, userId);
-}
-
-export async function clearUserId(): Promise<void> {
+/** ★前の方式で覚えていた楽楽精算のログインID（平文）を消す（2026-09-25 からは使わない） */
+export async function clearLegacyRakurakuUserId(): Promise<void> {
   await deleteMeta(SETTING_KEY_RAKURAKU_USER_ID);
+}
+
+/** 楽楽精算のIDとパスワードの控え（Folio のアカウントごと）。★中身は暗号にしたものだけ */
+export interface StoredRakurakuCredential {
+  sealed: string;
+  ver: string;
+  /** 画面に出す伏せ字（例 ••••12） */
+  idHint: string;
+  savedAt: number;
+}
+
+export function isStoredRakurakuCredential(value: unknown): value is StoredRakurakuCredential {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.sealed === "string" &&
+    v.sealed.length > 0 &&
+    v.sealed.length <= 2048 &&
+    typeof v.ver === "string" &&
+    typeof v.idHint === "string" &&
+    v.idHint.length <= 16 &&
+    typeof v.savedAt === "number"
+  );
+}
+
+const credentialKey = (owner: string) => `${SETTING_KEY_RAKURAKU_CREDENTIAL_PREFIX}${owner}`;
+
+export async function loadRakurakuCredential(owner: string): Promise<StoredRakurakuCredential | null> {
+  const raw = await loadMeta<unknown>(credentialKey(owner));
+  return isStoredRakurakuCredential(raw) ? raw : null;
+}
+
+export async function saveRakurakuCredential(owner: string, value: StoredRakurakuCredential): Promise<void> {
+  await saveMeta(credentialKey(owner), {
+    sealed: value.sealed,
+    ver: value.ver,
+    idHint: value.idHint,
+    savedAt: value.savedAt,
+  });
+}
+
+export async function clearRakurakuCredential(owner: string): Promise<void> {
+  await deleteMeta(credentialKey(owner));
 }
 
 /** PDF のページ数の控え（キー → ページ数。読めなかったものは null） */
@@ -249,6 +285,6 @@ export async function savePdfStats(kind: DocKindId, stats: Record<string, number
 
 /** 新しい方式の保存データが残っているか（消去の導線を出すため） */
 export async function hasFolderData(kind: DocKindId): Promise<boolean> {
-  const [folder, items, userId] = await Promise.all([loadFolderHandle(kind), loadFolderList(kind), loadUserId()]);
-  return folder !== null || items.length > 0 || userId !== null;
+  const [folder, items] = await Promise.all([loadFolderHandle(kind), loadFolderList(kind)]);
+  return folder !== null || items.length > 0;
 }

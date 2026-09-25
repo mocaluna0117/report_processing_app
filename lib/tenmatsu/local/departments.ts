@@ -34,6 +34,16 @@ const NEVER_RETRY: readonly ApiCode[] = [
   "LOGIN_FAILED",
   "LOGIN_COOLDOWN",
   "LOGIN_FORM_NOT_FOUND",
+  // 登録したIDとパスワードでのログイン（2026-09-25）。★どれもやり直さない
+  "LOGIN_UNCONFIRMED",
+  "LOGIN_ABORTED",
+  "LOGIN_IN_PROGRESS",
+  "LOGIN_LIMIT",
+  "CREDENTIAL_MISSING",
+  "CREDENTIAL_STALE",
+  "CREDENTIAL_REJECTED",
+  "CREDENTIAL_UNREADABLE",
+  "CREDENTIAL_NOT_SAVED",
 ];
 
 /** 一時的な失敗（楽楽精算に触る前か、触っても何も送っていないもの） */

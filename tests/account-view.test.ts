@@ -145,11 +145,11 @@ describe("右上の人の形のアイコンのメニュー", () => {
       short: "架空 花子",
       heading: "架空 花子",
       sub: "ID: kasou-hanako",
-      accountLink: "アカウント（パスワードを変える）",
+      accountLink: "アカウント（パスワード・楽楽精算）",
     });
     expect(accountMenuView({ ...member, admin: true })).toMatchObject({
       sub: "ID: kasou-hanako・管理者",
-      accountLink: "アカウント（パスワード・管理）",
+      accountLink: "アカウント（パスワード・楽楽精算・管理）",
     });
   });
 

@@ -10,6 +10,15 @@ import { describe, expect, it } from "vitest";
  * ※実際の値そのものをここに書くと、それ自体が漏えいになるので書かない。
  */
 const ROOTS = ["tests/rakuraku", "lib/rakuraku", "app/api/rakuraku", "scripts/help-shots"];
+const EXTRA_FILES = [
+  "lib/rakuraku-credential.ts",
+  "components/account/rakuraku-credential.tsx",
+  "components/tenmatsu/rakuraku-line.tsx",
+  "lib/tenmatsu/store.ts",
+  "tests/tenmatsu-folder-settings.test.ts",
+  "tests/tenmatsu-local-session.test.ts",
+  "tests/tenmatsu-local-job.test.ts",
+];
 
 function collect(): string[] {
   const out: string[] = [];
@@ -21,6 +30,8 @@ function collect(): string[] {
     }
   };
   for (const root of ROOTS) walk(join(process.cwd(), root));
+  // ★楽楽精算のIDとパスワードの登録（2026-09-25）。ID（社員番号）が紛れ込みやすいので、ここも見張る
+  for (const file of EXTRA_FILES) out.push(join(process.cwd(), file));
   for (const name of readdirSync(join(process.cwd(), "tests"))) {
     if (/^rakuraku-.*\.test\.ts$/.test(name)) out.push(join(process.cwd(), "tests", name));
   }

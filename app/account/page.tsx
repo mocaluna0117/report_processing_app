@@ -4,6 +4,7 @@ import Link from "next/link";
 import { AccountAdmin } from "@/components/account/account-admin";
 import { NameForm } from "@/components/account/name-form";
 import { PasswordForm } from "@/components/account/password-form";
+import { RakurakuCredentialSection } from "@/components/account/rakuraku-credential";
 import { MUST_CHANGE_TEXT, NAME_CHANGED_TEXT, PASSWORD_CHANGED_TEXT, changeErrorText } from "@/lib/account/messages";
 import { accountPageState } from "@/lib/account/page-state";
 import { accountStoreFor, currentAuthConfig } from "@/lib/account/runtime";
@@ -13,7 +14,7 @@ export const metadata: Metadata = { title: "アカウント — Folio" };
 export const dynamic = "force-dynamic";
 
 /**
- * 自分のアカウント（パスワードを決める・変える）と、管理者だけのアカウントの管理。
+ * 自分のアカウント（パスワードを決める・変える・表示名・楽楽精算のIDとパスワードの登録）と、管理者だけのアカウントの管理。
  * 仮のパスワードで入った人は、ここでパスワードを決めるまでほかの画面を使えない（proxy.ts の門番）。
  */
 export default async function AccountPage({
@@ -29,9 +30,13 @@ export default async function AccountPage({
   return (
     <main className="mx-auto mt-8 max-w-3xl">
       {state.kind === "off" && (
-        <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
-          この環境では、一人ずつのアカウントを使っていません（手元の開発）。
-        </p>
+        <>
+          <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
+            この環境では、一人ずつのアカウントを使っていません（手元の開発）。
+          </p>
+          {/* 手元の開発でも楽楽精算の取得を試せるように（持ち主は "local"） */}
+          <RakurakuCredentialSection owner="local" />
+        </>
       )}
       {state.kind === "expired" && (
         <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
@@ -83,6 +88,8 @@ export default async function AccountPage({
               <div className="mt-2">
                 <NameForm current={state.record.name} />
               </div>
+              {/* ★楽楽精算のIDとパスワード（このPCに暗号で登録。取得のときに自動でログインする。2026-09-25） */}
+              <RakurakuCredentialSection owner={state.record.id} />
             </>
           )}
           {state.record.role === "admin" && !state.forced && <AccountAdmin selfId={state.record.id} />}

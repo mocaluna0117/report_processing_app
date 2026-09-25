@@ -19,7 +19,7 @@ export function BlockedReason({
   targetId?: string | null;
   targetLabel?: string | null;
   className?: string;
-  /** 欄へ動かすほかにすることがあれば（モーダルで行う手順のために足した） */
+  /** 欄へ動かすほかにすることがあれば（前は楽楽精算のログインの小窓のために使っていた。いまは使っていない） */
   onTarget?: (targetId: string) => void;
 }) {
   if (!reason) return null;

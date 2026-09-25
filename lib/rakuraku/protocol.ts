@@ -75,6 +75,25 @@ export type RakurakuCode =
   | "LOGIN_FAILED"
   | "LOGIN_COOLDOWN"
   | "SESSION_EXPIRED"
+  // 登録したIDとパスワード（2026-09-25。★どれもブラウザは自動でやり直さない）
+  /** 着いた画面で成功を確かめられなかった */
+  | "LOGIN_UNCONFIRMED"
+  /** 打つ前に取りやめた */
+  | "LOGIN_ABORTED"
+  /** 同じアカウントのログインが、ほかの画面で進んでいる */
+  | "LOGIN_IN_PROGRESS"
+  /** 回数の上限（自動は1日20回・確かめて保存は3回続けて失敗で1時間） */
+  | "LOGIN_LIMIT"
+  /** 登録が無い */
+  | "CREDENTIAL_MISSING"
+  /** このPCの登録は古い（ほかの画面で入れ直した・消した） */
+  | "CREDENTIAL_STALE"
+  /** 前回ログインできなかったので、入れ直すまで自動ではログインしない */
+  | "CREDENTIAL_REJECTED"
+  /** このPCの登録を読めない（鍵が変わった・別のアカウントのもの） */
+  | "CREDENTIAL_UNREADABLE"
+  /** ログインはできたが、登録を書き込めなかった */
+  | "CREDENTIAL_NOT_SAVED"
   // 部門と権限
   | "DEPT_NOT_AVAILABLE"
   | "DEPT_SELECT_MISSING"

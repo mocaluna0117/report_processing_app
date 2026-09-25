@@ -3,18 +3,17 @@
 /**
  * 右上（「Folio」の見出しと同じ行の右端）の、人の形のアイコンと名前。押すと小さなメニューが開く。
  * - 名前とログインID
- * - アカウント（パスワードを変える。管理者はアカウントの管理も）
+ * - アカウント（パスワードを変える・楽楽精算のIDとパスワードの登録。管理者はアカウントの管理も）
  * - Folio からログアウト（★このタブの楽楽精算のログインも一緒に忘れる）
  * ログインしていない画面・ログイン画面では出さない。
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { accountMenuView } from "@/lib/account/menu";
+import { FOLIO_LOGOUT_LABEL, FOLIO_LOGOUT_TITLE, accountMenuView } from "@/lib/account/menu";
 import { clearTabForAnotherPerson } from "@/lib/account/sign-out";
 import { useSignedIn } from "@/lib/account/use-signed-in";
 import { getNavigationGuard } from "@/lib/navigation-guard";
-import { FOLIO_LOGOUT_LABEL, FOLIO_LOGOUT_TITLE } from "@/lib/rakuraku-login-dialog";
 
 /** よくある人の形（頭と肩） */
 function UserIcon() {

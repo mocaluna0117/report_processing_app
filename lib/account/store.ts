@@ -14,6 +14,8 @@ export const KEYS = {
   failId: (hash: string) => `folio:fail:id:${hash}`,
   failIp: (hash: string) => `folio:fail:ip:${hash}`,
   boot: (hash: string) => `folio:boot:${hash}`,
+  /** 楽楽精算の自動ログインの状態（lib/rakuraku/credential-state.ts と同じキー。★folio:acct: で始めない＝一覧に混ざらない） */
+  rakuraku: (id: string) => `folio:rk:${id}`,
 };
 
 /** 失敗を数える長さ（15分） */
@@ -84,7 +86,11 @@ export function createAccountStore(kv: Kv): AccountStore {
       }
       return null;
     },
-    remove: (id) => kv.del(KEYS.account(id)),
+    // ★楽楽精算の自動ログインの状態も一緒に消す（同じ ID で作り直した人に残さない）
+    remove: async (id) => {
+      await kv.del(KEYS.rakuraku(id));
+      await kv.del(KEYS.account(id));
+    },
     list: async () => {
       const keys = (await kv.keys(ACCOUNT_PREFIX)).sort();
       const raws = await kv.mget(keys);

@@ -10,6 +10,7 @@ import { type KindId, type RememberedRoute, isKindId, isRouteId } from "./protoc
  * ★ ブラウザ側ではメモリにだけ置く（保存しない）。有効期限も入れる。
  */
 const ALGORITHM = "aes-256-gcm";
+const TAG_BYTES = 16;
 /** ログイン状態の有効期限 (8時間)。ブラウザはこの期限を過ぎた控えを戻さない */
 export const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const DEFAULT_TTL_MS = SESSION_TTL_MS;
@@ -34,6 +35,11 @@ export interface SessionPayload {
   viewTab?: boolean;
   /** 期限 (epoch ミリ秒) */
   exp: number;
+  /**
+   * 持ち主（Folio のアカウントの ID。手元でアカウントを使わないときは "local"）。
+   * ★ほかの人の Folio のログインで使わせない（2026-09-25）。これが無い古い札は切れた扱い
+   */
+  sub: string;
 }
 
 export type SessionErrorReason =
@@ -73,17 +79,19 @@ export function seal(
     routes?: Partial<Record<KindId, RememberedRoute>>;
     viewTab?: boolean;
     exp?: number;
+    sub: string;
   },
   ttlMs = DEFAULT_TTL_MS,
 ): string {
   const iv = randomBytes(12);
-  const cipher = createCipheriv(ALGORITHM, key(), iv);
+  const cipher = createCipheriv(ALGORITHM, key(), iv, { authTagLength: TAG_BYTES });
   const payload: SessionPayload = {
     state: input.state,
     home: input.home,
     ...(input.routes && Object.keys(input.routes).length > 0 ? { routes: input.routes } : {}),
     ...(input.viewTab === undefined ? {} : { viewTab: input.viewTab }),
     exp: input.exp ?? Date.now() + ttlMs,
+    sub: input.sub,
   };
   const body = Buffer.concat([
     cipher.update(JSON.stringify(payload), "utf8"),
@@ -98,29 +106,38 @@ export function seal(
  * ★期限（exp）・覚えた経路（routes）・タブの判定（viewTab）は前のまま引き継ぐ。
  * 部門を読むだけの呼び出しで期限を延ばしたり、覚えた分を落としたりしないため。
  */
-export function reseal(session: SessionPayload, state: string): string {
+export function reseal(
+  session: SessionPayload,
+  state: string,
+  routes: Partial<Record<KindId, RememberedRoute>> | undefined = session.routes,
+): string {
   return seal({
     state,
     home: session.home,
-    routes: session.routes,
+    routes,
     viewTab: session.viewTab,
     exp: session.exp,
+    sub: session.sub,
   });
 }
 
-export function unseal(token: string): SessionPayload {
+/**
+ * 開く。sub を渡すと、持ち主が違う札（ほかの人の Folio のログインで作られたもの・古い札）を断る。
+ */
+export function unseal(token: string, sub?: string): SessionPayload {
   const parts = token.split(".");
   if (parts.length !== 3) throw new SessionError("セッションの形が不正です");
   let json: string;
   try {
     const [iv, tag, body] = parts.map((p) => Buffer.from(p, "base64url"));
-    const decipher = createDecipheriv(ALGORITHM, key(), iv);
+    if (tag.length !== TAG_BYTES) throw new SessionError("セッションの形が不正です");
+    const decipher = createDecipheriv(ALGORITHM, key(), iv, { authTagLength: TAG_BYTES });
     decipher.setAuthTag(tag);
     json = Buffer.concat([decipher.update(body), decipher.final()]).toString("utf8");
   } catch (e) {
     if (e instanceof SessionError) throw e;
     // 中身を見せない (改ざんの手がかりを与えない)
-    throw new SessionError("セッションを読めませんでした。ログインし直してください");
+    throw new SessionError("楽楽精算のログイン状態を読めませんでした");
   }
   const payload = JSON.parse(json) as SessionPayload;
   if (
@@ -128,12 +145,16 @@ export function unseal(token: string): SessionPayload {
     typeof payload.home !== "string" ||
     typeof payload.exp !== "number" ||
     (payload.viewTab !== undefined && typeof payload.viewTab !== "boolean") ||
-    (payload.routes !== undefined && !isRouteMap(payload.routes))
+    (payload.routes !== undefined && !isRouteMap(payload.routes)) ||
+    (payload.sub !== undefined && typeof payload.sub !== "string")
   ) {
     throw new SessionError("セッションの中身が不正です");
   }
   if (payload.exp < Date.now()) {
-    throw new SessionError("セッションの期限が切れています。ログインし直してください", "expired");
+    throw new SessionError("楽楽精算のログインの期限が切れています", "expired");
+  }
+  if (sub !== undefined && payload.sub !== sub) {
+    throw new SessionError("楽楽精算のログインが切れています");
   }
   return payload;
 }

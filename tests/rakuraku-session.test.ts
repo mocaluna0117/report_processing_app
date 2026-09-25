@@ -14,7 +14,7 @@ afterEach(() => {
 
 const STATE = JSON.stringify({ cookies: [{ name: "JSESSIONID", value: "架空の値" }], origins: [] });
 const HOME = "https://example.test/abcd/top";
-const INPUT = { state: STATE, home: HOME };
+const INPUT = { state: STATE, home: HOME, sub: "kasou-taro" };
 
 describe("ログイン状態の封印", () => {
   it("封じて開くと元に戻る", () => {
@@ -113,7 +113,7 @@ describe("前に一覧を開けた経路も封じて持ち回る", () => {
 
   it("★封じ直しても期限は延ばさない（使い続けるだけで永久に使える札にしない）", () => {
     const first = unseal(seal(INPUT, 60_000));
-    const again = unseal(seal({ state: first.state, home: first.home, exp: first.exp }));
+    const again = unseal(seal({ state: first.state, home: first.home, exp: first.exp, sub: first.sub }));
     expect(again.exp).toBe(first.exp);
   });
 });
@@ -153,3 +153,21 @@ describe("封じ直し (部門を読んだとき)", () => {
     expect(opened.exp - Date.now()).toBeLessThanOrEqual(SESSION_TTL_MS);
   });
 });
+
+describe("★持ち主（Folio のアカウント）に結び付ける（2026-09-25）", () => {
+  it("持ち主を渡すと、ほかの人の札・持ち主の無い古い札は断る（切れた扱い）", () => {
+    const token = seal(INPUT);
+    expect(unseal(token, "kasou-taro").sub).toBe("kasou-taro");
+    expect(() => unseal(token, "kasou-hanako")).toThrow(SessionError);
+    const { sub: _sub, ...old } = INPUT;
+    const legacy = seal(old as never);
+    expect(() => unseal(legacy, "kasou-taro")).toThrow(SessionError);
+  });
+
+  it("封じ直しても、持ち主・期限・「閲覧」タブの判定を引き継ぐ", () => {
+    const first = unseal(seal({ ...INPUT, viewTab: true }));
+    const again = unseal(reseal(first, JSON.stringify({ cookies: [], origins: [] })), "kasou-taro");
+    expect(again).toMatchObject({ sub: "kasou-taro", viewTab: true, exp: first.exp });
+  });
+});
+

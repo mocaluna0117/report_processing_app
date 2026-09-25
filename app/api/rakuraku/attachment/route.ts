@@ -8,6 +8,7 @@ import { unseal } from "@/lib/rakuraku/session";
 import { withSessionPage } from "@/lib/rakuraku/session-browser";
 import { ndjsonResponse } from "@/lib/rakuraku/stream";
 import { requireSignedIn } from "@/lib/account/current";
+import { sessionSubjectOf } from "@/lib/rakuraku/subject";
 
 /**
  * 添付を1つだけ取り直す。`/fetch` の中で時間切れ（TIME_BUDGET_EXCEEDED）になった添付に使う。
@@ -35,7 +36,8 @@ export async function POST(request: Request) {
       const parsed = parseAttachmentRequest(raw);
       if (!parsed.ok) throw new RakurakuError("BAD_REQUEST", parsed.message);
       const body = parsed.value;
-      const session = unseal(body.sessionToken);
+      // ★持ち主（Folio のアカウント）が違う札は断る（ほかの人のログイン状態を使わせない）
+      const session = unseal(body.sessionToken, sessionSubjectOf(signed.id));
       const kind = KINDS[body.kind];
       const pin = body.route ? pinnedRoute(kind, body.route).id : null;
 

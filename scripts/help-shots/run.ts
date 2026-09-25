@@ -182,7 +182,7 @@ async function capture(browser: Browser, base: string, recipe: Recipe, format: "
     await context.addInitScript(() => {
       (globalThis as unknown as Record<string, unknown>).__name ??= (fn: unknown) => fn;
     });
-    await context.addInitScript(stubBeforeLoad, { login, dismissLogin: recipe.dismissLogin ?? false });
+    await context.addInitScript(stubBeforeLoad, { login });
     const page = await context.newPage();
     // 楽楽精算へは一切つながない（部門はログインの控えに入れてあるので読みに行かないはず）
     await page.route("**/api/rakuraku/**", (route) => route.abort());

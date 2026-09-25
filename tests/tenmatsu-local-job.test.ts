@@ -5,7 +5,7 @@ import { type RunAuth, type RunDeps, startRun } from "@/lib/tenmatsu/local/job";
 import { LOCAL_KINDS } from "@/lib/tenmatsu/local/kind-config";
 import type { Manifest } from "@/lib/tenmatsu/local/manifest";
 import { readRecords, registerPending, appendProcessed } from "@/lib/tenmatsu/local/records";
-import { type FetchResult, RakurakuApiError } from "@/lib/tenmatsu/local/server-api";
+import { type FetchResult, type RakurakuApi, RakurakuApiError } from "@/lib/tenmatsu/local/server-api";
 import { FakeFs } from "./helpers/fake-fs";
 import { type FakeApiScript, createFakeApi, file, scanOf, target } from "./helpers/fake-rakuraku-api";
 import { makePdf, makePng, pageSizes } from "./helpers/pdf-parts";
@@ -38,24 +38,29 @@ function fetched(extra: Partial<FetchResult> = {}): FetchResult {
 interface Setup {
   fs: FakeFs;
   store: FolderStore;
-  auth: RunAuth & { tokenValue: string | null; passwordValue: string | null };
+  auth: RunAuth & { tokenValue: string | null; registered: boolean; api: RakurakuApi | null };
   sleeps: number[];
 }
 
-function setup(options: { token?: string | null; password?: string | null } = {}): Setup {
+function setup(options: { token?: string | null; registered?: boolean } = {}): Setup {
   const fs = new FakeFs();
   const auth = {
-    userId: "99-test",
     tokenValue: options.token === undefined ? "token-0" : options.token,
-    passwordValue: options.password === undefined ? "架空のパスワード" : options.password,
-    password() {
-      return this.passwordValue;
-    },
+    /** このPCに楽楽精算の登録（暗号の控え）があるか */
+    registered: options.registered ?? true,
+    api: null as RakurakuApi | null,
     token() {
       return this.tokenValue;
     },
     setToken(token: string | null) {
       this.tokenValue = token;
+    },
+    // 本物は ensureSession(() => loginWithStoredCredential(api))。登録が無ければ送らずに止まる
+    async login() {
+      if (!this.registered) {
+        throw new RakurakuApiError("CREDENTIAL_MISSING", "楽楽精算のIDとパスワードが登録されていません。アカウントの画面で登録してください");
+      }
+      return (await (this.api as RakurakuApi).login("sealed-credential")).sessionToken;
     },
   };
   return { fs, store: new FolderStore(fs.root), auth, sleeps: [] };
@@ -63,6 +68,7 @@ function setup(options: { token?: string | null; password?: string | null } = {}
 
 async function run(s: Setup, script: FakeApiScript, limit = 10, patch: Partial<RunDeps> = {}) {
   const api = createFakeApi(script);
+  s.auth.api = api;
   const updates: StatusPayload[] = [];
   const handle = startRun(
     {
@@ -322,7 +328,7 @@ describe("本体PDFが取れない", () => {
 });
 
 describe("ログイン", () => {
-  it("★ログインが切れたら、パスワードがあれば1回だけログインし直して同じ伝票をやり直す", async () => {
+  it("★ログインが切れたら、登録した控えで1回だけログインし直して同じ伝票をやり直す", async () => {
     const s = setup();
     const expired = new RakurakuApiError("SESSION_EXPIRED", "楽楽精算のログインが切れました", false, true);
     const { status, api, log } = await run(s, { scan: scanOf([target("TE1")]), fetch: { TE1: [expired, fetched()] } });
@@ -341,8 +347,8 @@ describe("ログイン", () => {
     expect((await readRecords(s.store, tenmatsu)).done).toEqual(["TE1"]);
   });
 
-  it("パスワードがメモリに無ければ、ログインし直さずに止める", async () => {
-    const s = setup({ password: null });
+  it("このPCに登録が無ければ、ログインし直せずに止める（楽楽精算へは送らない）", async () => {
+    const s = setup({ registered: false });
     const expired = new RakurakuApiError("SESSION_EXPIRED", "楽楽精算のログインが切れました", false, true);
     const { status, api } = await run(s, { scan: expired });
     expect(status.state).toBe("error");
@@ -350,12 +356,22 @@ describe("ログイン", () => {
     expect(s.auth.tokenValue).toBeNull();
   });
 
-  it("まだログインしていなければ最初にログインする。パスワードが無ければ理由を出して止める", async () => {
+  it("まだログインしていなければ、最初に登録した控えでログインする。登録が無ければ理由を出して止める", async () => {
     const s = setup({ token: null });
     const { api } = await run(s, { scan: scanOf([]) });
     expect(api.calls.map((c) => c.method)).toEqual(["login", "scan"]);
-    const none = await run(setup({ token: null, password: null }), { scan: scanOf([]) });
-    expect(none.status.error).toBe("楽楽精算のパスワードを入力してから取得してください");
+    // ★送るのは控えだけ（ID とパスワードは送らない）
+    expect(api.calls[0].request).toEqual({ credential: "sealed-credential" });
+    const none = await run(setup({ token: null, registered: false }), { scan: scanOf([]) });
+    expect(none.status.error).toContain("登録されていません");
+  });
+
+  it("★1回の取得でログインするのは2回まで（最初の1回＋切れたときの1回）", async () => {
+    const s = setup({ token: null });
+    const expired = new RakurakuApiError("SESSION_EXPIRED", "楽楽精算のログインが切れました", false, true);
+    const { status, api } = await run(s, { scan: () => expired });
+    expect(status.state).toBe("error");
+    expect(api.calls.filter((c) => c.method === "login").length).toBeLessThanOrEqual(2);
   });
 
   it("★ログインに失敗したら、やり直さずに止める", async () => {

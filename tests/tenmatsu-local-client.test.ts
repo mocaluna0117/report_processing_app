@@ -34,7 +34,7 @@ function setup(script: FakeApiScript = {}, kind: "tenmatsu" | "senketsu" | "nats
     kind,
     store,
     api,
-    auth: { userId: "99-test", password: () => "架空", token: () => token, setToken: (t) => (token = t) },
+    auth: { token: () => token, setToken: (t) => (token = t), login: async () => (await api.login("sealed-credential")).sessionToken },
     deptCode: () => "1900",
     now: () => NOW,
     sleep: options.sleep ?? (async () => undefined),

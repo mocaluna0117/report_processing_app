@@ -26,11 +26,6 @@ export interface Recipe {
   seed?: SeedData;
   /** 楽楽精算にログイン済みに見せる（部門も入れておくと読みに行かない） */
   login?: { departments?: { code: string; label: string }[]; deptCode?: string; kind?: string };
-  /**
-   * 楽楽精算のログインの画面（モーダル）を自動で出さない。
-   * ★未ログインのまま顛末書系の画面を撮るときに要る（出したままだと写真を覆う）。
-   */
-  dismissLogin?: boolean;
   /** 撮る前の操作（押しても外へ出ない操作だけ） */
   act?: (page: Page) => Promise<void>;
   /** 撮る前に隠す要素（「使い方」ページに同じ文章が載っている部分など） */
@@ -341,27 +336,23 @@ export const RECIPES: readonly Recipe[] = [
   {
     id: "tenmatsu-folder",
     path: "/tenmatsu",
-    // ★未ログインで開くとログインの画面が出て写真を覆うので、出さない設定で撮る
-    dismissLogin: true,
     hide: ['nav[aria-label="顛末書の手順"] > div:last-child'],
-    // ★ログインの欄は画面から無くしたので、ヘッダーの表示まで入れて撮る
-    clip: ["header", "#tenmatsu-folder"],
+    // ★楽楽精算のログインの小窓とヘッダーの表示は無くした（2026-09-25）。手順の帯と保存先の欄を撮る
+    clip: ['nav[aria-label="顛末書の手順"]', "#tenmatsu-folder"],
     hotspots: [
-      { at: "#rakuraku-login" },
+      { at: 'nav[aria-label="顛末書の手順"] li:nth-child(2) button' },
       { at: '#tenmatsu-folder button:has-text("保存先フォルダーを選ぶ")' },
     ],
   },
   {
-    id: "tenmatsu-login",
-    path: "/tenmatsu",
-    // ★未ログインで開くと自分から出る。その画面をそのまま撮る
-    clip: ['[role="dialog"][aria-label="楽楽精算にログイン"]'],
-    // ★余白を足すと後ろの画面の文字が切れて写る。小窓だけを切り取る
-    pad: 0,
+    // ★楽楽精算のIDとパスワードは、アカウントの画面で一度だけ登録する（手元の開発ではアカウントを使わないので、そのまま開ける）
+    id: "tenmatsu-account",
+    path: "/account",
+    clip: ["#rakuraku"],
     hotspots: [
-      { at: '[role="dialog"] input[type="text"]' },
-      { at: '[role="dialog"] input[type="password"]' },
-      { at: '[role="dialog"] button[type="submit"]' },
+      { at: '#rakuraku input[name="rakuraku-login-id"]' },
+      { at: '#rakuraku input[name="rakuraku-secret"]' },
+      { at: '#rakuraku button:has-text("ログインできるか確かめて保存")' },
     ],
   },
   {

@@ -1,7 +1,8 @@
 /**
  * ブラウザから Folio のサーバー（`/api/rakuraku/*`）を呼ぶ。
  *
- * ★パスワードはログインのときだけ送る。どこにも保存しない（呼ぶ側のメモリにだけある）。
+ * ★ログインで送るのは、登録した控え（Folio のサーバーの鍵で暗号にしたもの）だけ。IDとパスワードは送らない
+ *   （2026-09-25 から。lib/rakuraku-credential.ts）。
  * ★ログインは**自動でやり直さない**（楽楽精算は連続して失敗するとアカウントがロックされる）。
  *   やり直すかどうかは呼ぶ側（job.ts）が1回だけ判断する。
  * ★行ごとの JSON の最後の行（done / error）が来なかったら、途中で切れたとみなして失敗にする。
@@ -108,12 +109,11 @@ export interface FetchResult {
 }
 
 export interface RakurakuApi {
-  /** expiresAt はログイン状態の期限 (ミリ秒)。古いサーバーは返さないので null */
-  login(
-    userId: string,
-    password: string,
-    /** viewTab: このアカウントに「閲覧」タブがあったか。古いサーバーは返さないので null */
-  ): Promise<{ sessionToken: string; expiresAt: number | null; viewTab: boolean | null }>;
+  /**
+   * 登録した控えでログインする。expiresAt はログイン状態の期限 (ミリ秒)。
+   * viewTab: このアカウントに「閲覧」タブがあったか。古いサーバーは返さないので null
+   */
+  login(credential: string): Promise<{ sessionToken: string; expiresAt: number | null; viewTab: boolean | null }>;
   departments(
     sessionToken: string,
   ): Promise<DepartmentsResponse & { sessionToken: string; expiresAt: number | null }>;
@@ -229,11 +229,8 @@ export function createRakurakuApi(options: { fetchImpl?: typeof fetch; baseUrl?:
   };
 
   return {
-    login: async (userId, password) => {
-      const res = await json<{ sessionToken: string; expiresAt?: number; viewTab?: boolean }>("login", {
-        userId,
-        password,
-      });
+    login: async (credential) => {
+      const res = await json<{ sessionToken: string; expiresAt?: number; viewTab?: boolean }>("login", { credential });
       return {
         sessionToken: res.sessionToken,
         expiresAt: typeof res.expiresAt === "number" ? res.expiresAt : null,

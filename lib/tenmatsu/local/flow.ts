@@ -1,14 +1,14 @@
 /**
  * 顛末書・専決決裁書・捺印決裁書の画面の「手順」と「押せない理由」。純関数のみ。
  *
- * ★この画面は「保存先フォルダー → 楽楽精算にログイン → 部門 → 取得」の順に進むが、枠が同じ見え方で
+ * ★この画面は「保存先フォルダー → 楽楽精算のIDとパスワードの登録 → 部門 → 取得」の順に進むが、枠が同じ見え方で
  *   並ぶので、初めての人には順番も、取得ボタンが押せない理由も分からなかった。ここで段と理由を決め、
  *   画面（components/tenmatsu/tenmatsu-folder-page.tsx）は描くだけにする。
  * ★取得ボタンの可否 canStartRun は**画面にあった式をそのまま移したもの**。理由 runBlockedReason と
  *   食い違うと「押せないのに理由が出ない」に戻るので、tests/tenmatsu-flow.test.ts で総当たりに確かめる。
  */
 import { type FlowPlan, type FlowStepDef, type StepEval, resolveFlow } from "@/lib/flow-steps";
-import { RAKURAKU_CHIP_ID } from "@/lib/rakuraku-login-dialog";
+import type { CredentialView } from "@/lib/rakuraku-credential";
 import type { DocKind, DocKindId } from "@/lib/tenmatsu/kinds";
 import { LOCAL_KINDS } from "@/lib/tenmatsu/local/kind-config";
 import { FOLDER_UNSUPPORTED_TEXT } from "@/lib/tenmatsu/local/folder-handle";
@@ -26,8 +26,15 @@ export interface TenmatsuFlowInput {
   connection: FolderConnection;
   /** フォルダーに繋がって読み書きできるか */
   connected: boolean;
+  /** このタブで楽楽精算にログインしているか（封じたログイン状態があるか） */
   loggedIn: boolean;
+  /** いまログインしているところか */
   loginBusy: boolean;
+  /**
+   * このPCの楽楽精算の登録（アカウントの画面で入れる。2026-09-25）。
+   * ready なら、取得を押したときに Folio が自動でログインする
+   */
+  credential: CredentialView;
   /** 部門の数。null = まだ読み込んでいない、0 = 切り替えが無いアカウント */
   departmentCount: number | null;
   /** 選んでいる部門の表示名。未選択は null */
@@ -40,8 +47,6 @@ export interface TenmatsuFlowInput {
   /** 別の種類の取得が動いていれば、その種類 */
   otherRunKind: DocKindId | null;
   itemCount: number;
-  /** ログインIDをこのブラウザに保存してあるか（初回かどうかの判定に使う） */
-  userIdSaved: boolean;
 }
 
 /** 段の定義。飛び先の id は種類ごとに分ける（3つのタブが同じ部品を使うため） */
@@ -62,17 +67,16 @@ export function tenmatsuStepDefs(kind: DocKind): FlowStepDef[] {
     },
     {
       id: "login",
-      label: "楽楽精算にログイン",
-      description:
-        "ご自分の楽楽精算のログインIDとパスワードを入れます。失敗しても自動でやり直しません (アカウントがロックされるため)。",
-      // ★入力欄はモーダルに移したので、行き先は画面の欄ではなくヘッダーの表示（押すとモーダルが開く）
-      targetId: RAKURAKU_CHIP_ID,
+      label: "楽楽精算のIDとパスワードを登録",
+      description: "アカウントの画面で、ご自分の楽楽精算のIDとパスワードを一度だけ登録します。取得のときは自動でログインします。",
+      // ★行き先はこの画面の「楽楽精算」の1行（そこからアカウントの画面へ移れる）
+      targetId: `${kind.id}-rakuraku`,
     },
     {
       id: "dept",
       label: "部門を選ぶ",
       description:
-        "選べる部門を楽楽精算から自動で読み込みます。切り替えが無いアカウント（「閲覧」タブが無い方）は、何もせずに通り過ぎます。",
+        "選べる部門を楽楽精算から読み込みます（取得を押したとき）。切り替えが無いアカウント（「閲覧」タブが無い方）は、何もせずに通り過ぎます。",
       targetId: `${kind.id}-run`,
     },
     {
@@ -102,12 +106,17 @@ function departmentReady(input: TenmatsuFlowInput): boolean {
   return input.departmentCount === 0 || input.deptLabel !== null;
 }
 
-/** 取得を始められるか。★画面にあった canRun の式をそのまま移したもの（部門の判定だけ上にまとめた） */
+/**
+ * 取得を始められるか。★画面にあった canRun の式をもとにしている（部門の判定だけ上にまとめた）。
+ * ★ログインしていなくても、登録が使えるなら押せる（押したときにログインし、部門を読んでから始める）。
+ *   ログインしているときだけ、部門が片付いているかを見る。
+ */
 export function canStartRun(input: TenmatsuFlowInput): boolean {
   return (
     input.connected &&
-    input.loggedIn &&
-    departmentReady(input) &&
+    (input.loggedIn || input.credential === "ready") &&
+    !input.loginBusy &&
+    (!input.loggedIn || departmentReady(input)) &&
     !input.running &&
     input.otherRunKind === null &&
     input.restored
@@ -142,8 +151,25 @@ export function composeDetails(kind: DocKind): string[] {
 export const DEPT_READ_FAILED_BLOCK_TEXT =
   "部門を読み込めませんでした。「もう一度読み込む」か「部門を指定せずに取得する」を押してください";
 
-/** 部門を読んでいる最中（画面が勝手に読みに行くので、利用者は待つだけでよい） */
+/** 部門を読んでいる最中（ログインしていれば画面が勝手に読みに行くので、利用者は待つだけでよい） */
 export const DEPT_READING_TEXT = "部門を読み込んでいます。少しお待ちください";
+
+/** ログインしていないとき（画面を開いただけではログインしない。部門は押したときに読む） */
+export const DEPT_ON_RUN_TEXT = "部門は「取得」を押したときに楽楽精算から読み込みます。";
+
+/** 登録が使えないときに、取得ボタンの下へ出す理由 */
+export function credentialBlockText(view: CredentialView): string {
+  switch (view) {
+    case "checking":
+      return "楽楽精算の登録を確かめています…";
+    case "rejected":
+      return "楽楽精算のIDとパスワードを、アカウントの画面で入れ直してください（前回ログインできませんでした）";
+    case "stale":
+      return "楽楽精算のIDとパスワードを、アカウントの画面で入れ直してください";
+    default:
+      return "楽楽精算のIDとパスワードを、アカウントの画面で登録してください";
+  }
+}
 
 export interface BlockedReasonText {
   text: string;
@@ -158,7 +184,7 @@ export interface BlockedReasonText {
  */
 export function runBlockedReason(input: TenmatsuFlowInput): BlockedReasonText | null {
   const folder = { targetId: `${input.kind.id}-folder`, targetLabel: "保存先フォルダーへ" };
-  const rakuraku = { targetId: RAKURAKU_CHIP_ID, targetLabel: "ログイン" };
+  const rakuraku = { targetId: `${input.kind.id}-rakuraku`, targetLabel: "楽楽精算の登録へ" };
   const here = { targetId: null, targetLabel: null };
   if (input.running) return null; // ボタン自身が進み具合を出している
   if (!input.restored) return { text: "前回の内容を読み込んでいます…", ...here };
@@ -166,8 +192,11 @@ export function runBlockedReason(input: TenmatsuFlowInput): BlockedReasonText | 
   //   （つながっていれば対応しているので、その組み合わせは見ない）
   if (!input.supported && !input.connected) return { text: FOLDER_UNSUPPORTED_TEXT, ...folder };
   if (!input.connected) return { text: "保存先フォルダーにつないでください", ...folder };
-  if (!input.loggedIn) return { text: "楽楽精算にログインしてください", ...rakuraku };
-  if (!departmentReady(input)) {
+  if (input.loginBusy) return { text: "楽楽精算にログインしています…", ...here };
+  if (!input.loggedIn && input.credential !== "ready") {
+    return { text: credentialBlockText(input.credential), ...(input.credential === "checking" ? here : rakuraku) };
+  }
+  if (input.loggedIn && !departmentReady(input)) {
     if (input.departmentCount === null) {
       return { text: input.departmentFailed ? DEPT_READ_FAILED_BLOCK_TEXT : DEPT_READING_TEXT, ...here };
     }
@@ -195,7 +224,7 @@ export function listEmptyText(kind: DocKind, connected: boolean): string {
 
 /** 何も始めていない画面か（初回の案内を出すかどうか） */
 export function isFreshTenmatsu(input: TenmatsuFlowInput): boolean {
-  return input.restored && !input.hasHandle && !input.userIdSaved && !input.loggedIn && input.itemCount === 0;
+  return input.restored && !input.hasHandle && input.credential === "none" && !input.loggedIn && input.itemCount === 0;
 }
 
 const KIND_LABELS: Record<DocKindId, string> = {
@@ -228,18 +257,28 @@ export function tenmatsuFlow(input: TenmatsuFlowInput): FlowPlan {
                 hint: `「保存先フォルダーを選ぶ」を押して、${label}のPDFを置くフォルダーを選んでください`,
               };
 
-  const login: StepEval = input.loggedIn
-    ? { kind: "done" }
-    : input.loginBusy
-      ? { kind: "ready", hint: "ログインしています…", note: "ログイン中" }
-      : {
-          kind: "ready",
-          // ★入力欄はモーダルに移した（2026-09-22）。押す場所を2つとも書く
-          hint: "この段か、右上の「楽楽精算: 未ログイン」を押すとログインの画面が開きます。ログインIDとパスワードを入れてください",
-        };
+  const login: StepEval = input.loginBusy
+    ? { kind: "ready", hint: "楽楽精算にログインしています…", note: "ログイン中" }
+    : input.loggedIn
+      ? { kind: "done", note: "ログイン中" }
+      : input.credential === "ready"
+        ? { kind: "done", note: "登録済み" }
+        : input.credential === "checking"
+          ? { kind: "ready", hint: "楽楽精算の登録を確かめています…" }
+          : {
+              kind: "ready",
+              // ★ログインの画面は無い。登録はアカウントの画面で行い、取得のときに自動でログインする（2026-09-25）
+              hint:
+                input.credential === "none"
+                  ? "右上の人の形のアイコン →「アカウント」の「楽楽精算のIDとパスワード」で登録してください（取得のときは自動でログインします）"
+                  : credentialBlockText(input.credential),
+            };
 
+  // ★登録が使えてログインはまだのときは、部門は取得を押したときに読む（ここでは済んだ扱いにして、取得の段へ進める）
   const dept: StepEval = !input.loggedIn
-    ? { kind: "ready", hint: "先に楽楽精算にログインしてください" }
+    ? input.credential === "ready"
+      ? { kind: "done", note: "取得のときに読む" }
+      : { kind: "ready", hint: "先に楽楽精算のIDとパスワードを登録してください" }
     : input.departmentCount === null && input.departmentSkipped
       ? { kind: "done", note: "指定せず" }
       : input.departmentCount === 0

@@ -45,7 +45,7 @@ export function FlowSteps({
   expanded: boolean;
   /**
    * 段を押したときに、欄へ動かすほかにすることがあれば。
-   * ★欄ではなくモーダルで行う手順（楽楽精算のログイン）のために足した。
+   * （前は楽楽精算のログインの小窓を開くために使っていた。2026-09-25 に小窓を無くしたので、いまは使っていない）
    */
   onStepClick?: (step: FlowPlan["steps"][number]) => void;
   title?: string;

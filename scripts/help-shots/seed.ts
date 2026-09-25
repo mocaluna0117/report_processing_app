@@ -53,10 +53,8 @@ export async function seedInBrowser(data: SeedData): Promise<void> {
 /** 画面を開くまえに毎回入れる細工（保存量の表示を固定し、フォルダーの対応を「あり」に見せる） */
 export function stubBeforeLoad(arg: {
   login: { sessionToken: string; expiresAt: number; departments: unknown } | null;
-  /** 楽楽精算のログインの画面（モーダル）を自動で出さない。写真が覆われるのを防ぐ */
-  dismissLogin?: boolean;
 }): void {
-  const { login, dismissLogin } = arg;
+  const { login } = arg;
   // 保存量は端末で変わるので固定する（写真の差分を出さないため）
   const estimate = async () => ({ usage: 12 * 1024 * 1024, quota: 2 * 1024 * 1024 * 1024 });
   try {
@@ -76,15 +74,6 @@ export function stubBeforeLoad(arg: {
       sessionStorage.setItem("folio:rakuraku:login", JSON.stringify(login));
     } catch {
       /* 入らなければログイン前の画面が写るだけ */
-    }
-  }
-  // ★lib/rakuraku-login-dialog.ts の LOGIN_DISMISSED_KEY と同じ文字列。
-  //   ここはブラウザの中で動くので import できない（tests/rakuraku-login-dialog.test.ts が見張る）
-  if (dismissLogin) {
-    try {
-      sessionStorage.setItem("folio:rakuraku:login-dismissed", "1");
-    } catch {
-      /* 入らなければログインの画面が写り込むだけ */
     }
   }
 }

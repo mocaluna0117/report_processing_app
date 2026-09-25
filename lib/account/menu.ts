@@ -4,6 +4,10 @@
  */
 import type { SignedInMarker } from "@/lib/auth";
 
+export const FOLIO_LOGOUT_LABEL = "Folio からログアウト";
+export const FOLIO_LOGOUT_TITLE =
+  "Folio 自体のログインを解除します。このタブの楽楽精算のログインも一緒に忘れます（登録した楽楽精算のIDとパスワードは、このPCに残ります）。共有の端末では作業後に押してください";
+
 export interface AccountMenuView {
   /** アイコンのボタンの読み上げ名・吹き出し */
   label: string;
@@ -23,6 +27,6 @@ export function accountMenuView(marker: SignedInMarker): AccountMenuView {
     heading: marker.name,
     sub: `ID: ${marker.id}${marker.admin ? "・管理者" : ""}`,
     // ★パスワードを決める前は、その画面にいるので出さない
-    accountLink: marker.mustChange ? null : marker.admin ? "アカウント（パスワード・管理）" : "アカウント（パスワードを変える）",
+    accountLink: marker.mustChange ? null : marker.admin ? "アカウント（パスワード・楽楽精算・管理）" : "アカウント（パスワード・楽楽精算）",
   };
 }

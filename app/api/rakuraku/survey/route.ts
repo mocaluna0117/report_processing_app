@@ -7,6 +7,7 @@ import { withSessionPage } from "@/lib/rakuraku/session-browser";
 import { ndjsonResponse } from "@/lib/rakuraku/stream";
 import { runSurvey } from "@/lib/rakuraku/survey";
 import { requireSignedIn } from "@/lib/account/current";
+import { sessionSubjectOf } from "@/lib/rakuraku/subject";
 
 /**
  * 「画面の下見」: 楽楽精算の**画面の作りだけ**を集めて、開発者へ渡す文面の材料を返す。
@@ -39,7 +40,8 @@ export async function POST(request: Request) {
       const parsed = parseSurveyRequest(raw);
       if (!parsed.ok) throw new RakurakuError("BAD_REQUEST", parsed.message);
       const body = parsed.value;
-      const session = unseal(body.sessionToken);
+      // ★持ち主（Folio のアカウント）が違う札は断る（ほかの人のログイン状態を使わせない）
+      const session = unseal(body.sessionToken, sessionSubjectOf(signed.id));
 
       await withSessionPage(sink, session, async ({ page }) => {
         const report = await runSurvey({

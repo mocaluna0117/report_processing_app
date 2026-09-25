@@ -1,0 +1,24 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ログイン（テスト用）</title>
+<!--
+  楽楽精算のログイン画面の再現（架空。2026-09-25）。パスワードで行き先を変える:
+    kasou-ok     … ログイン後のトップ（frameset。「ワークフロー」タブがある）
+    kasou-notice … お知らせだけの画面（パスワード欄も「ワークフロー」タブも無い。期限切れ・ロックの知らせの再現）
+    それ以外     … ログイン画面のまま（違っていた）
+-->
+<body>
+<form onsubmit="return false">
+  <input type="text" name="loginId">
+  <input type="password" name="password">
+  <button type="button" id="go">ログイン</button>
+</form>
+<script>
+  document.getElementById("go").addEventListener("click", function () {
+    var pw = document.querySelector('input[name="password"]').value;
+    if (pw === "kasou-ok") location.href = "top_frameset.html";
+    else if (pw === "kasou-notice") location.href = "password_expired.html";
+    else location.href = "login_form.html?failed=1";
+  });
+</script>
+</body>

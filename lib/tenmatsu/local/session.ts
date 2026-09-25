@@ -1,7 +1,9 @@
 /**
  * 新しい方式の「このページ読み込み限りの控え」。タブを移動して戻ってきても続きから使えるようにする。
  *
- * ★**楽楽精算のパスワードはここ（メモリ）にだけ置く。** 保存しない。再読み込みすると消える。
+ * ★楽楽精算のIDとパスワードはここには無い（2026-09-25 から、アカウントの画面で登録した暗号の控えを
+ *   Folio のサーバーへ渡してログインする。lib/rakuraku-credential.ts）。
+ * ★ログインは ensureSession だけが行う。タブの中で同時に何か所から呼ばれても1回にまとめる。
  * ★封じたログイン状態（sessionToken。中身は暗号化済み）と部門の選択肢だけは、
  *   **このタブの sessionStorage** にも置く（利用者の決定 2026-09-14）。再読み込みしても
  *   ログインしたまま使え、タブやブラウザを閉じれば消える。期限（8時間）を過ぎた分は戻さない。
@@ -19,15 +21,11 @@ import type { BrowserDirHandle } from "./folder-handle";
 // 楽楽精算のログイン（種類で分けない。同じアカウント）
 // ---------------------------------------------------------------------------
 
-let password: string | null = null;
-/**
- * ログインに使ったID。**メモリだけ**（控えには書かない）。
- * ★取得の途中でログインが切れたときの入り直し（lib/tenmatsu/local/job.ts）が、
- *   IndexedDB への保存を待たずに使えるようにするために持つ。
- *   ブラウザに覚えるIDは別（lib/storage.ts の `rakuraku:userId`）。
- */
-let loginUserId: string | null = null;
 let sessionToken: string | null = null;
+/** 進んでいるログイン（タブで1つにまとめる） */
+let loginPending: Promise<string> | null = null;
+/** 最後のログインの失敗（画面の1行に出す。成功したら消える） */
+let loginProblem: { code: string; message: string } | null = null;
 /** sessionToken の期限（ミリ秒）。サーバーが教えてくれなかったら null（期限を見ない） */
 let expiresAt: number | null = null;
 /**
@@ -122,15 +120,6 @@ export function restoreLogin(now: number = Date.now()): boolean {
   return true;
 }
 
-export function getPassword(): string | null {
-  return password;
-}
-
-/** ログインに使ったID（メモリだけ。まだログインしていなければ null） */
-export function getLoginUserId(): string | null {
-  return loginUserId;
-}
-
 export function getSessionToken(): string | null {
   return sessionToken;
 }
@@ -144,20 +133,64 @@ const notify = () => {
   for (const listener of listeners) listener();
 };
 
+/** いまログインしているところか */
+export function isLoggingIn(): boolean {
+  return loginPending !== null;
+}
+
+/** 最後のログインの失敗（無ければ null） */
+export function getLoginProblem(): { code: string; message: string } | null {
+  return loginProblem;
+}
+
+/** 失敗の表示を消す（アカウントの画面で入れ直したとき） */
+export function clearLoginProblem(): void {
+  if (loginProblem === null) return;
+  loginProblem = null;
+  notify();
+}
+
 /**
- * ログイン状態を変える。sessionToken を渡すとタブの控えも書き直す（パスワードは書かない）。
+ * 楽楽精算にログインしている状態にする。ログインしていればそのまま返す。
+ * ★呼ぶのは人が押したとき（取得・部門を読み込む・画面の下見）だけ。画面を開いただけでは呼ばない。
+ * ★同時に何か所から呼ばれても、ログインは1回にまとめる。失敗してもやり直さない（呼ぶ側にそのまま返す）。
+ */
+export function ensureSession(
+  login: () => Promise<{ sessionToken: string; expiresAt: number | null; viewTab: boolean | null }>,
+): Promise<string> {
+  if (sessionToken !== null) return Promise.resolve(sessionToken);
+  if (loginPending) return loginPending;
+  const pending = (async () => {
+    try {
+      const res = await login();
+      loginProblem = null;
+      setLogin({ sessionToken: res.sessionToken, expiresAt: res.expiresAt, viewTab: res.viewTab });
+      return res.sessionToken;
+    } catch (e) {
+      loginProblem = {
+        code: typeof (e as { code?: unknown }).code === "string" ? (e as { code: string }).code : "INTERNAL",
+        message: e instanceof Error ? e.message : "楽楽精算にログインできませんでした",
+      };
+      throw e;
+    } finally {
+      loginPending = null;
+      notify();
+    }
+  })();
+  loginPending = pending;
+  notify();
+  return pending;
+}
+
+/**
+ * ログイン状態を変える。sessionToken を渡すとタブの控えも書き直す。
  * expiresAt を省いたときは今の期限を引き継ぐ（取得の途中で届く新しいトークンは期限が同じ）。
  */
 export function setLogin(next: {
-  password?: string | null;
-  /** ★控えには書かない（メモリだけ） */
-  userId?: string | null;
   sessionToken?: string | null;
   expiresAt?: number | null;
   viewTab?: boolean | null;
 }): void {
-  if (next.password !== undefined) password = next.password;
-  if (next.userId !== undefined) loginUserId = next.userId;
   if (next.sessionToken !== undefined) {
     sessionToken = next.sessionToken;
     if (next.sessionToken === null) {
@@ -172,10 +205,9 @@ export function setLogin(next: {
   notify();
 }
 
-/** パスワードとログイン状態を忘れる（「パスワードを忘れる」ボタン・ログインIDを変えたとき） */
+/** このタブのログイン状態を忘れる（Folio からログアウト・ログイン画面に来た・登録を入れ直した・消したとき） */
 export function forgetLogin(): void {
-  password = null;
-  loginUserId = null;
+  loginProblem = null;
   sessionToken = null;
   expiresAt = null;
   viewTab = null;
@@ -292,9 +324,9 @@ export function keepFolderSession(kind: DocKindId, next: Omit<FolderSession, "hy
 /** テスト用 */
 export function resetFolderSessions(): void {
   sessions.clear();
-  password = null;
-  loginUserId = null;
   sessionToken = null;
+  loginPending = null;
+  loginProblem = null;
   expiresAt = null;
   viewTab = null;
   savedDepartments = {};

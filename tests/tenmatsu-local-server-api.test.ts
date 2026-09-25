@@ -26,10 +26,10 @@ const SCAN: ScanRequest = { sessionToken: "t", kind: "tenmatsu", deptCode: "1800
 const FETCH: FetchRequest = { sessionToken: "t", kind: "tenmatsu", denpyoNo: "TE1", href: "https://example.test/abcd/d?no=1", deptCode: null };
 
 describe("Folio のサーバーを呼ぶ", () => {
-  it("ログイン: 成功ならトークン、失敗なら符号つきの失敗（やり直しはしない）", async () => {
+  it("ログイン: 登録した控えだけを送る。成功ならトークン、失敗なら符号つきの失敗（やり直しはしない）", async () => {
     const ok = fakeFetch({ "/api/rakuraku/login": () => Response.json({ ok: true, sessionToken: "sealed" }) });
     // 期限も「閲覧」タブの有無も返さない (古い) サーバーでは、どちらも null
-    expect(await createRakurakuApi({ fetchImpl: ok.impl }).login("99-test", "架空")).toEqual({
+    expect(await createRakurakuApi({ fetchImpl: ok.impl }).login("sealed-credential")).toEqual({
       sessionToken: "sealed",
       expiresAt: null,
       viewTab: null,
@@ -38,16 +38,17 @@ describe("Folio のサーバーを呼ぶ", () => {
       "/api/rakuraku/login": () =>
         Response.json({ ok: true, sessionToken: "sealed", expiresAt: 1_900_000_000_000, viewTab: false }),
     });
-    expect(await createRakurakuApi({ fetchImpl: withExpiry.impl }).login("99-test", "架空")).toEqual({
+    expect(await createRakurakuApi({ fetchImpl: withExpiry.impl }).login("sealed-credential")).toEqual({
       sessionToken: "sealed",
       expiresAt: 1_900_000_000_000,
       viewTab: false,
     });
-    expect(ok.calls[0].body).toEqual({ userId: "99-test", password: "架空" });
+    // ★ID とパスワードは送らない（2026-09-25 から）
+    expect(ok.calls[0].body).toEqual({ credential: "sealed-credential" });
     expect(ok.calls[0].init.credentials).toBe("same-origin");
 
     const ng = fakeFetch({ "/api/rakuraku/login": () => Response.json({ ok: false, code: "LOGIN_FAILED", message: "やり直しません" }) });
-    const error = await createRakurakuApi({ fetchImpl: ng.impl }).login("99-test", "違う").catch((e: unknown) => e);
+    const error = await createRakurakuApi({ fetchImpl: ng.impl }).login("sealed-credential").catch((e: unknown) => e);
     expect(error).toMatchObject({ code: "LOGIN_FAILED", message: "やり直しません", sessionLost: false });
     expect(ng.calls).toHaveLength(1);
   });

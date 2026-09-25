@@ -4,6 +4,7 @@ import { FOLDER_UNSUPPORTED_TEXT } from "@/lib/tenmatsu/local/folder-handle";
 import {
   DEPT_READ_FAILED_BLOCK_TEXT,
   DEPT_READING_TEXT,
+  credentialBlockText,
   type TenmatsuFlowInput,
   canStartRun,
   composeDetails,
@@ -15,7 +16,6 @@ import {
   tenmatsuFlow,
   tenmatsuStepDefs,
 } from "@/lib/tenmatsu/local/flow";
-import { RAKURAKU_CHIP_ID } from "@/lib/rakuraku-login-dialog";
 
 /** 何も始めていない画面（読み込みは終わっている） */
 const fresh = (kind: DocKind, over: Partial<TenmatsuFlowInput> = {}): TenmatsuFlowInput => ({
@@ -35,7 +35,7 @@ const fresh = (kind: DocKind, over: Partial<TenmatsuFlowInput> = {}): TenmatsuFl
   running: false,
   otherRunKind: null,
   itemCount: 0,
-  userIdSaved: false,
+  credential: "none",
   ...over,
 });
 
@@ -47,6 +47,7 @@ const ready = (kind: DocKind, over: Partial<TenmatsuFlowInput> = {}): TenmatsuFl
     connection: "ok",
     connected: true,
     loggedIn: true,
+    credential: "ready",
     departmentCount: 2,
     deptLabel: "品質管理部(1900)",
     ...over,
@@ -77,11 +78,37 @@ describe.each(DOC_KINDS)("$label の手順", (kind) => {
     expect(plan.steps.find((s) => s.id === "dept")?.state).toBe("done");
   });
 
-  it("つないだだけならログインの段", () => {
+  it("つないだだけなら、楽楽精算のIDとパスワードの登録の段（アカウントの画面へ案内する）", () => {
     const plan = tenmatsuFlow(fresh(kind, { hasHandle: true, connection: "ok", connected: true, handleName: "顛末書" }));
     expect(plan.currentId).toBe("login");
-    expect(plan.nextHint).toContain("ログイン");
+    expect(plan.nextHint).toContain("「アカウント」の「楽楽精算のIDとパスワード」で登録");
     expect(plan.steps[0].note).toBe("顛末書");
+  });
+
+  it("★登録済みなら、ログインしていなくても取得の段まで進む（押したときにログインし、部門を読む）", () => {
+    const input = ready(kind, { loggedIn: false, departmentCount: null, deptLabel: null });
+    const plan = tenmatsuFlow(input);
+    expect(plan.steps.find((s) => s.id === "login")).toMatchObject({ state: "done", note: "登録済み" });
+    expect(plan.steps.find((s) => s.id === "dept")).toMatchObject({ state: "done", note: "取得のときに読む" });
+    expect(plan.currentId).toBe("run");
+    expect(canStartRun(input)).toBe(true);
+    expect(runBlockedReason(input)).toBeNull();
+  });
+
+  it("★前回ログインできなかった・登録が古いときは取得できない（入れ直すまで自動ではログインしない）", () => {
+    for (const credential of ["rejected", "stale"] as const) {
+      const input = ready(kind, { loggedIn: false, credential });
+      expect(canStartRun(input)).toBe(false);
+      expect(runBlockedReason(input)?.text).toBe(credentialBlockText(credential));
+      expect(runBlockedReason(input)?.targetId).toBe(`${kind.id}-rakuraku`);
+      expect(tenmatsuFlow(input).currentId).toBe("login");
+    }
+  });
+
+  it("ログインしているところは、取得を押せない", () => {
+    const input = ready(kind, { loggedIn: false, loginBusy: true });
+    expect(canStartRun(input)).toBe(false);
+    expect(runBlockedReason(input)?.text).toContain("ログインしています");
   });
 
   it("部門を読み込んでいない・選んでいないときは、それぞれの案内を出す", () => {
@@ -129,11 +156,9 @@ describe.each(DOC_KINDS)("$label の手順", (kind) => {
 
   it("段の飛び先は種類ごとに分かれていて、重なっていない", () => {
     const defs = tenmatsuStepDefs(kind);
-    // ★ログインだけは例外。入力欄はモーダルに移したので、行き先はどの画面にもある
-    //   ヘッダーの表示になる（種類で分かれない）。ほかの段は必ず自分の種類の欄を指す
-    const login = defs.find((d) => d.id === "login")!;
-    expect(login.targetId).toBe(RAKURAKU_CHIP_ID);
-    expect(defs.filter((d) => d.id !== "login").every((d) => d.targetId.startsWith(`${kind.id}-`))).toBe(true);
+    // ★楽楽精算の段も、この画面の「楽楽精算」の1行を指す（ログインの小窓とヘッダーの表示は無くした）
+    expect(defs.find((d) => d.id === "login")?.targetId).toBe(`${kind.id}-rakuraku`);
+    expect(defs.every((d) => d.targetId.startsWith(`${kind.id}-`))).toBe(true);
     expect(new Set(defs.map((d) => d.id)).size).toBe(defs.length);
   });
 
@@ -187,6 +212,8 @@ describe("★押せない理由と、押せるかの判定が食い違わない"
       for (const restored of bool)
         for (const connected of bool)
           for (const loggedIn of bool)
+            for (const loginBusy of bool)
+            for (const credential of ["none", "ready", "checking", "rejected"] as const)
             for (const departmentCount of [null, 0, 2])
               for (const deptLabel of [null, "品質管理部(1900)"])
                 for (const running of bool)
@@ -200,6 +227,8 @@ describe("★押せない理由と、押せるかの判定が食い違わない"
                       connection: connected ? "ok" : "idle",
                       hasHandle: connected,
                       loggedIn,
+                      loginBusy,
+                      credential,
                       departmentCount,
                       deptLabel,
                       departmentFailed,
@@ -210,7 +239,7 @@ describe("★押せない理由と、押せるかの判定が食い違わない"
                     const reason = runBlockedReason(input);
                     expect(
                       reason === null,
-                      JSON.stringify({ supported, restored, connected, loggedIn, departmentCount, deptLabel, departmentFailed, departmentSkipped, running, otherRunKind }),
+                      JSON.stringify({ supported, restored, connected, loggedIn, loginBusy, credential, departmentCount, deptLabel, departmentFailed, departmentSkipped, running, otherRunKind }),
                     ).toBe(
                       canStartRun(input) || running,
                     );
@@ -219,13 +248,15 @@ describe("★押せない理由と、押せるかの判定が食い違わない"
                     expect(plan.steps.filter((s) => s.state === "current" || s.state === "blocked").length).toBeLessThanOrEqual(1);
                     checked++;
                   }
-    expect(checked).toBe(2 * 2 * 2 * 2 * 3 * 2 * 2 * 2 * 2 * 2);
+    expect(checked).toBe(2 * 2 * 2 * 2 * 2 * 4 * 3 * 2 * 2 * 2 * 2 * 2);
   });
 
   it("今までの4つの文はそのまま使う（画面の言い回しを変えない）", () => {
     const base = ready(TENMATSU);
     expect(runBlockedReason({ ...base, connected: false })?.text).toBe("保存先フォルダーにつないでください");
-    expect(runBlockedReason({ ...base, loggedIn: false })?.text).toBe("楽楽精算にログインしてください");
+    expect(runBlockedReason({ ...base, loggedIn: false, credential: "none" })?.text).toBe(credentialBlockText("none"));
+    // 登録が使えるなら、ログインしていなくても押せる（押したときにログインする）
+    expect(runBlockedReason({ ...base, loggedIn: false })).toBeNull();
     expect(runBlockedReason({ ...base, departmentCount: null })?.text).toBe(DEPT_READING_TEXT);
     expect(runBlockedReason({ ...base, otherRunKind: "senketsu" })?.text).toContain("取得が動いています");
   });
@@ -258,9 +289,9 @@ describe("★押せない理由と、押せるかの判定が食い違わない"
 
   it("理由を直せる欄へ案内する", () => {
     expect(runBlockedReason(ready(TENMATSU, { connected: false }))?.targetId).toBe("tenmatsu-folder");
-    // ★ログインはモーダルなので、案内先はヘッダーの表示（押すとモーダルが開く）
-    expect(runBlockedReason(ready(TENMATSU, { loggedIn: false }))?.targetId).toBe(RAKURAKU_CHIP_ID);
-    expect(runBlockedReason(ready(TENMATSU, { loggedIn: false }))?.targetLabel).toBe("ログイン");
+    // ★登録が無いときは、この画面の「楽楽精算」の1行へ（そこからアカウントの画面へ移れる）
+    expect(runBlockedReason(ready(TENMATSU, { loggedIn: false, credential: "none" }))?.targetId).toBe("tenmatsu-rakuraku");
+    expect(runBlockedReason(ready(TENMATSU, { loggedIn: false, credential: "none" }))?.targetLabel).toBe("楽楽精算の登録へ");
     // 同じ欄の中にあるものは案内しない
     expect(runBlockedReason(ready(TENMATSU, { deptLabel: null }))?.targetId).toBeNull();
   });

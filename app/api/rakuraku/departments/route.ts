@@ -8,6 +8,7 @@ import { openHome } from "@/lib/rakuraku/navigation";
 import { reseal, unseal } from "@/lib/rakuraku/session";
 import { toErrorEvent } from "@/lib/rakuraku/stream";
 import { requireSignedIn } from "@/lib/account/current";
+import { sessionSubjectOf } from "@/lib/rakuraku/subject";
 
 /**
  * このアカウントで**実際に選べる部門**を楽楽精算から読む。
@@ -54,7 +55,8 @@ export async function POST(request: Request) {
 
   let launched;
   try {
-    const session = unseal(sessionToken);
+    // ★持ち主（Folio のアカウント）が違う札は断る（ほかの人のログイン状態を使わせない）
+    const session = unseal(sessionToken, sessionSubjectOf(signed.id));
     launched = await launchBrowser();
     const context = await launched.browser.newContext({
       storageState: JSON.parse(session.state) as BrowserContextOptions["storageState"],

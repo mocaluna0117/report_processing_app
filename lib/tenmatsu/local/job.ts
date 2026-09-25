@@ -7,8 +7,8 @@
  *       取得（Folio のサーバー）→ 部品を組む → 結合 → 保存（または保留）→ **置いた直後に記録**
  *
  * ★この画面を開いている間だけ動く（タブを閉じると止まる）。止め方は「いまの伝票が終わったら止める」。
- * ★ログインは自動でやり直さない。ただしログインが切れたときだけ、パスワードがメモリにあれば
- *   **この実行の中で1回だけ**ログインし直して同じ伝票をやり直す。
+ * ★ログインは登録したIDとパスワード（暗号の控え）で自動で行う。失敗しても自動でやり直さない。
+ *   ただしログインが切れたときだけ、**この実行の中で1回だけ**ログインし直して同じ伝票をやり直す。
  * ★本体PDFが取れなかった伝票は記録せず見送る（次回やり直す）。続けて2件なら止める（ログイン切れの可能性）。
  */
 import { KINDS } from "@/lib/rakuraku/kinds";
@@ -36,13 +36,21 @@ import {
 } from "./records";
 import { type AttachmentFailure, type FetchResult, type RakurakuApi, RakurakuApiError, type StreamHandlers } from "./server-api";
 
-/** 楽楽精算のログインに使うもの。★パスワードはメモリにだけ置く（呼ぶ側が持つ） */
+/**
+ * 楽楽精算のログインに使うもの。★IDとパスワードはここに無い（登録した控えでログインする。lib/rakuraku-credential.ts）
+ */
 export interface RunAuth {
-  userId: string;
-  password(): string | null;
   token(): string | null;
   setToken(token: string | null): void;
+  /**
+   * 登録した控えでログインし、新しい sessionToken を返す（タブで1回にまとめる。lib/tenmatsu/local/session.ts の ensureSession）。
+   * ★失敗はそのまま投げる（やり直さない）
+   */
+  login(): Promise<string>;
 }
+
+/** 1回の取得で楽楽精算にログインしてよい回数（最初の1回＋切れたときの1回） */
+export const RUN_LOGIN_MAX = 2;
 
 export interface RunDeps {
   store: FolderStore;
@@ -183,16 +191,19 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
     }
   };
 
-  // --- ログイン（★自動でやり直すのは、切れたときの1回だけ）
+  // --- ログイン（★自動でやり直すのは、切れたときの1回だけ。数えるのはここ1か所）
   let relogged = false;
+  let logins = 0;
   const ensureLogin = async () => {
     if (auth.token()) return;
-    const password = auth.password();
-    if (!password) throw new RunStop("楽楽精算のパスワードを入力してから取得してください");
-    print("楽楽精算にログインします");
+    // ★どの道筋から来ても、1回の取得でログインするのは RUN_LOGIN_MAX 回まで
+    if (logins >= RUN_LOGIN_MAX) throw new RunStop("楽楽精算のログインが続けて切れたので、取得を止めました。少し待ってから、もう一度取得してください");
+    logins += 1;
+    print("楽楽精算にログインします（登録したIDとパスワードで自動）");
     emit({ message: "楽楽精算にログインしています" });
-    const { sessionToken } = await whenFree(() => api.login(auth.userId, password));
-    auth.setToken(sessionToken);
+    // ★BROWSER_BUSY は楽楽精算に触る前に断られたもの（パスワードは送っていない）なので、待ってやり直しても安全
+    const token = await whenFree(() => auth.login());
+    auth.setToken(token);
     print("  ログインしました");
   };
 
@@ -203,7 +214,7 @@ export function startRun(deps: RunDeps, input: RunInput): RunHandle {
     } catch (e) {
       if (!(e instanceof RakurakuApiError) || !e.sessionLost) throw e;
       auth.setToken(null);
-      if (relogged || !auth.password()) throw e;
+      if (relogged) throw e;
       relogged = true;
       print("  ! 楽楽精算のログインが切れたので、1回だけログインし直してやり直します");
       await ensureLogin();

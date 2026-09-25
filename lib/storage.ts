@@ -93,10 +93,17 @@ export const SETTING_KEY_NATSUIN_MAX_PER_RUN = "natsuin:maxPerRun";
  * - `{種類}:folderList`  … 新しい方式で読んだ取得済み一覧の写し（旧方式の一覧とは混ぜない）
  * - `{種類}:dept`        … 前回選んだ部門 {code, label}
  * - `{種類}:pdfStats`    … PDF のページ数の控え（大きさと更新日時が同じ間は数え直さない）
- * ★楽楽精算のパスワードは**どこにも保存しない**（メモリだけ）。ログインIDだけを種類で分けずに置く。
  * いずれも「保存データを消去」（定期点検）では消さない。
  */
+/** ★前の方式で覚えていた楽楽精算のログインID（平文）。2026-09-25 からは使わず、見つけたら消す */
 export const SETTING_KEY_RAKURAKU_USER_ID = "rakuraku:userId";
+/**
+ * 楽楽精算のIDとパスワードの控え（2026-09-25 の利用者の決定）。キーは `rakuraku:credential:<Folio の ID>`。
+ * 中身は {sealed, ver, idHint, savedAt}。sealed は Folio のサーバーの鍵で暗号にしたもので、
+ * ★このブラウザの中だけでは読めない（平文のIDとパスワードはここに置かない）。
+ * Folio のアカウントごとに分ける（同じPCでほかの人が Folio に入っても使えない・見えない）。
+ */
+export const SETTING_KEY_RAKURAKU_CREDENTIAL_PREFIX = "rakuraku:credential:";
 
 /**
  * 共有フォルダー（Box など）の設定。

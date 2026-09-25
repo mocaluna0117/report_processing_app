@@ -212,7 +212,8 @@ describe("画面の下に出す保存の説明", () => {
     const note = saveNote(kind);
     expect(note.summary.split("。").filter((t) => t.trim() !== "")).toHaveLength(1);
     expect(note.summary.length).toBeLessThanOrEqual(80);
-    expect(note.summary).toContain("パスワードは保存しません");
+    // ★2026-09-25 から: 楽楽精算のIDとパスワードは、暗号にした控えだけをこのブラウザに置く
+    expect(note.summary).toContain("楽楽精算のIDとパスワードは暗号にして置きます");
   });
 
   it.each(DOC_KINDS)("$label: ★畳んだ中に、消せない約束が残っている", (kind) => {
@@ -220,6 +221,7 @@ describe("画面の下に出す保存の説明", () => {
     // 一覧に何が入るか（個人情報）・PDFの通り道・ログイン状態の期限・記録の正本
     expect(details).toContain(kind.text.sensitiveFields);
     expect(details).toContain("folio のサーバーには残しません");
+    expect(details).toContain("社外のクラウドにも置きません");
     expect(details).toContain("8時間");
     expect(details).toContain("_記録");
     expect(details.length).toBeLessThanOrEqual(500);

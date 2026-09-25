@@ -46,7 +46,7 @@ function setup(kind: "tenmatsu" | "natsuin" = "tenmatsu", fs = new FakeFs(kind =
     kind,
     store,
     api: createFakeApi({}),
-    auth: { userId: "99-test", password: () => "架空", token: () => "token-0", setToken: () => undefined },
+    auth: { token: () => "token-0", setToken: () => undefined, login: async () => "token-0" },
     deptCode: () => null,
     now: () => NOW,
     sleep: async () => undefined,

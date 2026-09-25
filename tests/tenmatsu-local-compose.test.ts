@@ -73,7 +73,7 @@ async function run(script: FakeApiScript) {
       store,
       cfg: natsuin,
       api,
-      auth: { userId: "99-test", password: () => "架空", token: () => token, setToken: (t) => (token = t) },
+      auth: { token: () => token, setToken: (t) => (token = t), login: async () => (await api.login("sealed-credential")).sessionToken },
       deptCode: "1900",
       now: () => NOW,
       sleep: async () => undefined,

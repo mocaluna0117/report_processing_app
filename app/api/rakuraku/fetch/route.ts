@@ -9,6 +9,7 @@ import { unseal } from "@/lib/rakuraku/session";
 import { withSessionPage } from "@/lib/rakuraku/session-browser";
 import { ndjsonResponse } from "@/lib/rakuraku/stream";
 import { requireSignedIn } from "@/lib/account/current";
+import { sessionSubjectOf } from "@/lib/rakuraku/subject";
 
 /**
  * 伝票1件を取得する。**1伝票＝1呼び出し**（途中で落ちても、それまでの伝票はブラウザが保存済み）。
@@ -45,7 +46,8 @@ export async function POST(request: Request) {
       const parsed = parseFetchRequest(raw);
       if (!parsed.ok) throw new RakurakuError("BAD_REQUEST", parsed.message);
       const body = parsed.value;
-      const session = unseal(body.sessionToken);
+      // ★持ち主（Folio のアカウント）が違う札は断る（ほかの人のログイン状態を使わせない）
+      const session = unseal(body.sessionToken, sessionSubjectOf(signed.id));
       const kind = KINDS[body.kind];
       // ★画面から来るのは経路の id だけ（URL は受けない）。その種類に無い id は断る
       const pin = body.route ? pinnedRoute(kind, body.route).id : null;

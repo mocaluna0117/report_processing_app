@@ -17,15 +17,18 @@ const BUTTON_CLASS =
 
 export function TenmatsuSurvey({
   api,
-  sessionToken,
+  ensureToken,
   deptCode,
   onSession,
   disabled,
   disabledReason,
 }: {
   api: RakurakuApi;
-  /** 楽楽精算のログイン状態（無ければ実行できない） */
-  sessionToken: string | null;
+  /**
+   * 楽楽精算のログイン状態を用意する（ログインしていなければ、登録した控えでログインする）。
+   * ★押したときだけ呼ぶ。失敗はそのまま返す（やり直さない）
+   */
+  ensureToken: () => Promise<string>;
   deptCode: string | null;
   /** 新しいログイン状態を受け取ったら差し替える */
   onSession: (token: string) => void;
@@ -45,7 +48,6 @@ export function TenmatsuSurvey({
   };
 
   const run = async () => {
-    if (!sessionToken) return;
     setBusy(true);
     setError(null);
     setText(null);
@@ -53,6 +55,7 @@ export function TenmatsuSurvey({
     seqRef.current = 0;
     setLines([]);
     try {
+      const sessionToken = await ensureToken();
       const report = await api.survey(
         { sessionToken, deptCode },
         { log: print, progress: (_stage, message) => print(message), session: onSession },
@@ -95,8 +98,8 @@ export function TenmatsuSurvey({
         <button
           type="button"
           onClick={() => void run()}
-          disabled={busy || disabled || !sessionToken}
-          title={!sessionToken ? "楽楽精算にログインしてください" : disabledReason}
+          disabled={busy || disabled}
+          title={disabledReason}
           className={BUTTON_CLASS}
         >
           {busy ? "調べています…" : "下見を実行"}

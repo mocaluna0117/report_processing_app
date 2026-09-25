@@ -3,7 +3,7 @@ import type { BrowserContext, BrowserContextOptions, Page } from "playwright-cor
 import { type LaunchedBrowser, launchBrowser } from "./browser";
 import { RakurakuError } from "./errors";
 import type { KindId, RememberedRoute } from "./protocol";
-import { type SessionPayload, seal } from "./session";
+import { type SessionPayload, reseal } from "./session";
 import type { EventSink } from "./stream";
 
 /**
@@ -49,12 +49,8 @@ export async function withSessionPage(
     if (!context) return;
     await sink.send({
       type: "session",
-      sessionToken: seal({
-        state: JSON.stringify(await context.storageState()),
-        home: session.home,
-        routes,
-        exp: session.exp,
-      }),
+      // ★期限・持ち主・「閲覧」タブの判定は前のまま引き継ぐ（前は viewTab を落としていた）
+      sessionToken: reseal(session, JSON.stringify(await context.storageState()), routes),
     });
   };
 

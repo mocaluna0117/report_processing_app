@@ -20,7 +20,8 @@ export type FetchScript = FetchResult | RakurakuApiError | ((request: FetchReque
 
 export interface FakeApiScript {
   /** ログインの結果。省略すると成功（トークンは token-1, token-2 … と増える） */
-  login?: (userId: string, password: string, count: number) => RakurakuApiError | null;
+  /** 登録した控えでのログイン（2026-09-25 から ID とパスワードは送らない） */
+  login?: (credential: string, count: number) => RakurakuApiError | null;
   /** ログインで返す「閲覧」タブの有無。省略＝古いサーバー（分からない） */
   viewTab?: boolean | null;
   /** Error を返すとその場で投げる（楽楽精算と関係のない不具合を真似るときは素の Error） */
@@ -79,10 +80,10 @@ export function createFakeApi(script: FakeApiScript): FakeApi {
 
   return {
     calls,
-    login: async (userId, password) => {
+    login: async (credential) => {
       logins += 1;
-      calls.push({ method: "login", request: { userId } });
-      const error = script.login?.(userId, password, logins) ?? null;
+      calls.push({ method: "login", request: { credential } });
+      const error = script.login?.(credential, logins) ?? null;
       if (error) throw error;
       // viewTab は台本で指定できる（省くと「分からない」＝古いサーバーと同じ扱い）
       return { sessionToken: `token-${logins}`, expiresAt: null, viewTab: script.viewTab ?? null };
