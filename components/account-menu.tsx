@@ -26,8 +26,9 @@ function UserIcon() {
   );
 }
 
+/** ★項目の文字は折り返さない（「アカウント（パスワード・楽楽精算・管理）」が2行になっていた。メニューの幅を文字に合わせる） */
 const ITEM_CLASS =
-  "block w-full cursor-pointer rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100";
+  "block w-full cursor-pointer whitespace-nowrap rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100";
 
 export function AccountMenu() {
   const pathname = usePathname();
@@ -92,7 +93,7 @@ export function AccountMenu() {
         <div
           role="menu"
           aria-label="アカウント"
-          className="absolute right-0 top-full z-40 mt-2 w-64 rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg"
+          className="absolute right-0 top-full z-40 mt-2 w-max min-w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg"
         >
           <div className="px-3 py-2">
             <p className="truncate text-sm font-semibold text-slate-900">{view.heading}</p>

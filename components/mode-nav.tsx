@@ -40,6 +40,12 @@ export const MODES: readonly { href: string; label: string }[] = [
   ...DOC_KINDS.map((k) => ({ href: k.route, label: k.menuLabel })),
 ];
 
+/**
+ * 画面のタブとボタンの段の並べ方（2026-09-25 に利用者の試しで中央揃えにした）。
+ * ★元に戻すときは "left" にするだけ（ほかは変えていない）。
+ */
+const NAV_ALIGN: "left" | "center" = "center";
+
 export function ModeNav() {
   const pathname = usePathname();
   /** 誰がログインしているか（表示用。問い合わせのお名前に入れる・仮のパスワードの人にはタブを出さない） */
@@ -84,7 +90,7 @@ export function ModeNav() {
   if (signedIn?.mustChange) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className={`flex flex-wrap items-center gap-3 ${NAV_ALIGN === "center" ? "justify-center" : ""}`}>
       <nav
         aria-label="処理の種類"
         className="inline-flex rounded-lg bg-slate-200 p-1 text-sm shadow-inner"
