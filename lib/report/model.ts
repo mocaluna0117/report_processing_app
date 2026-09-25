@@ -114,8 +114,11 @@ export interface InstructionItem {
 export interface AppendixItem {
   /** 番号付きの項目本文 (「①1階洋室 …」) */
   text: string;
-  /** 補足 (頭に「・」を付けた1行。無ければ空文字。項目行の下の細い欄に書く) */
-  supplement: string;
+  /**
+   * 補足 (それぞれ頭に「・」を付けた文。無ければ空の並び。項目行の下に、補足1つにつき細い欄を1つずつ書く。
+   * 2026-09-25 から1つの項目に複数)
+   */
+  supplements: string[];
 }
 
 export interface ReportAppendix {
@@ -146,8 +149,8 @@ export interface ReportData {
   receptionist: string;
   /** 指示内容の全項目 (番号なしの本文) */
   items: string[];
-  /** 項目ごとの補足 (items と同じ長さ。無ければ空文字) */
-  supplements: string[];
+  /** 項目ごとの補足の並び (items と同じ長さ。無ければ空の並び) */
+  supplements: string[][];
   /** 別紙に回したか (6件以上、または本紙の5つの枠に入らないとき) */
   useAppendix: boolean;
   /** 本紙の指示内容枠 (常に MAIN_SLOTS 個。余りは空) */
@@ -201,21 +204,23 @@ export function buildOwnerLine(ownerName: string, ownerKana: string): string {
 /**
  * 本紙の5つの枠への割り付け。
  * - 1行 (全角41文字) に入らない項目は、次の枠に続きを書く
- * - 補足はその項目の続きとして、頭に「・」を付けて次の枠に書く
+ * - 補足はその項目の続きとして、頭に「・」を付けて次の枠に書く (補足1つにつき1行。長ければ折り返す)
  * - №は項目の1行目だけに付ける (続き・補足の行は空欄。Excelの作業内容欄も同じ形になる)
  * 5つの枠に入らなければ null (呼ぶ側が別紙に回す)。
  */
 export function planMainSlots(
   items: readonly string[],
-  supplements: readonly string[],
+  supplements: readonly (readonly string[])[],
 ): InstructionItem[] | null {
   const rows: InstructionItem[] = [];
   items.forEach((text, i) => {
     const body = wrapText(text, MAIN_LINE_UNITS);
-    const supplement = (supplements[i] ?? "").trim();
     const lines = [
       ...(body.length > 0 ? body : [""]),
-      ...(supplement ? wrapText(`${SUPPLEMENT_MARK}${supplement}`, MAIN_LINE_UNITS) : []),
+      ...(supplements[i] ?? [])
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .flatMap((s) => wrapText(`${SUPPLEMENT_MARK}${s}`, MAIN_LINE_UNITS)),
     ];
     for (const [k, line] of lines.entries()) {
       rows.push({ no: k === 0 ? circledNumber(i + 1) : "", text: line });
@@ -263,8 +268,11 @@ export function buildReportData(row: ReportSource, options: ReportOptions): Repo
         ownerLine: ownerName ? `施主名：${ownerName.replace(/　/g, " ")}様` : "施主名：",
         items: items.map((text, i) => ({
           text: `${circledNumber(i + 1)}${text}`,
-          // 補足のある項目だけ、別紙では項目行の下の細い欄に書く
-          supplement: supplements[i]?.trim() ? `${SUPPLEMENT_MARK}${supplements[i].trim()}` : "",
+          // 補足のある項目だけ、別紙では項目行の下の細い欄に書く (補足1つにつき1つ)
+          supplements: (supplements[i] ?? [])
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .map((s) => `${SUPPLEMENT_MARK}${s}`),
         })),
       }
     : null;

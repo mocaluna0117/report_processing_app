@@ -177,11 +177,12 @@ export function appendixRowsXml(
       ),
     );
     row++;
-    if (slot.supplement) {
+    // 補足1つにつき細い欄を1行ずつ (2026-09-25 から1つの項目に複数)
+    for (const supplement of slot.supplements) {
       rows.push(
         rowXml(
           row,
-          cellXml(`A${row}`, supplementStyle, slot.supplement) +
+          cellXml(`A${row}`, supplementStyle, supplement) +
             cellXml(`B${row}`, APPENDIX_STYLES.checkMiddle, ""),
           APPENDIX_ROW_HEIGHTS.supplement,
         ),
@@ -247,13 +248,14 @@ export function buildReportXlsx(template: Uint8Array, data: ReportData): Uint8Ar
   patched[SHEET_INPUT] = encoder.encode(patchInputSheet(decoder.decode(parts[SHEET_INPUT]), data));
   patched[SHEET_MAIN] = encoder.encode(patchMainSheet(decoder.decode(parts[SHEET_MAIN]), data));
 
-  // 別紙は枠の行そのものを組み立て直す (補足のある項目は細い欄が1行増える)。
+  // 別紙は枠の行そのものを組み立て直す (補足のある項目は、補足の数だけ細い欄の行が増える)。
   // ★補足があるときだけ書式 (styles.xml) と印刷範囲 (workbook.xml) も触る。
   //   無ければテンプレートのバイト列をそのまま残す
   // Excelの別紙は今までどおり12件まで (13件目以降はPDFだけに載る。model.ts が注意を出す)
   const items = (data.appendix?.items ?? []).slice(0, APPENDIX_SLOTS);
   const stylesXml = decoder.decode(parts[STYLES]);
-  const styles = items.some((item) => item.supplement)
+  // ★並びは空でも真になるので、数で見る
+  const styles = items.some((item) => item.supplements.length > 0)
     ? ensureCellXf(stylesXml, APPENDIX_SUPPLEMENT_XF)
     : { xml: stylesXml, index: -1 };
   const built = appendixRowsXml(items, styles.index);

@@ -163,7 +163,7 @@ describe("buildReportData", () => {
       propertyLine: "物件名：653.架空町7-21-12A号棟",
       // 別紙は漢字のみ・半角スペース・様を直結
       ownerLine: "施主名：山田 太郎様",
-      items: items.map((s, i) => ({ text: `${"①②③④⑤⑥"[i]}${s}`, supplement: "" })),
+      items: items.map((s, i) => ({ text: `${"①②③④⑤⑥"[i]}${s}`, supplements: [] })),
     });
   });
 
@@ -366,7 +366,7 @@ describe("本紙の割り付け (折り返しと補足)", () => {
 
   it("★補足はその項目の次の枠に「・」付きで入る", () => {
     const d = build("①壁のひび\n補足: 3階北側の2か所\n②床のきしみ");
-    expect(d.supplements).toEqual(["3階北側の2か所", ""]);
+    expect(d.supplements).toEqual([["3階北側の2か所"], []]);
     expect(d.main.slice(0, 3)).toEqual([
       { no: "①", text: "壁のひび" },
       { no: "", text: "・3階北側の2か所" },
@@ -388,8 +388,28 @@ describe("本紙の割り付け (折り返しと補足)", () => {
       .join("\n");
     const d = build(summary);
     expect(d.useAppendix).toBe(true);
-    expect(d.appendix?.items[0]).toEqual({ text: "①壁のひび", supplement: "" });
-    expect(d.appendix?.items[1]).toEqual({ text: "②床のきしみ", supplement: "・2階のみ" });
+    expect(d.appendix?.items[0]).toEqual({ text: "①壁のひび", supplements: [] });
+    expect(d.appendix?.items[1]).toEqual({ text: "②床のきしみ", supplements: ["・2階のみ"] });
+  });
+
+  it("★補足が何行もあれば、1つにつき「・」の行が1行ずつ（本紙も別紙も。2026-09-25）", () => {
+    const d = build("①壁のひび\n補足: 3階北側\n補足: 写真は3枚目\n②床のきしみ");
+    expect(d.supplements).toEqual([["3階北側", "写真は3枚目"], []]);
+    expect(d.main.slice(0, 4)).toEqual([
+      { no: "①", text: "壁のひび" },
+      { no: "", text: "・3階北側" },
+      { no: "", text: "・写真は3枚目" },
+      { no: "②", text: "床のきしみ" },
+    ]);
+  });
+
+  it("★本紙の5行: 1つの項目に補足4つまでは本紙、5つで別紙に回す", () => {
+    const withSupplements = (n: number) =>
+      build(["壁のひび", ...Array.from({ length: n }, (_, i) => `補足: 補足${i + 1}`)].join("\n"));
+    expect(withSupplements(4).useAppendix).toBe(false);
+    const five = withSupplements(5);
+    expect(five.useAppendix).toBe(true);
+    expect(five.appendix?.items[0].supplements).toEqual(["・補足1", "・補足2", "・補足3", "・補足4", "・補足5"]);
   });
 
   it("★作業内容・是正内容の№は項目ごとに1行ずつ (続き・補足では増やさない)", () => {

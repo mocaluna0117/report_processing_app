@@ -267,6 +267,33 @@ describe("buildReportXlsx", () => {
     expect(Number(count)).toBe(142);
   });
 
+  it("★補足が2つある項目は、細い欄が2行になる（2026-09-25）", () => {
+    const { appendix, parts } = build([
+      "①壁のひび",
+      "②床のきしみ",
+      "補足: 2階のみ",
+      "補足: 写真は2枚目",
+      "③建具の調整",
+      "④外壁の汚れ",
+      "⑤雨樋の詰まり",
+      "⑥天井の凹凸",
+    ]);
+    // 2枠目: 項目行8・補足の細い欄9と10・対応結果行11
+    expect(cell(appendix, "A8")).toContain("②床のきしみ");
+    expect(cell(appendix, "A9")).toContain("・2階のみ");
+    expect(cell(appendix, "A10")).toContain("・写真は2枚目");
+    expect(appendix).toContain('<row r="10" spans="1:2" ht="15" customHeight="1">');
+    expect(cell(appendix, "A11")).toContain("対応結果：");
+    expect(cell(appendix, "A12")).toContain("③建具の調整");
+    expect(appendix).toContain('<mergeCell ref="B8:B11"/>');
+    const lastRow = 29;
+    expect(appendix).toContain(`<dimension ref="A1:B${lastRow}"/>`);
+    expect(decode(parts["xl/workbook.xml"])).toContain(`別紙!$A$1:$B$${lastRow}`);
+    // 補足用の書式は1つだけ足す（補足が何行でも増やさない）
+    const count = /<cellXfs count="(\d+)">/.exec(decode(parts["xl/styles.xml"]))?.[1];
+    expect(Number(count)).toBe(142);
+  });
+
   it("補足が無ければ書式と印刷範囲はテンプレートのまま", () => {
     const original = unzipSync(template);
     const { parts } = build(["a", "b", "c", "d", "e", "f"]);

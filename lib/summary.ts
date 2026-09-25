@@ -6,26 +6,24 @@
  * - 2件以上: categories[k].summary に区分ごとの本文が入り、Excelへ展開した行ごとに別の本文が貼られる。
  *   cells[SUMMARY_COL] は各行の本文をまとめた「鏡」に保つ (隠れた原本を作らないため)
  */
-import { NO_DEFECT_TEXT, formatPhenomena } from "@/lib/summarize/format";
+import { NO_DEFECT_TEXT, cleanSupplement, formatPhenomena } from "@/lib/summarize/format";
 import { SUMMARY_COL } from "@/lib/tsv";
 import { findCategoryInText } from "@/lib/work-categories";
 
 const LEADING_NUMBER = /^(?:[①-⑳]|\(\d+\)|\d+[.)、]|・)\s*/;
 const NOTE_LINE = /^メモ\s*[:：]\s*/;
-/** 「補足: 」の行 (直前の項目への書き足し)。全角コロンも受ける */
+/** 「補足: 」の行 (直前の項目への書き足し。1つの項目に何行でも)。全角コロンも受ける */
 const SUPPLEMENT_LINE = /^補足\s*[:：]\s*/;
-/** 同じ項目に補足が何行もあるときのつなぎ */
-const SUPPLEMENT_JOIN = "　";
 
 /** アフター受付内容を、指示内容の項目と点検員メモに分ける */
 export interface SummaryParts {
   /** 指示内容の項目 (先頭の番号は落とす) */
   items: string[];
   /**
-   * 項目ごとの補足 (items と同じ長さ。無ければ空文字)。
-   * 完了報告書では項目の次の枠に「・…」として書く。
+   * 項目ごとの補足の並び (items と同じ長さ。無ければ空の並び。2026-09-25 から1つの項目に複数)。
+   * 完了報告書では項目の次に「・…」の行を1つずつ書く。
    */
-  supplements: string[];
+  supplements: string[][];
   /** 点検員メモ (「メモ: 」の接頭辞は落とす) */
   notes: string[];
   /** 元が「不具合の指摘なし」の定型文だったか (項目を空にしたときに戻す) */
@@ -42,32 +40,31 @@ export function splitSummary(summary: string): SummaryParts {
     .map((line) => line.trim())
     .filter(Boolean);
   const items: string[] = [];
-  const supplements: string[] = [];
+  const supplements: string[][] = [];
   const notes: string[] = [];
   let noDefect = false;
   for (const line of lines) {
     if (NOTE_LINE.test(line)) {
       notes.push(line.replace(NOTE_LINE, "").trim());
     } else if (SUPPLEMENT_LINE.test(line)) {
-      const text = line.replace(SUPPLEMENT_LINE, "").trim();
+      const text = cleanSupplement(line.replace(SUPPLEMENT_LINE, ""));
       if (!text) continue;
       if (items.length === 0) {
         // ★どの項目にも付かない補足は、書いた文を失わないよう普通の項目として扱う
         items.push(text);
-        supplements.push("");
+        supplements.push([]);
         continue;
       }
-      const last = items.length - 1;
-      supplements[last] = supplements[last]
-        ? `${supplements[last]}${SUPPLEMENT_JOIN}${text}`
-        : text;
+      // ★補足の行は1行ずつ直前の項目に付ける（前は「　」でつないで1つにしていたので、2つ目から消えていた）。
+      //   前に1行にまとめて保存した「A　B」は、そのまま1つとして読む（全角空白は中身のこともあるので割らない）
+      supplements[items.length - 1].push(text);
     } else if (line === NO_DEFECT_TEXT) {
       noDefect = true;
     } else {
       const text = line.replace(LEADING_NUMBER, "").trim();
       if (text) {
         items.push(text);
-        supplements.push("");
+        supplements.push([]);
       }
     }
   }
@@ -128,7 +125,7 @@ export function isSummarySplit(row: SummarySplitSource): boolean {
 export function distributeSummary(summary: string, categories: readonly string[]): string[] {
   const { items, supplements, notes, noDefect } = splitSummary(summary);
   // ★補足は必ず元の項目についていく (振り分けの判定は項目の本文だけで行う)
-  const groups: { text: string; supplement: string }[][] = categories.map(() => []);
+  const groups: { text: string; supplements: string[] }[][] = categories.map(() => []);
   const firstIndexOf = new Map<string, number>();
   categories.forEach((c, i) => {
     if (c && !firstIndexOf.has(c)) firstIndexOf.set(c, i);
@@ -138,7 +135,7 @@ export function distributeSummary(summary: string, categories: readonly string[]
   items.forEach((item, k) => {
     const hit = findCategoryInText(item, [...firstIndexOf.keys()]);
     const index = hit === null ? fallback : (firstIndexOf.get(hit) ?? fallback);
-    groups[index]?.push({ text: item, supplement: supplements[k] ?? "" });
+    groups[index]?.push({ text: item, supplements: supplements[k] ?? [] });
   });
 
   return groups.map((group, i) =>
@@ -147,7 +144,7 @@ export function distributeSummary(summary: string, categories: readonly string[]
       i === 0 ? notes : [],
       {
         emptyText: i === 0 && noDefect ? NO_DEFECT_TEXT : "",
-        supplements: group.map((g) => g.supplement),
+        supplements: group.map((g) => g.supplements),
       },
     ),
   );
@@ -236,7 +233,7 @@ export interface CategoryItemGroup {
 /**
  * 分けている本文を区分ごとの項目・メモに分ける (完了報告書ダイアログの編集用)。
  * 並びは mergeSplitSummary と同じ区分順なので、①②③を通しで振れば報告書の番号と一致する。
- * 1グループを書き戻すときは joinSummary({ ...group.parts, items }) で、その区分のメモを保つ。
+ * 1グループを書き戻すときは joinSummary({ ...group.parts, items, supplements }) で、その区分のメモを保つ。
  */
 export function categoryItemGroups(
   categories: readonly { value: string; summary?: string }[],

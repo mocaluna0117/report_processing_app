@@ -71,10 +71,10 @@ interface HeaderField {
   onBlur?: () => void;
 }
 
-/** 編集中の指示内容 (項目と、項目ごとの補足。並びは対応している) */
+/** 編集中の指示内容 (項目と、項目ごとの補足の並び。並びは対応している。2026-09-25 から1つの項目に補足を複数) */
 interface GroupDraft {
   items: string[];
-  supplements: string[];
+  supplements: string[][];
 }
 
 /** 指示内容の編集単位。工事区分が2件以上なら区分ごと、1件以下なら全体で1つ */
@@ -221,57 +221,65 @@ export function ReportDialog({
    * 行が替わったり工事区分の数が変わったら捨てる (書き戻し先がずれるため)。
    */
   const [draft, setDraft] = useState<GroupDraft[] | null>(null);
-  /** 「補足を追加」を押しただけで、まだ何も書いていない欄 (`${グループ}-${項目}`) */
-  const [openSupplements, setOpenSupplements] = useState<Set<string>>(new Set());
+  /** いま「＋補足」で足した欄 (`${グループ}-${項目}-${補足}`)。そこにだけ入力の場所を移す */
+  const [justAdded, setJustAdded] = useState<string | null>(null);
   useEffect(() => {
     setDraft(null);
-    setOpenSupplements(new Set());
+    setJustAdded(null);
     setPhoneDraft(null);
   }, [row.pairId, row.categories.length]);
   const partsOf = (gi: number): GroupDraft =>
     draft?.[gi] ?? { items: groups[gi].parts.items, supplements: groups[gi].parts.supplements };
-  const editGroup = (gi: number, next: GroupDraft) => {
+  /** 下書きだけを変える (書き戻さない) */
+  const keepDraft = (gi: number, next: GroupDraft) => {
     setDraft(groups.map((_, j) => (j === gi ? next : partsOf(j))));
+  };
+  const editGroup = (gi: number, next: GroupDraft) => {
+    keepDraft(gi, next);
     const group = groups[gi];
     const text = joinSummary({ ...group.parts, items: next.items, supplements: next.supplements });
     if (group.catIndex === null) onSummaryChange(row.pairId, text);
     else onCategorySummaryChange(row.pairId, group.catIndex, text);
   };
-  /** 項目1件の差し替え (i 番目を next にする。next が null なら削除) */
-  const editItem = (
-    gi: number,
-    i: number,
-    next: { text?: string; supplement?: string } | null,
-  ) => {
+  /** 項目の並びに合わせた補足の並び (i 番目だけ list にする) */
+  const supplementsWith = (items: readonly string[], supplements: readonly string[][], i: number, list: string[]) =>
+    items.map((_, k) => (k === i ? list : (supplements[k] ?? [])));
+  /** 項目1件の差し替え (i 番目の本文を text にする。text が null なら、その補足ごと削除) */
+  const editItem = (gi: number, i: number, text: string | null) => {
     const { items, supplements } = partsOf(gi);
-    if (next === null) {
+    if (text === null) {
       editGroup(gi, {
         items: items.filter((_, j) => j !== i),
-        supplements: supplements.filter((_, j) => j !== i),
+        supplements: items.map((_, k) => supplements[k] ?? []).filter((_, j) => j !== i),
       });
-      // 位置がずれるので、このグループの「開いただけの補足」は閉じる
-      setOpenSupplements((prev) => new Set([...prev].filter((k) => !k.startsWith(`${gi}-`))));
+      setJustAdded(null);
       return;
     }
-    editGroup(gi, {
-      items: items.map((v, j) => (j === i && next.text !== undefined ? next.text : v)),
-      supplements: supplements.map((v, j) =>
-        j === i && next.supplement !== undefined ? next.supplement : (v ?? ""),
-      ),
-    });
+    editGroup(gi, { items: items.map((v, j) => (j === i ? text : v)), supplements: items.map((_, k) => supplements[k] ?? []) });
+  };
+  /** 補足1つの差し替え (i 番目の項目の j 番目。text が null なら削除) */
+  const editSupplement = (gi: number, i: number, j: number, text: string | null) => {
+    const { items, supplements } = partsOf(gi);
+    const list = supplements[i] ?? [];
+    const next = text === null ? list.filter((_, k) => k !== j) : list.map((v, k) => (k === j ? text : v));
+    const draftNext = { items, supplements: supplementsWith(items, supplements, i, next) };
+    // ★まだ何も書いていない欄を消すだけなら、本文は変わらないので書き戻さない
+    if (text === null && !(list[j] ?? "").trim()) keepDraft(gi, draftNext);
+    else editGroup(gi, draftNext);
+    if (text === null) setJustAdded(null);
+  };
+  /**
+   * 補足の欄を1つ足す。★下書きだけ（空の補足は書き戻さないので、押しただけでは本文も報告書も変わらない）
+   */
+  const addSupplement = (gi: number, i: number) => {
+    const { items, supplements } = partsOf(gi);
+    const list = supplements[i] ?? [];
+    keepDraft(gi, { items, supplements: supplementsWith(items, supplements, i, [...list, ""]) });
+    setJustAdded(`${gi}-${i}-${list.length}`);
   };
   const addItem = (gi: number) => {
     const { items, supplements } = partsOf(gi);
-    editGroup(gi, { items: [...items, ""], supplements: [...supplements, ""] });
-  };
-  const toggleSupplement = (gi: number, i: number, open: boolean) => {
-    setOpenSupplements((prev) => {
-      const next = new Set(prev);
-      if (open) next.add(`${gi}-${i}`);
-      else next.delete(`${gi}-${i}`);
-      return next;
-    });
-    if (!open) editItem(gi, i, { supplement: "" });
+    editGroup(gi, { items: [...items, ""], supplements: [...items.map((_, k) => supplements[k] ?? []), []] });
   };
   const totalItems = groups.reduce((n, _, gi) => n + partsOf(gi).items.length, 0);
 
@@ -512,9 +520,8 @@ export function ReportDialog({
                     : (
                       <ul className="mt-1.5 space-y-1.5">
                         {items.map((item, i) => {
-                          const supplement = supplements[i] ?? "";
-                          const showSupplement =
-                            supplement !== "" || openSupplements.has(`${gi}-${i}`);
+                          const itemSupplements = supplements[i] ?? [];
+                          const itemLabel = numbers[i] === null ? "この項目" : circledNumber(numbers[i]);
                           return (
                             // 並べ替えはしないので、位置をそのままキーにする
                             // biome-ignore lint/suspicious/noArrayIndexKey: 入力欄の位置と対応させるため
@@ -525,20 +532,19 @@ export function ReportDialog({
                                 </span>
                                 <input
                                   value={item}
-                                  onChange={(e) => editItem(gi, i, { text: e.target.value })}
+                                  onChange={(e) => editItem(gi, i, e.target.value)}
                                   placeholder="1階洋室 天井クロス：クロス表面に凹凸あり"
                                   className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
                                 />
-                                {!showSupplement && (
-                                  <button
-                                    type="button"
-                                    title="この項目に補足を書く (報告書では項目の次の行に載ります)"
-                                    onClick={() => toggleSupplement(gi, i, true)}
-                                    className="shrink-0 cursor-pointer whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium hover:bg-slate-50"
-                                  >
-                                    ＋補足
-                                  </button>
-                                )}
+                                {/* ★補足はいくつでも足せる（2026-09-25）。押しても消えない */}
+                                <button
+                                  type="button"
+                                  title="この項目に補足を足す (報告書では項目の次に、補足1つにつき「・」の行が1行ずつ載ります)"
+                                  onClick={() => addSupplement(gi, i)}
+                                  className="shrink-0 cursor-pointer whitespace-nowrap rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium hover:bg-slate-50"
+                                >
+                                  ＋補足
+                                </button>
                                 <button
                                   type="button"
                                   title="この項目を削除"
@@ -548,28 +554,34 @@ export function ReportDialog({
                                   ✕
                                 </button>
                               </div>
-                              {showSupplement && (
-                                <div className="flex items-center gap-2">
+                              {itemSupplements.map((supplement, j) => (
+                                // biome-ignore lint/suspicious/noArrayIndexKey: 入力欄の位置と対応させるため
+                                <div key={`${gi}-${i}-${j}`} className="flex items-center gap-2">
                                   <span className="w-6 shrink-0 text-right text-sm text-slate-400">
                                     ・
                                   </span>
                                   <input
                                     value={supplement}
-                                    onChange={(e) =>
-                                      editItem(gi, i, { supplement: e.target.value })
-                                    }
-                                    placeholder="補足 (報告書では項目の次の行に「・」付きで載ります)"
+                                    onChange={(e) => editSupplement(gi, i, j, e.target.value)}
+                                    aria-label={`${itemLabel}の補足${j + 1}`}
+                                    // biome-ignore lint/a11y/noAutofocus: いま「＋補足」で足した欄だけに移す
+                                    autoFocus={justAdded === `${gi}-${i}-${j}`}
+                                    placeholder="補足 (報告書では項目の次に「・」付きで1行ずつ載ります)"
                                     className="w-full rounded border border-slate-200 bg-slate-50 px-2 py-1 text-sm"
                                   />
                                   <button
                                     type="button"
                                     title="この補足を削除"
-                                    onClick={() => toggleSupplement(gi, i, false)}
+                                    onClick={() => editSupplement(gi, i, j, null)}
                                     className="shrink-0 cursor-pointer rounded px-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
                                   >
                                     ✕
                                   </button>
                                 </div>
+                              ))}
+                              {/* ★項目が空のまま補足だけ書いても、報告書には載らない（項目と対で落とす） */}
+                              {!item.trim() && itemSupplements.some((s) => s.trim()) && (
+                                <p className="pl-8 text-xs text-amber-800">項目が空欄のため、この補足は報告書に載りません</p>
                               )}
                             </li>
                           );
@@ -599,7 +611,8 @@ export function ReportDialog({
                   {data.items.length >= APPENDIX_THRESHOLD
                     ? `指示内容が${APPENDIX_THRESHOLD}件以上あるためです。`
                     : `折り返しや補足で、本紙の${MAIN_SLOTS}行に入りきらないためです。`}
-                  {data.supplements.some((s) => s) && "補足は項目の下の細い欄に入ります。"}
+                  {/* ★並びは空でも真になるので、数で見る */}
+                  {data.supplements.some((s) => s.length > 0) && "補足は項目の下の細い欄に、1つにつき1行ずつ入ります。"}
                 </p>
               </MoreDetails>
             </div>

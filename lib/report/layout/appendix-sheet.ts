@@ -1,6 +1,6 @@
 /**
  * 別紙のレイアウト (テンプレートの sheet4)。印刷倍率85%。
- * 1枠 = 「項目行 + (補足がある枠だけ細い欄) + 対応結果行」。
+ * 1枠 = 「項目行 + (補足1つにつき細い欄を1つ。2026-09-25 から複数) + 対応結果行」。
  * 補足の無い枠だけなら今までどおり12枠で、13件以上ある場合はページを分けて 2/3・3/3 … と続ける。
  */
 import { APPENDIX_SHEET_METRICS } from "@/lib/report/metrics";
@@ -39,9 +39,9 @@ export interface AppendixPageInput {
   pageLabel: string;
 }
 
-/** その項目が使う高さ (補足があれば細い欄の分だけ高くなる) */
+/** その項目が使う高さ (補足の数だけ細い欄の分が高くなる) */
 function heightOf(item: AppendixItem): number {
-  return SLOT_HEIGHT + (item.supplement ? SUPPLEMENT_ROW_HEIGHT : 0);
+  return SLOT_HEIGHT + item.supplements.length * SUPPLEMENT_ROW_HEIGHT;
 }
 
 /**
@@ -52,7 +52,7 @@ export function appendixSlots(items: readonly AppendixItem[]): AppendixItem[] {
   const slots: AppendixItem[] = [...items];
   let used = slots.reduce((sum, item) => sum + heightOf(item), 0);
   while (used + SLOT_HEIGHT <= PAGE_SLOT_HEIGHT + 0.01) {
-    slots.push({ text: "", supplement: "" });
+    slots.push({ text: "", supplements: [] });
     used += SLOT_HEIGHT;
   }
   return slots;
@@ -111,11 +111,12 @@ export function appendixSheet(input: AppendixPageInput): {
     rowHeights.push(ITEM_ROW_HEIGHT);
     row++;
 
-    if (item.supplement) {
-      values[`supplement${k}`] = item.supplement;
+    // 補足1つにつき細い欄を1つ (項目行の下に並べる)
+    item.supplements.forEach((supplement, j) => {
+      values[`supplement${k}_${j}`] = supplement;
       cells.push({
         ref: `A${row}`,
-        field: `supplement${k}`,
+        field: `supplement${k}_${j}`,
         size: 11,
         v: "center",
         border: SUPPLEMENT_ROW,
@@ -123,7 +124,7 @@ export function appendixSheet(input: AppendixPageInput): {
       });
       rowHeights.push(SUPPLEMENT_ROW_HEIGHT);
       row++;
-    }
+    });
 
     cells.push({
       ref: `A${row}`,

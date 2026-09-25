@@ -49,25 +49,37 @@ describe("formatPhenomena", () => {
 
 describe("formatPhenomena (補足)", () => {
   it("補足は事象の次の行に「補足: 」で入る", () => {
-    expect(formatPhenomena(["事象A", "事象B"], [], { supplements: ["通気の清掃も必要", ""] })).toBe(
+    expect(formatPhenomena(["事象A", "事象B"], [], { supplements: [["通気の清掃も必要"], []] })).toBe(
       "①事象A\n補足: 通気の清掃も必要\n②事象B",
     );
   });
 
   it("1件だけ (番号なし) でも補足は次の行に入る", () => {
-    expect(formatPhenomena(["事象A"], [], { supplements: ["写真3枚目"] })).toBe(
+    expect(formatPhenomena(["事象A"], [], { supplements: [["写真3枚目"]] })).toBe(
       "事象A\n補足: 写真3枚目",
     );
   });
 
   it("★空の事象は補足ごと落とす (番号と補足がずれないように)", () => {
     expect(
-      formatPhenomena(["", "事象B"], [], { supplements: ["消える補足", "残る補足"] }),
+      formatPhenomena(["", "事象B"], [], { supplements: [["消える補足"], ["残る補足"]] }),
     ).toBe("事象B\n補足: 残る補足");
   });
 
+  it("★1つの事象に補足をいくつでも付けられる（1つにつき「補足: 」の行が1行。2026-09-25）", () => {
+    expect(formatPhenomena(["事象A", "事象B"], [], { supplements: [["土台水切りの隙間", "通気パッキンの清掃"], ["部品を手配"]] })).toBe(
+      "①事象A\n補足: 土台水切りの隙間\n補足: 通気パッキンの清掃\n②事象B\n補足: 部品を手配",
+    );
+  });
+
+  it("★空の補足は書かない。先頭に打った「・」は落とす（報告書で「・・」にならないように）", () => {
+    expect(formatPhenomena(["事象A"], [], { supplements: [["", "  ", "・床鳴り", "･ 半角の点"]] })).toBe(
+      "事象A\n補足: 床鳴り\n補足: 半角の点",
+    );
+  });
+
   it("メモは補足のあとに、今までどおり末尾へ付く", () => {
-    expect(formatPhenomena(["事象A"], ["奥様が立ち会い"], { supplements: ["補足あり"] })).toBe(
+    expect(formatPhenomena(["事象A"], ["奥様が立ち会い"], { supplements: [["補足あり"]] })).toBe(
       "事象A\n補足: 補足あり\nメモ: 奥様が立ち会い",
     );
   });

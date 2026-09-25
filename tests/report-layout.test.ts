@@ -77,7 +77,7 @@ beforeAll(async () => {
     propertyLine: "物件名：x",
     ownerLine: "施主名：x様",
     // 見本の別紙は6件。「対応結果：」の行数を合わせるためダミーを6件入れる
-    items: Array.from({ length: 6 }, (_, i) => ({ text: `項目${i + 1}`, supplement: "" })),
+    items: Array.from({ length: 6 }, (_, i) => ({ text: `項目${i + 1}`, supplements: [] })),
     pageLabel: "2/2",
   });
   appendix = resolveGeometry(spec, values, {}, measure);
@@ -312,8 +312,8 @@ describe("指示内容の折り返し幅と、別紙の補足の欄", () => {
       propertyLine: "物件名：x",
       ownerLine: "施主名：x様",
       items: [
-        { text: "①壁のひび", supplement: "・3階北側の2か所" },
-        { text: "②床のきしみ", supplement: "" },
+        { text: "①壁のひび", supplements: ["・3階北側の2か所"] },
+        { text: "②床のきしみ", supplements: [] },
       ],
       pageLabel: "2/2",
     });
@@ -332,12 +332,37 @@ describe("指示内容の折り返し幅と、別紙の補足の欄", () => {
     expect(geometry.overflow).toEqual([]);
   });
 
+  it("★補足が2つなら、細い欄が2つ並ぶ（2026-09-25）", () => {
+    const { spec, values } = appendixSheet({
+      title: "1年目点検是正項目",
+      propertyLine: "物件名：x",
+      ownerLine: "施主名：x様",
+      items: [
+        { text: "①壁のひび", supplements: ["・3階北側の2か所", "・写真は3枚目"] },
+        { text: "②床のきしみ", supplements: [] },
+      ],
+      pageLabel: "2/2",
+    });
+    const geometry = resolveGeometry(spec, values, {}, measure);
+    const find = (text: string) => geometry.texts.find((t) => t.text === text);
+    const first = find("・3階北側の2か所");
+    const second = find("・写真は3枚目");
+    const next = find("②床のきしみ");
+    expect(first && second && next).toBeTruthy();
+    const pt = (rows: number) => (rows * 0.85 * PRINT_FACTOR) / 2;
+    // 補足の欄どうしは15ずつ下がる。次の項目は「補足の欄15 + 対応結果39.75 + 項目行18」の分だけ下がる
+    expect(second!.baseline - first!.baseline).toBeCloseTo(pt(15 + 15), 1);
+    expect(next!.baseline - second!.baseline).toBeCloseTo(pt(15 + 2 * 39.75 + 18), 1);
+    expect(values).toMatchObject({ supplement0_0: "・3階北側の2か所", supplement0_1: "・写真は3枚目" });
+    expect(geometry.overflow).toEqual([]);
+  });
+
   it("長い補足は縮んで入る (縮めたのに収まらない、にはしない)", () => {
     const { spec, values } = appendixSheet({
       title: "1年目点検是正項目",
       propertyLine: "物件名：x",
       ownerLine: "施主名：x様",
-      items: [{ text: `①${"あ".repeat(50)}`, supplement: `・${"い".repeat(50)}` }],
+      items: [{ text: `①${"あ".repeat(50)}`, supplements: [`・${"い".repeat(50)}`] }],
       pageLabel: "2/2",
     });
     const geometry = resolveGeometry(spec, values, {}, measure);

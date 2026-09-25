@@ -324,8 +324,11 @@ export async function buildReportPdf(data: ReportData, fonts: ReportFonts): Prom
     });
     // 補足があると1ページに入る枠が減るので、件数ではなく実際のページ数で知らせる
     if (pages.length > 1) {
+      const supplementCount = data.appendix.items.reduce((sum, item) => sum + item.supplements.length, 0);
       warnings.push(
-        `指示内容が${data.appendix.items.length}件あるため、PDFの別紙を${pages.length}ページに分けました`,
+        supplementCount > 0
+          ? `指示内容が${data.appendix.items.length}件・補足が${supplementCount}件あるため、PDFの別紙を${pages.length}ページに分けました`
+          : `指示内容が${data.appendix.items.length}件あるため、PDFの別紙を${pages.length}ページに分けました`,
       );
     }
   }

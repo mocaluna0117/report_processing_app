@@ -249,21 +249,35 @@ describe("補足 (補足: の行)", () => {
   it("項目の次の「補足: 」の行はその項目の補足になる", () => {
     const parts = splitSummary("①壁のひび\n補足: 3階の north 側\n②床のきしみ");
     expect(parts.items).toEqual(["壁のひび", "床のきしみ"]);
-    expect(parts.supplements).toEqual(["3階の north 側", ""]);
+    expect(parts.supplements).toEqual([["3階の north 側"], []]);
   });
 
   it("全角コロンでも読める", () => {
-    expect(splitSummary("壁のひび\n補足：写真2枚目").supplements).toEqual(["写真2枚目"]);
+    expect(splitSummary("壁のひび\n補足：写真2枚目").supplements).toEqual([["写真2枚目"]]);
   });
 
-  it("同じ項目に補足が何行もあれば1つにまとめる", () => {
-    expect(splitSummary("壁のひび\n補足: 前半\n補足: 後半").supplements).toEqual(["前半　後半"]);
+  it("★同じ項目に補足が何行もあれば、1行ずつ別の補足として読む（2026-09-25。前は1つにまとめて2つ目から消えていた）", () => {
+    expect(splitSummary("壁のひび\n補足: 前半\n補足: 後半").supplements).toEqual([["前半", "後半"]]);
+  });
+
+  it("★前に1行にまとめて保存した「A　B」は、そのまま1つとして読む（全角空白で割らない）", () => {
+    expect(splitSummary("壁のひび\n補足: 前半　後半").supplements).toEqual([["前半　後半"]]);
+  });
+
+  it("★先頭に打った「・」は落として読む（報告書で「・・」にならないように）", () => {
+    expect(splitSummary("壁のひび\n補足: ・床鳴り").supplements).toEqual([["床鳴り"]]);
+  });
+
+  it("★補足が2つある本文を読んで書き戻すと、元の本文に戻る（何回くり返しても同じ）", () => {
+    const text = "①壁のひび\n補足: 3階北側\n補足: 写真は3枚目\n②床のきしみ\n補足: 1階廊下\nメモ: 奥様が立ち会い";
+    expect(joinSummary(splitSummary(text))).toBe(text);
+    expect(joinSummary(splitSummary(joinSummary(splitSummary(text))))).toBe(text);
   });
 
   it("★項目より前にある補足の行は、失わないよう普通の項目として扱う", () => {
     const parts = splitSummary("補足: 迷子の行\n①壁のひび");
     expect(parts.items).toEqual(["迷子の行", "壁のひび"]);
-    expect(parts.supplements).toEqual(["", ""]);
+    expect(parts.supplements).toEqual([[], []]);
   });
 
   it("書き戻すと同じ本文に戻る", () => {
@@ -278,6 +292,17 @@ describe("補足 (補足: の行)", () => {
     );
     expect(texts[0]).toBe("クロスに凹凸\n補足: 3か所");
     expect(texts[1]).toBe("サッシの結露\n補足: 北側のみ");
+  });
+
+  it("★補足が2つあっても、振り分け・まとめ直しで保たれる", () => {
+    const texts = distributeSummary(
+      "①クロスに凹凸\n補足: 3か所\n補足: 写真2枚目\n②サッシの結露\n補足: 北側のみ",
+      ["クロス", "サッシ"],
+    );
+    expect(texts[0]).toBe("クロスに凹凸\n補足: 3か所\n補足: 写真2枚目");
+    expect(mergeSplitSummary(texts.map((summary) => ({ summary })))).toBe(
+      "①クロスに凹凸\n補足: 3か所\n補足: 写真2枚目\n②サッシの結露\n補足: 北側のみ",
+    );
   });
 
   it("★分けた本文をまとめ直しても補足が保たれる", () => {
