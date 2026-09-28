@@ -7,6 +7,7 @@ import type { RakurakuKind } from "./kinds";
 import type { Log } from "./list";
 import { extFromContentType, extOf, fixExtension, looksLikeHtml, withExt } from "./parse/sniff";
 import { escapeRegExp } from "./parse/text";
+import { failureSign } from "./failure";
 
 /**
  * 伝票画面の「印刷」から本体PDFを、添付欄から添付を受け取る。
@@ -237,8 +238,8 @@ export async function fetchBodyPdf(
     } catch (e) {
       throw new RakurakuError(
         "BODY_PDF_FAILED",
-        `「印刷」ボタンを押せませんでした（${e instanceof Error ? e.name : "Error"}）。承認履歴のダイアログが重なっている可能性があります`,
-        { retryable: true },
+        `「印刷」ボタンを押せませんでした（${failureSign(e)}）。承認履歴のダイアログが重なっている可能性があります`,
+        { retryable: true, detail: failureSign(e) },
       );
     }
 

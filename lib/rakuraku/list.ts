@@ -12,6 +12,7 @@ import {
   parsePagerText,
   rankNextPageActions,
 } from "./parse/pager";
+import { failureSign } from "./failure";
 
 /**
  * 一覧を読む・ページを送る・対象を集める。
@@ -219,7 +220,7 @@ export async function advancePage(
     if (!pressed) {
       const failed = await evaluateFunctionString(frame, cand.js)
         .then(() => null)
-        .catch((e: unknown) => (e instanceof Error ? e.name : "Error"));
+        .catch((e: unknown) => failureSign(e));
       if (failed) {
         tried.push(`${cand.how}: ${failed}`);
         continue;

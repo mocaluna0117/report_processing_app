@@ -11,6 +11,7 @@ import { normalizeDenpyoDigits } from "./parse/fields";
 import type { RememberedRoute } from "./protocol";
 import { composeNatsuinParts, natsuinFinalName } from "./parse/natsuin";
 import { extOf } from "./parse/sniff";
+import { failureSign } from "./failure";
 
 /**
  * 捺印決裁書に紐づく専決決裁書から、本体と要件に合う添付を取る（組み立ての材料を流す）。
@@ -119,7 +120,7 @@ export async function fetchComposedParts(
       log(`  ${llabel}から写した項目: ${Object.keys(copied).join(" / ")}`);
     }
   } catch (e) {
-    log(`    （${llabel}の項目を読めませんでした: ${e instanceof Error ? e.name : "Error"}）`);
+    log(`    （${llabel}の項目を読めませんでした: ${failureSign(e)}）`);
   }
 
   run.progress("body", `${llabel}の本体PDFを取得しています`);

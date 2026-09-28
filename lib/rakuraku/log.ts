@@ -1,4 +1,5 @@
 import "server-only";
+import { FAILURE_SIGN_PATTERN } from "./failure";
 
 /**
  * Vercel のログに出してよいものだけを受け取る記録係。
@@ -25,6 +26,8 @@ export interface LogFields extends Partial<Counters> {
   code?: string;
   /** 成否 */
   ok?: boolean;
+  /** ブラウザの失敗の符号（net::ERR_CONNECTION_RESET など）。★形が合わなければ捨てる */
+  detail?: string;
 }
 
 export function log(stage: Stage, fields: LogFields = {}): void {
@@ -33,6 +36,7 @@ export function log(stage: Stage, fields: LogFields = {}): void {
     if (value === undefined) continue;
     if (key === "code" && typeof value === "string") safe.code = value;
     else if (key === "ok" && typeof value === "boolean") safe.ok = value;
+    else if (key === "detail" && typeof value === "string" && FAILURE_SIGN_PATTERN.test(value)) safe.detail = value;
     else if (typeof value === "number" && (key.startsWith("n_") || key.startsWith("ms_"))) {
       safe[key] = value;
     }

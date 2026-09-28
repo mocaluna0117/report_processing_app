@@ -3,6 +3,7 @@ import type { Page } from "playwright-core";
 import type { TenantConfig } from "./config";
 import { contentFrame } from "./frames";
 import { type LandingMarkers, readLandingMarkers } from "./landing";
+import { failureSign } from "./failure";
 
 /**
  * 楽楽精算へのログイン。
@@ -83,8 +84,12 @@ export async function autoLoginOnce(
 ): Promise<LoginResult> {
   try {
     await page.goto(tenant.loginUrl, { waitUntil: "load", timeout: 30_000 });
-  } catch {
-    return { code: "TENANT_UNREACHABLE", message: "楽楽精算のログイン画面に繋がりませんでした", submitted: false };
+  } catch (e) {
+    return {
+      code: "TENANT_UNREACHABLE",
+      message: `楽楽精算のログイン画面に繋がりませんでした（${failureSign(e)}）`,
+      submitted: false,
+    };
   }
 
   const frame = await contentFrame(page);

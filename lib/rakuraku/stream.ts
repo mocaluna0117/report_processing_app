@@ -128,7 +128,8 @@ export function ndjsonResponse(
       await write(event);
       // 接続が切れて後片付けした結果の失敗は、不具合（INTERNAL）と見分けられるように記録する
       const code = aborter.signal.aborted ? "ABORTED" : event.code;
-      log(options.stage, { ok: false, code, ms_total: Date.now() - startedAt });
+      const detail = error instanceof RakurakuError ? error.detail : undefined;
+      log(options.stage, { ok: false, code, detail, ms_total: Date.now() - startedAt });
     } finally {
       clearInterval(ping);
       await chain;

@@ -18,12 +18,15 @@ export interface RakurakuErrorOptions {
   sessionLost?: boolean;
   /** 部門が選べなかったとき、このアカウントで選べるもの */
   available?: DepartmentOption[];
+  /** ブラウザの失敗の符号（failure.ts の failureSign）。ログに残して原因を見分ける */
+  detail?: string;
 }
 
 export class RakurakuError extends Error {
   readonly retryable: boolean;
   readonly sessionLost: boolean;
   readonly available?: DepartmentOption[];
+  readonly detail?: string;
 
   constructor(
     readonly code: RakurakuCode,
@@ -35,6 +38,7 @@ export class RakurakuError extends Error {
     this.retryable = options.retryable ?? false;
     this.sessionLost = options.sessionLost ?? false;
     if (options.available) this.available = options.available;
+    if (options.detail) this.detail = options.detail;
   }
 }
 

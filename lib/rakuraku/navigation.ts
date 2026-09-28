@@ -27,6 +27,7 @@ import type { Log } from "./list";
 import { isLoginScreen } from "./login";
 import { parsePagerText } from "./parse/pager";
 import type { RakurakuCode, RememberedRoute, RouteHow, RouteId } from "./protocol";
+import { failureSign } from "./failure";
 
 /**
  * ログイン状態の確認・部門の切り替え・一覧への移動。
@@ -95,8 +96,8 @@ export async function openHome(page: Page, tenant: TenantConfig, home: string): 
   } catch (e) {
     throw new RakurakuError(
       "TENANT_UNREACHABLE",
-      `楽楽精算の画面に繋がりませんでした（${e instanceof Error ? e.name : "Error"}）`,
-      { retryable: true },
+      `楽楽精算の画面に繋がりませんでした（${failureSign(e)}）`,
+      { retryable: true, detail: failureSign(e) },
     );
   }
   await assertLoggedIn(page);
@@ -305,7 +306,8 @@ export async function clickMenuOnce(
   } catch (e) {
     throw new RakurakuError(
       "MENU_NOT_FOUND",
-      `メニュー${where}を押せませんでした（${e instanceof Error ? e.name : "Error"}）。楽楽精算の画面が変わった可能性があります`,
+      `メニュー${where}を押せませんでした（${failureSign(e)}）。楽楽精算の画面が変わった可能性があります`,
+      { detail: failureSign(e) },
     );
   }
   return pick;
@@ -464,8 +466,8 @@ async function openListUrl(
     } catch (e) {
       throw new RakurakuError(
         "TENANT_UNREACHABLE",
-        `${kind.label}の一覧を開けませんでした（${e instanceof Error ? e.name : "Error"}）`,
-        { retryable: true },
+        `${kind.label}の一覧を開けませんでした（${failureSign(e)}）`,
+        { retryable: true, detail: failureSign(e) },
       );
     }
     found = await waitForListFrame(page, marker, timing.reopenWaitMs);

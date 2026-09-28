@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { BrowserContextOptions } from "playwright-core";
 import { launchBrowser } from "@/lib/rakuraku/browser";
 import { currentDepartment, departmentsBody, listDepartments } from "@/lib/rakuraku/department";
+import { RakurakuError } from "@/lib/rakuraku/errors";
 import { assertEnabled, assertSameOrigin } from "@/lib/rakuraku/guard";
 import { log } from "@/lib/rakuraku/log";
 import { openHome } from "@/lib/rakuraku/navigation";
@@ -88,7 +89,7 @@ export async function POST(request: Request) {
     // ★失敗の種類（やり直してよいか・ログインし直しが要るか）もそのまま返す。
     //   ブラウザ側はこれを見て、一時的な失敗のときだけ1回やり直す
     const { type: _type, ...body } = toErrorEvent(e);
-    log("list", { ok: false, code: body.code });
+    log("list", { ok: false, code: body.code, detail: e instanceof RakurakuError ? e.detail : undefined });
     return json({ ok: false, ...body });
   } finally {
     await launched?.close();

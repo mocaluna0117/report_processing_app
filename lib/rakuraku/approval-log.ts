@@ -7,6 +7,7 @@ import { pickLatestDate } from "./parse/datetime";
 import { diffAddedLines, pickFinalApprovedAt, tableContentKey } from "./parse/tables";
 import { escapeRegExp } from "./parse/text";
 import { scanTablesEverywhere, scanTextEverywhere } from "./tables";
+import { failureSign } from "./failure";
 
 /**
  * 伝票画面の「承認履歴」から最終承認日を読む。
@@ -122,7 +123,7 @@ export async function readFinalApprovedAt(
     }
     return { value: got, opened: true };
   } catch (e) {
-    log(`    （承認履歴を読めませんでした: ${e instanceof Error ? e.name : "Error"}）`);
+    log(`    （承認履歴を読めませんでした: ${failureSign(e)}）`);
     // ★クリック済みかどうか分からないので「開いた」側に倒す。
     //   余分に伝票画面を開き直すだけで済み、ダイアログが残る事故を防げる
     return { value: null, opened: true };
