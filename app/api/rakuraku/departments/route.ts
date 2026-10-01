@@ -72,6 +72,7 @@ export async function POST(request: Request) {
     const list = await listDepartments(page);
     const body = departmentsBody(list, list === null ? null : await currentDepartment(page));
     log("list", {
+      ...launched.diagnostics(),
       ok: true,
       n_departments: body.departments.length,
       n_dept_select: body.hasDepartmentSelect ? 1 : 0,
@@ -89,7 +90,13 @@ export async function POST(request: Request) {
     // ★失敗の種類（やり直してよいか・ログインし直しが要るか）もそのまま返す。
     //   ブラウザ側はこれを見て、一時的な失敗のときだけ1回やり直す
     const { type: _type, ...body } = toErrorEvent(e);
-    log("list", { ok: false, code: body.code, detail: e instanceof RakurakuError ? e.detail : undefined });
+    log("list", {
+      ...launched?.diagnostics(),
+      ...(e instanceof RakurakuError ? e.crash : undefined),
+      ok: false,
+      code: body.code,
+      detail: e instanceof RakurakuError ? e.detail : undefined,
+    });
     return json({ ok: false, ...body });
   } finally {
     await launched?.close();

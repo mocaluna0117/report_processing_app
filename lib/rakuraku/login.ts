@@ -3,7 +3,8 @@ import type { Page } from "playwright-core";
 import type { TenantConfig } from "./config";
 import { contentFrame } from "./frames";
 import { type LandingMarkers, readLandingMarkers } from "./landing";
-import { failureSign } from "./failure";
+import { browserGoneError } from "./errors";
+import { failureSign, isBrowserGone } from "./failure";
 
 /**
  * 楽楽精算へのログイン。
@@ -144,9 +145,11 @@ export async function autoLoginOnce(
 /** いまログイン画面にいるか（＝ログインしていないか） */
 export async function isLoginScreen(page: Page): Promise<boolean> {
   const frame = await contentFrame(page);
-  return await frame
+  const count = await frame
     .locator(PASSWORD_SELECTOR)
     .count()
-    .then((n) => n > 0)
-    .catch(() => false);
+    .catch(() => null);
+  // ★落ちたブラウザを「ログイン画面ではない（＝ログインは生きている）」と取り違えない
+  if (count === null && isBrowserGone(page)) throw browserGoneError();
+  return (count ?? 0) > 0;
 }

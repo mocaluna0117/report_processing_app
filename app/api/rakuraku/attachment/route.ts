@@ -61,7 +61,7 @@ export async function POST(request: Request) {
           body.expectedName,
         );
         return { routes: result.routes };
-      });
+      }, { tenant });
     },
     { stage: "download", startedAt: started },
   );

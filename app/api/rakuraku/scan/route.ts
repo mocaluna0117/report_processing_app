@@ -83,7 +83,7 @@ export async function POST(request: Request) {
         });
         log("list", { ok: true, n_targets: collect.targets.length, n_pages: collect.pages, n_scanned: collect.scanned });
         return { routes: { [kind.id]: result.remembered } };
-      });
+      }, { tenant });
     },
     { stage: "list", startedAt: started },
   );

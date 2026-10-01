@@ -5,6 +5,7 @@ import { type Department, type EnsureDepartmentOptions, ensureDepartment, listDe
 import {
   DEPT_SELECT_MISSING_TEXT,
   RakurakuError,
+  browserGoneError,
   departmentNotAvailableText,
   departmentSwitchFailedText,
   listNotFoundText,
@@ -27,7 +28,7 @@ import type { Log } from "./list";
 import { isLoginScreen } from "./login";
 import { parsePagerText } from "./parse/pager";
 import type { RakurakuCode, RememberedRoute, RouteHow, RouteId } from "./protocol";
-import { failureSign } from "./failure";
+import { BROWSER_GONE_SIGNS, failureSign, isBrowserGone } from "./failure";
 
 /**
  * ログイン状態の確認・部門の切り替え・一覧への移動。
@@ -94,6 +95,8 @@ export async function openHome(page: Page, tenant: TenantConfig, home: string): 
   try {
     await page.goto(target, { waitUntil: "load", timeout: 30_000 });
   } catch (e) {
+    // ★こちらのブラウザが落ちたのを「楽楽精算に繋がらない」と言わない
+    if (isGoneFailure(page, e)) throw browserGoneError(e);
     throw new RakurakuError(
       "TENANT_UNREACHABLE",
       `楽楽精算の画面に繋がりませんでした（${failureSign(e)}）`,
@@ -101,6 +104,11 @@ export async function openHome(page: Page, tenant: TenantConfig, home: string): 
     );
   }
   await assertLoggedIn(page);
+}
+
+/** その失敗が「こちらのブラウザが落ちた」ものか */
+export function isGoneFailure(page: Page, error: unknown): boolean {
+  return BROWSER_GONE_SIGNS.has(failureSign(error)) || isBrowserGone(page);
 }
 
 /**
@@ -464,6 +472,7 @@ async function openListUrl(
     try {
       await page.goto(target, { waitUntil: "load", timeout: 30_000 });
     } catch (e) {
+      if (isGoneFailure(page, e)) throw browserGoneError(e);
       throw new RakurakuError(
         "TENANT_UNREACHABLE",
         `${kind.label}の一覧を開けませんでした（${failureSign(e)}）`,

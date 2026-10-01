@@ -55,7 +55,7 @@ export async function POST(request: Request) {
         });
         await sink.send({ type: "survey", report });
         log("navigate", { ok: true, n_probes: report.probes.length, ms_elapsed: Date.now() - started });
-      });
+      }, { tenant });
     },
     { stage: "navigate", startedAt: started },
   );

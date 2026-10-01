@@ -1,6 +1,6 @@
 import "server-only";
-import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdtemp, readdir, rm, stat, statfs } from "node:fs/promises";
+import { freemem, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
 import type { Browser } from "playwright-core";
 import { RakurakuError } from "./errors";
@@ -19,6 +19,57 @@ export interface LaunchedBrowser {
   browser: Browser;
   profileDir: string;
   close(): Promise<void>;
+  /** 起こしたときのインスタンスの様子と、こちらが閉じる前に切れたか（ログに出す数だけ） */
+  diagnostics(): LaunchDiagnostics;
+}
+
+/**
+ * ブラウザを起こしたときの様子。★どれも数だけ（log.ts の n_ / ms_ の形）。
+ *
+ * 2026-10-01、取得（scan / fetch）だけが開始から1秒以内に TARGET_CLOSED で止まり続け、
+ * 同じ時間のログイン・部門の読み込みは毎回通った。Vercel は同じインスタンスを使い回すので、
+ * **壊れたインスタンスに当たり続けている**のかを、起動の回数・メモリ・/tmp の空きで見分ける。
+ *
+ * ★interface ではなく type にする（log.ts の LogFields にそのまま渡せるように）
+ */
+export type LaunchDiagnostics = {
+  /** このインスタンスで何回目の起動か */
+  n_launch_seq: number;
+  /** このインスタンス（このモジュールを読み込んでから）の経過 */
+  ms_instance_up: number;
+  n_free_mb?: number;
+  n_total_mb?: number;
+  /** この Node のプロセスが使っているメモリ */
+  n_rss_mb?: number;
+  n_tmp_free_mb?: number;
+  /** こちらが閉じる前にブラウザが切れたとき、起動から切れるまで（切れていなければ無い） */
+  ms_browser_alive?: number;
+};
+
+const INSTANCE_STARTED_AT = Date.now();
+let launchCount = 0;
+
+const mb = (bytes: number) => Math.round(bytes / (1024 * 1024));
+
+/** インスタンスの様子を読む。★読めないものは省く（記録のために起動を止めない） */
+export async function instanceSnapshot(): Promise<Omit<LaunchDiagnostics, "n_launch_seq" | "ms_browser_alive">> {
+  const out: Omit<LaunchDiagnostics, "n_launch_seq" | "ms_browser_alive"> = {
+    ms_instance_up: Date.now() - INSTANCE_STARTED_AT,
+  };
+  try {
+    out.n_free_mb = mb(freemem());
+    out.n_total_mb = mb(totalmem());
+    out.n_rss_mb = mb(process.memoryUsage().rss);
+  } catch {
+    /* 省く */
+  }
+  try {
+    const fs = await statfs(tmpdir());
+    out.n_tmp_free_mb = mb(fs.bavail * fs.bsize);
+  } catch {
+    /* 省く */
+  }
+  return out;
 }
 
 const PROFILE_PREFIX = "rakuraku-";
@@ -150,7 +201,9 @@ export async function launchBrowser(): Promise<LaunchedBrowser> {
       retryable: true,
     });
   }
-  let launched: LaunchedBrowser;
+  launchCount += 1;
+  const snapshot = { n_launch_seq: launchCount, ...(await instanceSnapshot()) };
+  let launched: Omit<LaunchedBrowser, "diagnostics">;
   try {
     launched = await startBrowser();
   } catch (e) {
@@ -159,19 +212,28 @@ export async function launchBrowser(): Promise<LaunchedBrowser> {
     //   （以前は部門の読み込みだけが生の英語のまま画面に出ていた）
     throw e instanceof RakurakuError ? e : browserLaunchError(e);
   }
+  const launchedAt = Date.now();
+  let closing = false;
+  let aliveMs: number | undefined;
+  launched.browser.on("disconnected", () => {
+    // ★こちらが閉じたのではなく、ブラウザが自分で消えた（落ちた・強制終了された）
+    if (!closing) aliveMs = Date.now() - launchedAt;
+  });
   return {
     ...launched,
     close: async () => {
+      closing = true;
       try {
         await launched.close();
       } finally {
         release();
       }
     },
+    diagnostics: () => ({ ...snapshot, ...(aliveMs === undefined ? {} : { ms_browser_alive: aliveMs }) }),
   };
 }
 
-async function startBrowser(): Promise<LaunchedBrowser> {
+async function startBrowser(): Promise<Omit<LaunchedBrowser, "diagnostics">> {
   const { chromium } = await import("playwright-core");
   await sweepOldProfiles();
   const profileDir = await mkdtemp(join(tmpdir(), PROFILE_PREFIX));
@@ -181,7 +243,7 @@ async function startBrowser(): Promise<LaunchedBrowser> {
     downloadsPath: join(profileDir, "dl"),
   } as const;
 
-  const wrap = (browser: Browser): LaunchedBrowser => ({
+  const wrap = (browser: Browser): Omit<LaunchedBrowser, "diagnostics"> => ({
     browser,
     profileDir,
     close: async () => {

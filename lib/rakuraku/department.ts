@@ -1,5 +1,7 @@
 import "server-only";
 import type { Frame, Page, Request } from "playwright-core";
+import { browserGoneError } from "./errors";
+import { isBrowserGone } from "./failure";
 
 /**
  * 所属部門の切り替え（`select[name="bumonCd"]`）。
@@ -59,7 +61,13 @@ interface RawState {
   options: Department[];
 }
 
-/** プルダウンを持っているフレームを探す。楽楽精算は frameset なので全部見る */
+/**
+ * プルダウンを持っているフレームを探す。楽楽精算は frameset なので全部見る。
+ *
+ * ★見つからなかったときは、ブラウザが落ちていないかを確かめてから null（＝プルダウンが無い）を返す。
+ *   数える処理は失敗を 0 に丸めるので、落ちたブラウザでは必ず「無い」になり、
+ *   「部門内検索の権限が無い可能性があります」と取り違えていた（2026-10-01）。
+ */
 async function findSelect(page: Page): Promise<Frame | null> {
   for (const frame of page.frames()) {
     const count = await frame
@@ -68,6 +76,7 @@ async function findSelect(page: Page): Promise<Frame | null> {
       .catch(() => 0);
     if (count > 0) return frame;
   }
+  if (isBrowserGone(page)) throw browserGoneError();
   return null;
 }
 

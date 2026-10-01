@@ -73,7 +73,7 @@ export async function POST(request: Request) {
         });
         log("detail", { ok: true, ms_elapsed: Date.now() - started });
         return { routes: result.routes };
-      });
+      }, { tenant });
     },
     { stage: "detail", startedAt: started },
   );

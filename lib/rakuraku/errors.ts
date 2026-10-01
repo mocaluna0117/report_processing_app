@@ -1,4 +1,5 @@
 import "server-only";
+import { BROWSER_GONE_SIGNS, type CrashSigns, crashSigns, failureSign } from "./failure";
 import type { DepartmentOption, RakurakuCode } from "./protocol";
 
 export type { RakurakuCode } from "./protocol";
@@ -20,6 +21,8 @@ export interface RakurakuErrorOptions {
   available?: DepartmentOption[];
   /** ブラウザの失敗の符号（failure.ts の failureSign）。ログに残して原因を見分ける */
   detail?: string;
+  /** ブラウザが落ちたときの手がかり（failure.ts の crashSigns）。ログにだけ残す */
+  crash?: CrashSigns;
 }
 
 export class RakurakuError extends Error {
@@ -27,6 +30,7 @@ export class RakurakuError extends Error {
   readonly sessionLost: boolean;
   readonly available?: DepartmentOption[];
   readonly detail?: string;
+  readonly crash?: CrashSigns;
 
   constructor(
     readonly code: RakurakuCode,
@@ -39,7 +43,34 @@ export class RakurakuError extends Error {
     this.sessionLost = options.sessionLost ?? false;
     if (options.available) this.available = options.available;
     if (options.detail) this.detail = options.detail;
+    if (options.crash && Object.keys(options.crash).length > 0) this.crash = options.crash;
   }
+}
+
+/** 「こちらのブラウザが落ちた」失敗か（browserGoneError か、openHome などが同じ符号で投げたもの） */
+export function isBrowserGoneError(error: unknown): error is RakurakuError {
+  return (
+    error instanceof RakurakuError &&
+    error.code === "TENANT_UNREACHABLE" &&
+    error.detail !== undefined &&
+    BROWSER_GONE_SIGNS.has(error.detail)
+  );
+}
+
+/**
+ * 楽楽精算を開いている**こちらのブラウザ**が途中で落ちた。
+ *
+ * ★符号は TENANT_UNREACHABLE のまま（やり直してよい失敗。画面の扱いを変えない）にして、文で区別する。
+ *   以前は「楽楽精算の画面に繋がりませんでした」と出していたが、楽楽精算は落ちていない
+ *   （2026-10-01。同じ時間に、ログインと部門の読み込みは毎回通っていた）。
+ */
+export function browserGoneError(error?: unknown): RakurakuError {
+  const sign = error === undefined ? "TARGET_CLOSED" : failureSign(error);
+  return new RakurakuError(
+    "TENANT_UNREACHABLE",
+    `楽楽精算を開いていたブラウザが途中で止まりました（${sign}）。少し待ってからもう一度お試しください`,
+    { retryable: true, detail: sign, crash: error === undefined ? undefined : crashSigns(error) },
+  );
 }
 
 /**

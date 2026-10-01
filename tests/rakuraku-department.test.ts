@@ -6,7 +6,8 @@ import {
   ensureDepartment,
   listDepartments,
 } from "@/lib/rakuraku/department";
-import { departmentNotAvailableText } from "@/lib/rakuraku/errors";
+import { RakurakuError, departmentNotAvailableText } from "@/lib/rakuraku/errors";
+import { assertLoggedIn } from "@/lib/rakuraku/navigation";
 import { tryLaunch } from "./rakuraku/helpers/browser";
 import { startFixtureServer, type FixtureServer } from "./rakuraku/helpers/fixture-server";
 
@@ -169,6 +170,63 @@ describe.skipIf(!browser)("★切り替えが楽楽精算に覚えられるま�
     expect(result.kind).toBe("not-applied");
     if (result.kind === "not-applied") expect(result.current?.code).toBe(QUALITY);
     await page.context().close();
+  });
+});
+
+/** 失敗を受け取る。失敗しなければテストを落とす */
+async function failure(promise: Promise<unknown>): Promise<RakurakuError> {
+  try {
+    await promise;
+  } catch (e) {
+    if (e instanceof RakurakuError) return e;
+    throw e;
+  }
+  throw new Error("失敗するはずが、通ってしまった");
+}
+
+// ★2026-10-01、トップを開いた直後にブラウザが落ちて「部門の切り替えがありません（権限が無い可能性）」と出た。
+//   数える処理が失敗を 0 に丸めるので、落ちたブラウザでは必ず「プルダウンが無い」になっていた。
+describe.skipIf(!browser)("ブラウザが落ちたことを、権限やログインの問題と取り違えない", () => {
+  const expectGone = (e: RakurakuError) => {
+    expect(e.code).toBe("TENANT_UNREACHABLE");
+    expect(e.detail).toBe("TARGET_CLOSED");
+    expect(e.retryable).toBe(true);
+    expect(e.message).toContain("ブラウザが途中で止まりました");
+  };
+
+  it("★閉じたページで部門を読むと、「プルダウンが無い（null）」ではなく止まった知らせ", async () => {
+    const page = await open("dept-select.html");
+    await page.close();
+    expectGone(await failure(listDepartments(page)));
+    expectGone(await failure(currentDepartment(page)));
+  });
+
+  it("★閉じたページで部門を選ぶと、no-select（DEPT_SELECT_MISSING の元）ではなく止まった知らせ", async () => {
+    const page = await open("dept-select.html");
+    await page.context().close();
+    expectGone(await failure(ensureDepartment(page, QUALITY)));
+  });
+
+  it("★ブラウザごと消えたときも同じ", async () => {
+    const other = await tryLaunch();
+    const page = await other!.newPage();
+    await page.goto(`${server!.url}/dept-missing.html`, { waitUntil: "load" });
+    await other!.close();
+    expectGone(await failure(listDepartments(page)));
+    // ★もう1つ Chrome を起こすので、重いときは30秒を超える
+  }, 90_000);
+
+  it("★閉じたページを「ログインは生きている」とみなさない", async () => {
+    const page = await open("dept-select.html");
+    await page.close();
+    expectGone(await failure(assertLoggedIn(page)));
+  });
+
+  it("開いているページでプルダウンが無いときは、今までどおり null（失敗にしない）", async () => {
+    const page = await open("dept-missing.html");
+    expect(await listDepartments(page)).toBeNull();
+    expect((await ensureDepartment(page, QUALITY)).kind).toBe("no-select");
+    await page.close();
   });
 });
 

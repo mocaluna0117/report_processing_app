@@ -1,7 +1,7 @@
 import "server-only";
 import { RakurakuError } from "./errors";
 import { GuardError } from "./guard";
-import { type Stage, log } from "./log";
+import { type LogFields, type Stage, log } from "./log";
 import type { ErrorEvent, ProgressStage, RakurakuEvent } from "./protocol";
 import { SessionError } from "./session";
 
@@ -21,6 +21,11 @@ export interface EventSink {
   progress(stage: ProgressStage, message: string): void;
   /** ブラウザが接続を切ったときに呼ぶ処理を登録する（すでに切れていればすぐ呼ぶ） */
   onAbort(fn: () => void): void;
+  /**
+   * 最後に Vercel のログへ出す1行に、数と符号を足す（ブラウザの起動の様子など）。
+   * ★log.ts を通るので、数（n_ / ms_）と決まった形の符号しか残らない
+   */
+  note(fields: LogFields): void;
   readonly signal: AbortSignal;
 }
 
@@ -71,6 +76,7 @@ export function ndjsonResponse(
   const encoder = new TextEncoder();
   const aborter = new AbortController();
   const abortHandlers: (() => void)[] = [];
+  const notes: LogFields = {};
 
   aborter.signal.addEventListener(
     "abort",
@@ -113,6 +119,7 @@ export function ndjsonResponse(
       if (aborter.signal.aborted) fn();
       else abortHandlers.push(fn);
     },
+    note: (fields) => void Object.assign(notes, fields),
     signal: aborter.signal,
   };
 
@@ -122,14 +129,15 @@ export function ndjsonResponse(
     try {
       await run(sink);
       await write({ type: "done" });
-      log(options.stage, { ok: true, ms_total: Date.now() - startedAt });
+      log(options.stage, { ...notes, ok: true, ms_total: Date.now() - startedAt });
     } catch (error) {
       const event = toErrorEvent(error);
       await write(event);
       // 接続が切れて後片付けした結果の失敗は、不具合（INTERNAL）と見分けられるように記録する
       const code = aborter.signal.aborted ? "ABORTED" : event.code;
       const detail = error instanceof RakurakuError ? error.detail : undefined;
-      log(options.stage, { ok: false, code, detail, ms_total: Date.now() - startedAt });
+      const crash = error instanceof RakurakuError ? error.crash : undefined;
+      log(options.stage, { ...notes, ...crash, ok: false, code, detail, ms_total: Date.now() - startedAt });
     } finally {
       clearInterval(ping);
       await chain;
