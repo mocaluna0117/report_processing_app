@@ -268,6 +268,8 @@ export interface FolderSession {
   listFilter: ListFilter;
   /** 一覧の並べ替え (タブを行き来しても残す。再読み込みで既定に戻る) */
   listSort: ListSort;
+  /** 一覧の検索欄の文字 (並べ替えと同じく、タブを行き来しても残す) */
+  listQuery: string;
   status: StatusPayload | null;
   runObserved: boolean;
   logLines: RunLogLine[];
@@ -297,6 +299,7 @@ const initial = (): FolderSession => ({
   showCompleted: false,
   listFilter: "all",
   listSort: "default",
+  listQuery: "",
   status: null,
   runObserved: false,
   logLines: [],

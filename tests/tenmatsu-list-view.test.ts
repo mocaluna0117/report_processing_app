@@ -4,6 +4,8 @@ import {
   LIST_FILTERS,
   type ListFilter,
   listCounts,
+  matchesSearch,
+  searchTerms,
   statusBadges,
   nextListSort,
   resolvePerRun,
@@ -150,6 +152,7 @@ describe("件数の内訳", () => {
       shown: 4,
       hiddenCompleted: 2,
       hiddenByFilter: 0,
+      hiddenBySearch: 0,
       missingFile: 1,
       pending: 0,
       awaiting: 0,
@@ -190,6 +193,7 @@ describe("件数の内訳", () => {
       shown: 1,
       hiddenCompleted: 1,
       hiddenByFilter: 0,
+      hiddenBySearch: 0,
       missingFile: 1,
       pending: 0,
       awaiting: 0,
@@ -203,6 +207,7 @@ describe("件数の内訳", () => {
       shown: 2,
       hiddenCompleted: 0,
       hiddenByFilter: 0,
+      hiddenBySearch: 0,
       missingFile: 0,
       pending: 0,
       awaiting: 0,
@@ -215,6 +220,7 @@ describe("件数の内訳", () => {
       shown: 0,
       hiddenCompleted: 0,
       hiddenByFilter: 0,
+      hiddenBySearch: 0,
       missingFile: 0,
       pending: 0,
       awaiting: 0,
@@ -635,5 +641,74 @@ describe("差し替え済みのバッジ", () => {
 
   it("差し替えていない行には出さない", () => {
     expect(statusBadges(item("A")).map((b) => b.key)).not.toContain("recomposed");
+  });
+});
+
+describe("検索", () => {
+  const rows = () => [
+    item("TE00001476", { property_name: "架空一様邸 外壁塗装", payee: "架空ＡＢＣ塗装" }),
+    both("TE00001475", { property_name: "架空二様邸 屋根", payee: "架空工業" }),
+    item("TE00001474", { property_name: null, title: "架空一様邸 追加工事" }),
+    item("TE00001473", { exists: false, pages: null, size: null, property_name: "架空三様邸" }),
+  ];
+
+  it("物件名で探せる", () => {
+    expect(nos(visibleListItems(rows(), { ...view(), query: "架空一" }))).toEqual([
+      "TE00001476",
+      "TE00001474",
+    ]);
+  });
+
+  it("ファイル名・伝票№で探せる", () => {
+    expect(nos(visibleListItems(rows(), { ...view(), query: "№1473" }))).toEqual(["TE00001473"]);
+    expect(nos(visibleListItems(rows(), { ...view(), query: "te00001476" }))).toEqual([
+      "TE00001476",
+    ]);
+  });
+
+  it("全角・半角、大文字・小文字の違いを気にしない", () => {
+    expect(nos(visibleListItems(rows(), { ...view(), query: "abc" }))).toEqual(["TE00001476"]);
+    expect(nos(visibleListItems(rows(), { ...view(), query: "１４７６" }))).toEqual([
+      "TE00001476",
+    ]);
+  });
+
+  it("空白で区切った語はすべて含む行だけ残す (全角の空白でも区切る)", () => {
+    expect(nos(visibleListItems(rows(), { ...view(), query: "架空一　外壁" }))).toEqual([
+      "TE00001476",
+    ]);
+    expect(nos(visibleListItems(rows(), { ...view(), query: "架空一 屋根" }))).toEqual([]);
+  });
+
+  it("検索中は完了した行も出す", () => {
+    expect(nos(visibleListItems(rows(), { ...view(), query: "架空二" }))).toEqual(["TE00001475"]);
+  });
+
+  it("空白だけの検索は検索していない扱い", () => {
+    expect(searchTerms("　 ")).toEqual([]);
+    expect(nos(visibleListItems(rows(), { ...view(), query: "  " }))).toEqual(
+      nos(visibleListItems(rows(), view())),
+    );
+  });
+
+  it("絞り込みと一緒に当たる", () => {
+    const pool = [...rows(), item("TE00001472", { property_name: "架空一様", budget_entered: true })];
+    expect(nos(visibleListItems(pool, { ...view("budget"), query: "架空一" }))).toEqual([
+      "TE00001476",
+      "TE00001474",
+    ]);
+  });
+
+  it("件数は検索で外した分も含めて全件に分割される", () => {
+    const pool = [...rows(), item("TE00001472", { property_name: "架空一様", budget_entered: true })];
+    const c = listCounts(pool, { ...view("budget"), query: "架空一" });
+    expect(c).toMatchObject({ shown: 2, hiddenCompleted: 0, hiddenByFilter: 2, hiddenBySearch: 1 });
+    expect(c.shown + c.hiddenCompleted + c.hiddenByFilter + c.hiddenBySearch).toBe(c.total);
+    // ファイルなしの件数は検索に関係なく全件から数える
+    expect(c.missingFile).toBe(1);
+  });
+
+  it("語が無ければどの行も一致する", () => {
+    expect(matchesSearch(item("A"), [])).toBe(true);
   });
 });

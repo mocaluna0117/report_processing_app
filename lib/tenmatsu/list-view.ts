@@ -56,9 +56,54 @@ export interface ListViewOptions {
    */
   filters?: readonly ListFilterDef[];
   flagKeys?: readonly FlagKey[];
+  /**
+   * 検索欄の文字。空白で区切った語が**すべて**含まれる行だけ残す。
+   * 検索している間は完了した行も隠さない (探している書類が完了済みで見つからない、を避ける)。
+   */
+  query?: string;
 }
 
-/** 絞り込みだけを当てる (完了の非表示はまだ当てない) */
+/**
+ * 検索の対象にする項目。種類に無い項目は null なので、種類で分けずに全部見る。
+ * 物件名・ファイル名のほか、伝票№・表題・内容・支払先なども探せるようにする。
+ */
+const SEARCH_FIELDS = [
+  "denpyo_no",
+  "file",
+  "property_name",
+  "title",
+  "content",
+  "senketsu_no",
+  "pj",
+  "payee",
+  "shinseisha",
+  "shinsei_date",
+  "amount",
+  "final_approved_at",
+] as const satisfies readonly (keyof ListItem)[];
+
+/**
+ * 比べる前にそろえる。全角英数・半角カナの違いと大文字・小文字の違いを無くす
+ * (「ＳＥＣＵＲＥＡ」と「securea」、「№」と「No」を同じに扱う)。
+ */
+const normalizeForSearch = (s: string) => s.normalize("NFKC").toLowerCase();
+
+/** 検索欄の文字を語に分ける。全角の空白も区切りにする (NFKC で半角になる) */
+export function searchTerms(query: string | undefined): string[] {
+  if (!query) return [];
+  return normalizeForSearch(query).split(/\s+/).filter(Boolean);
+}
+
+/** その行がすべての語を含むか。語が無ければ常に true */
+export function matchesSearch(item: ListItem, terms: readonly string[]): boolean {
+  if (terms.length === 0) return true;
+  const haystack = normalizeForSearch(
+    SEARCH_FIELDS.map((field) => item[field] ?? "").join("\n"),
+  );
+  return terms.every((t) => haystack.includes(t));
+}
+
+/** 絞り込みだけを当てる (検索・完了の非表示はまだ当てない) */
 function filtered(items: ListItem[], options: ListViewOptions): ListItem[] {
   const defs = options.filters ?? LIST_FILTERS;
   const flagKeys = options.flagKeys ?? TENMATSU_FLAG_KEYS;
@@ -78,6 +123,8 @@ function filtered(items: ListItem[], options: ListViewOptions): ListItem[] {
  */
 function hiddenAsCompleted(item: ListItem, options: ListViewOptions): boolean {
   if (options.showCompleted) return false;
+  // 検索中は完了した行も出す (探している書類は完了済みのことが多い)
+  if (searchTerms(options.query).length > 0) return false;
   // 保留中は「あとで添付を足す」作業が残っている。サーバーの不具合で completed が
   // 付いていても隠さない（隠すと、やることがあるのに気づけない）
   if (isPending(item)) return false;
@@ -88,9 +135,18 @@ function hiddenAsCompleted(item: ListItem, options: ListViewOptions): boolean {
   return !options.keepNos?.has(item.denpyo_no);
 }
 
-/** 画面に出す行。絞り込み → 完了の非表示 の順に当てる */
+/** 絞り込みのあとに検索を当てる */
+function searched(pool: ListItem[], options: ListViewOptions): ListItem[] {
+  const terms = searchTerms(options.query);
+  if (terms.length === 0) return pool;
+  return pool.filter((i) => matchesSearch(i, terms));
+}
+
+/** 画面に出す行。絞り込み → 検索 → 完了の非表示 の順に当てる */
 export function visibleListItems(items: ListItem[], options: ListViewOptions): ListItem[] {
-  return filtered(items, options).filter((i) => !hiddenAsCompleted(i, options));
+  return searched(filtered(items, options), options).filter(
+    (i) => !hiddenAsCompleted(i, options),
+  );
 }
 
 /**
@@ -148,6 +204,8 @@ export interface ListCounts {
   hiddenCompleted: number;
   /** 絞り込みで外した件数 */
   hiddenByFilter: number;
+  /** 絞り込みのあと、検索で外した件数 */
+  hiddenBySearch: number;
   /**
    * PDFが消えている記録の件数。**絞り込みを当てる前の全件から数える。**
    * 絞り込みで見えなくなっていても件数だけは必ず伝えるため
@@ -166,17 +224,20 @@ export interface ListCounts {
 
 /**
  * 件数の内訳。
- * **shown + hiddenCompleted + hiddenByFilter === total が常に成り立つ**ように定義してある。
+ * **shown + hiddenCompleted + hiddenByFilter + hiddenBySearch === total が常に成り立つ**
+ * ように定義してある。
  * 「完了 N件を非表示中」だけを出すと、絞り込み中は N が必ず0になり
  * (未入力・未格納は完了と排他)、行が消えたのに何も説明されない状態になる。
  */
 export function listCounts(items: ListItem[], options: ListViewOptions): ListCounts {
   const pool = filtered(items, options);
-  const shown = pool.filter((i) => !hiddenAsCompleted(i, options)).length;
+  const hits = searched(pool, options);
+  const shown = hits.filter((i) => !hiddenAsCompleted(i, options)).length;
   return {
     shown,
-    hiddenCompleted: pool.length - shown,
+    hiddenCompleted: hits.length - shown,
     hiddenByFilter: items.length - pool.length,
+    hiddenBySearch: pool.length - hits.length,
     missingFile: items.filter((i) => !i.exists).length,
     pending: items.filter(isPending).length,
     awaiting: items.filter(

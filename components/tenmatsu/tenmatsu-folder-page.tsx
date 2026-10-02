@@ -210,6 +210,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   const [showCompleted, setShowCompleted] = useState(kept.showCompleted);
   const [listFilter, setListFilter] = useState<ListFilter>(kept.listFilter);
   const [listSort, setListSort] = useState<ListSort>(kept.listSort);
+  const [listQuery, setListQuery] = useState(kept.listQuery);
   const [maxInput, setMaxInput] = useState(kept.maxInput);
 
   /** このPCの楽楽精算の登録（暗号の控え）。読み終わるまで credentialLoaded は false */
@@ -844,6 +845,7 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
       showCompleted,
       listFilter,
       listSort,
+      listQuery,
       status,
       runObserved,
       logLines,
@@ -1302,6 +1304,8 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
             onFilterChange={setListFilter}
             sort={listSort}
             onSortChange={setListSort}
+            query={listQuery}
+            onQueryChange={setListQuery}
             showCompleted={showCompleted}
             onShowCompletedChange={setShowCompleted}
             recentNos={recentNos}

@@ -14,6 +14,7 @@ import {
   type SortColumn,
   listCounts,
   nextListSort,
+  searchTerms,
   sortColumnOf,
   sortListItems,
   visibleListItems,
@@ -139,6 +140,8 @@ export function TenmatsuList({
   onRecompose,
   sort: sortProp,
   onSortChange,
+  query: queryProp,
+  onQueryChange,
   onRelink,
 }: {
   /** 書類の種類 (列・完了の印・絞り込み・文言をここから引く) */
@@ -171,12 +174,22 @@ export function TenmatsuList({
    */
   sort?: ListSort;
   onSortChange?: (sort: ListSort) => void;
+  /** 検索欄の文字。並べ替えと同じく、渡さなければこの表の中で持つ */
+  query?: string;
+  onQueryChange?: (query: string) => void;
   /**
    * 「ファイルなし」の保存済みの行で、保存先のPDFを選び直す（新しい方式だけ）。
    * 渡さなければボタンを出さない。
    */
   onRelink?: (no: string) => void;
 }) {
+  const [ownQuery, setOwnQuery] = useState("");
+  const query = queryProp ?? ownQuery;
+  const setQuery = (next: string) => {
+    if (onQueryChange) onQueryChange(next);
+    else setOwnQuery(next);
+  };
+  const searching = searchTerms(query).length > 0;
   const view = useMemo(
     () => ({
       filter,
@@ -184,8 +197,9 @@ export function TenmatsuList({
       keepNos: recentNos,
       filters: kind.listFilters,
       flagKeys: kind.flagKeys,
+      query,
     }),
-    [filter, showCompleted, recentNos, kind],
+    [filter, showCompleted, recentNos, kind, query],
   );
   // 並べ替えは保存しない (再読み込みで既定に戻る)。画面側が渡してくれればそちらで覚える
   const [ownSort, setOwnSort] = useState<ListSort>("default");
@@ -256,13 +270,25 @@ export function TenmatsuList({
             ))}
           </select>
         </label>
+        <label className="flex items-center gap-1.5 text-sm">
+          検索
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="物件名・ファイル名・伝票№など"
+            title="物件名・ファイル名・伝票№・表題・内容・支払先・申請者などから探します。空白で区切ると、すべての語を含む行だけ出します。検索中は完了した行も出します"
+            className="w-64 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+          />
+        </label>
       </div>
 
       {items.length > 0 && (
         <p className="mt-2 text-xs text-slate-500" aria-live="polite">
           {/* 3つの数は必ず全件に分割される (行が消えたのに説明が無い状態を作らないため) */}
           表示 {counts.shown}件 / 完了で非表示 {counts.hiddenCompleted}件 / 絞り込みで非表示{" "}
-          {counts.hiddenByFilter}件（全 {counts.total}件）
+          {counts.hiddenByFilter}件
+          {searching && ` / 検索に一致せず非表示 ${counts.hiddenBySearch}件`}（全 {counts.total}件）
           {counts.missingFile > 0 && (
             // 絞り込みで見えていなくても件数だけは必ず伝える
             <span className="ml-1 text-amber-700">
@@ -292,8 +318,12 @@ export function TenmatsuList({
         // ここで「まだ取得した◯◯はありません」と出すと嘘になる
         <p className="mt-2 text-sm text-slate-600">
           表示できる行がありません (全 {counts.total}件)。
+          {counts.hiddenBySearch > 0 && "検索に一致する行がありません。検索の文字を見直してください。"}
           {counts.hiddenCompleted > 0 && "「完了したものも表示」で完了した分を出せます。"}
-          {counts.hiddenByFilter > 0 && "絞り込みを「すべて」に戻すと全件出ます。"}
+          {counts.hiddenByFilter > 0 &&
+            (searching
+              ? "絞り込みを「すべて」にすると、絞り込みで外した分からも探せます。"
+              : "絞り込みを「すべて」に戻すと全件出ます。")}
         </p>
       ) : (
         // 枠線は外側に持たせ、スクロールするのは表だけにする。

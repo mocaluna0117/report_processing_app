@@ -50,8 +50,8 @@ export const HELP_SHOT_GEOMETRY: Readonly<Record<string, HelpShotGeometry>> = {
   },
   "tenmatsu-list": {
     width: 2496,
-    height: 830,
-    hotspots: [{ x: 25.1, y: 57.6 }, { x: 25.1, y: 47.2 }, { x: 74.8, y: 47.2 }],
+    height: 838,
+    hotspots: [{ x: 25.1, y: 58 }, { x: 25.1, y: 47.7 }, { x: 74.8, y: 47.7 }],
   },
   "senketsu-run": {
     width: 2496,
@@ -60,8 +60,8 @@ export const HELP_SHOT_GEOMETRY: Readonly<Record<string, HelpShotGeometry>> = {
   },
   "senketsu-list": {
     width: 2496,
-    height: 658,
-    hotspots: [{ x: 25.6, y: 27.4 }, { x: 83.1, y: 59.6 }, { x: 7.9, y: 27.4 }],
+    height: 666,
+    hotspots: [{ x: 25.4, y: 27.6 }, { x: 83.1, y: 60.1 }, { x: 7.9, y: 27.6 }],
   },
   "natsuin-run": {
     width: 2496,
@@ -70,7 +70,7 @@ export const HELP_SHOT_GEOMETRY: Readonly<Record<string, HelpShotGeometry>> = {
   },
   "natsuin-list": {
     width: 2496,
-    height: 718,
-    hotspots: [{ x: 28.9, y: 54.6 }, { x: 84.1, y: 54.6 }, { x: 93.1, y: 86.9 }],
+    height: 726,
+    hotspots: [{ x: 28.9, y: 55.1 }, { x: 84.1, y: 55.1 }, { x: 93.1, y: 87.1 }],
   },
 };
