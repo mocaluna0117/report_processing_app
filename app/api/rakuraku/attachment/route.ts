@@ -63,6 +63,6 @@ export async function POST(request: Request) {
         return { routes: result.routes };
       }, { tenant });
     },
-    { stage: "download", startedAt: started },
+    { stage: "download", startedAt: started, usage: { id: signed.id, ok: null } },
   );
 }

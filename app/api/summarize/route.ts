@@ -13,6 +13,7 @@ import type {
   SummarizeResponse,
 } from "@/lib/summarize/types";
 import { requireSignedIn } from "@/lib/account/current";
+import { scheduleUsage } from "@/lib/usage/record";
 
 export const runtime = "nodejs";
 // Vercel等のサーバーレス環境での関数実行上限
@@ -179,6 +180,7 @@ export async function POST(request: Request): Promise<NextResponse<SummarizeResp
   const inquiryText = body.inquiryText?.trim() ?? "";
   if (inquiryText) {
     if (!apiKey) {
+      scheduleUsage(signed.id, ["after"]);
       return NextResponse.json({ summary: ruleBasedInquirySummary(inquiryText), engine: "rule" });
     }
     try {
@@ -191,6 +193,7 @@ export async function POST(request: Request): Promise<NextResponse<SummarizeResp
       const phenomena = stringArray(parsed.phenomena);
       // 不具合が無い問い合わせ (設備の追加希望など) は、依頼内容をそのまま受付内容にする
       const items = phenomena.length > 0 ? phenomena : stringArray(parsed.requests);
+      scheduleUsage(signed.id, ["after", "gemini.summary"]);
       return NextResponse.json({
         summary: formatPhenomena(items, [], { emptyText: "" }),
         engine: "gemini",
@@ -199,6 +202,7 @@ export async function POST(request: Request): Promise<NextResponse<SummarizeResp
           : {}),
       });
     } catch (e) {
+      scheduleUsage(signed.id, ["after", "gemini.fail"]);
       return NextResponse.json({
         summary: ruleBasedInquirySummary(inquiryText),
         engine: "rule",
@@ -209,6 +213,7 @@ export async function POST(request: Request): Promise<NextResponse<SummarizeResp
 
   // 不具合ゼロは定型文で十分 (API呼び出し節約)
   if (!apiKey || (body.defects.length === 0 && body.specialNotes.length === 0 && body.standaloneNotes.length === 0)) {
+    scheduleUsage(signed.id, ["teiki"]);
     return NextResponse.json({ summary: ruleBasedSummary(body), engine: "rule" });
   }
 
@@ -218,12 +223,14 @@ export async function POST(request: Request): Promise<NextResponse<SummarizeResp
     const phenomena = stringArray((await callGemini(apiKey, prompt)).phenomena);
     // 番号付け・改行はサーバー側で行い、モデルの表記揺れに左右されないようにする
     const notes = body.standaloneNotes.map((n) => stripRequests(n)).filter(Boolean);
+    scheduleUsage(signed.id, ["teiki", "gemini.summary"]);
     return NextResponse.json({
       summary: formatPhenomena(phenomena, notes),
       engine: "gemini",
     });
   } catch (e) {
     // Gemini失敗時はルールベースにフォールバック (バッチを止めない)
+    scheduleUsage(signed.id, ["teiki", "gemini.fail"]);
     return NextResponse.json({
       summary: ruleBasedSummary(body),
       engine: "rule",

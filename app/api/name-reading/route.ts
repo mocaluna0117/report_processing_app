@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { GEMINI_KANA_CHAIN, callWithModelChain } from "@/lib/gemini-model";
 import { normalizeNameReading, type NameReadingResponse } from "@/lib/kana";
 import { requireSignedIn } from "@/lib/account/current";
+import { scheduleUsage } from "@/lib/usage/record";
 
 export const runtime = "nodejs";
 // Vercel等のサーバーレス環境での関数実行上限
@@ -94,8 +95,10 @@ export async function POST(request: Request): Promise<NextResponse<NameReadingRe
 
   try {
     const reading = await callGemini(apiKey, name);
+    scheduleUsage(signed.id, ["gemini.kana"]);
     return NextResponse.json({ ...reading, engine: "gemini" });
   } catch (e) {
+    scheduleUsage(signed.id, ["gemini.fail"]);
     return NextResponse.json({ ...NONE, error: String(e) });
   }
 }

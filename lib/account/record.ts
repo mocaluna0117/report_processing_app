@@ -106,6 +106,8 @@ export interface AccountSummary {
   disabled: boolean;
   createdAt: number;
   passwordChangedAt: number | null;
+  /** 最終ログイン（2026-09-25 より前に作ってから一度もログインしていない人は null） */
+  loginAt: number | null;
 }
 
 export function summarizeAccount(record: AccountRecord): AccountSummary {
@@ -118,5 +120,6 @@ export function summarizeAccount(record: AccountRecord): AccountSummary {
     disabled: record.disabled,
     createdAt: record.createdAt,
     passwordChangedAt: record.passwordChangedAt,
+    loginAt: record.loginAt ?? null,
   };
 }

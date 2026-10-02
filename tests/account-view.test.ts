@@ -22,6 +22,7 @@ const summary = (over: Partial<AccountSummary> = {}): AccountSummary => ({
   disabled: false,
   createdAt: NOW_MS,
   passwordChangedAt: null,
+  loginAt: null,
   ...over,
 });
 
@@ -146,11 +147,13 @@ describe("右上の人の形のアイコンのメニュー", () => {
       heading: "架空 花子",
       sub: "ログインID: kasou-hanako",
       accountLink: "アカウント（パスワード・楽楽精算）",
+      usageLink: null,
       contact: "問い合わせ",
     });
     expect(accountMenuView({ ...member, admin: true })).toMatchObject({
       sub: "ログインID: kasou-hanako・管理者",
       accountLink: "アカウント（パスワード・楽楽精算・管理）",
+      usageLink: "利用状況",
     });
   });
 
@@ -158,7 +161,9 @@ describe("右上の人の形のアイコンのメニュー", () => {
     const { accountMenuView } = await import("@/lib/account/menu");
     const view = accountMenuView({ id: "kasou-x", name: "架空", admin: false, mustChange: true });
     expect(view.accountLink).toBeNull();
+    expect(view.usageLink).toBeNull();
     expect(view.contact).toBeNull();
+    expect(accountMenuView({ id: "kasou-x", name: "架空", admin: true, mustChange: true }).usageLink).toBeNull();
   });
 
   it("★アカウントの画面: 見出しは表示名だけ。ログインIDは「Folio のログインID」と名前を付けて下に出す", () => {

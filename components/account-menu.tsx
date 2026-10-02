@@ -77,7 +77,7 @@ export function AccountMenu() {
         aria-label={view.label}
         title={view.label}
         className={`flex h-9 max-w-44 cursor-pointer items-center gap-1.5 rounded-full border py-1 pl-1 pr-3 shadow-sm ${
-          open || pathname === "/account"
+          open || pathname === "/account" || pathname.startsWith("/account/")
             ? "border-slate-400 bg-slate-100 text-slate-800"
             : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-800"
         }`}
@@ -102,6 +102,11 @@ export function AccountMenu() {
           {view.accountLink && (
             <Link href="/account" role="menuitem" onNavigate={guard} className={ITEM_CLASS}>
               {view.accountLink}
+            </Link>
+          )}
+          {view.usageLink && (
+            <Link href="/account/usage" role="menuitem" onNavigate={guard} className={ITEM_CLASS}>
+              {view.usageLink}
             </Link>
           )}
           {view.contact && (

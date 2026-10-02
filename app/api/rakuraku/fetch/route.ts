@@ -10,6 +10,7 @@ import { withSessionPage } from "@/lib/rakuraku/session-browser";
 import { ndjsonResponse } from "@/lib/rakuraku/stream";
 import { requireSignedIn } from "@/lib/account/current";
 import { sessionSubjectOf } from "@/lib/rakuraku/subject";
+import { kindMetric } from "@/lib/usage/metrics";
 
 /**
  * 伝票1件を取得する。**1伝票＝1呼び出し**（途中で落ちても、それまでの伝票はブラウザが保存済み）。
@@ -75,6 +76,6 @@ export async function POST(request: Request) {
         return { routes: result.routes };
       }, { tenant });
     },
-    { stage: "detail", startedAt: started },
+    { stage: "detail", startedAt: started, usage: { id: signed.id, ok: kindMetric("fetch", raw) } },
   );
 }

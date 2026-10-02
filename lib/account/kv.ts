@@ -12,6 +12,7 @@ import { randomBytes } from "node:crypto";
 import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { Redis } from "@upstash/redis";
+import { datePrefixOf } from "@/lib/usage/metrics";
 
 export class StoreUnavailableError extends Error {
   constructor() {
@@ -31,6 +32,26 @@ export interface Kv {
   incrWithTtl(key: string, ttlSec: number, by?: number): Promise<number>;
   /** prefix で始まるキー */
   keys(prefix: string): Promise<string[]>;
+  /** ハッシュの項目に足し、ほかの項目を大きいほうにそろえる（利用状況。1命令で行う） */
+  hincr(key: string, change: HashChange): Promise<void>;
+  /** ハッシュをまとめて読む（無いキーは null） */
+  hgetallMany(keys: string[]): Promise<(Record<string, string> | null)[]>;
+}
+
+export interface HashChange {
+  /** 足す数（項目 → 数） */
+  add: Record<string, number>;
+  /** 今より大きければ置き換える項目（最後に使った時刻など。★あとから古い時刻が届いても巻き戻さない） */
+  max: Record<string, number>;
+  /**
+   * その日の印の項目（例「20261002:_」）。★これが初めて置かれたときだけ、
+   * 頭が8桁の日付で pruneBefore より前の項目を消す（毎回すべての項目を見ない）
+   */
+  dayMark: string;
+  /** 「YYYYMMDD」。これより前の日付の項目を消す */
+  pruneBefore: string;
+  /** キーの期限（書くたびに延ばし直す） */
+  ttlSec: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -54,6 +75,42 @@ local fresh = redis.call('EXISTS', KEYS[1]) == 0
 local v = redis.call('INCRBY', KEYS[1], tonumber(ARGV[2]))
 if fresh then redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1])) end
 return v`;
+
+const HINCR_SCRIPT = `
+local key = KEYS[1]
+local i = 1
+local n = tonumber(ARGV[i]); i = i + 1
+for _ = 1, n do
+  redis.call('HINCRBY', key, ARGV[i], tonumber(ARGV[i + 1])); i = i + 2
+end
+local m = tonumber(ARGV[i]); i = i + 1
+for _ = 1, m do
+  local cur = tonumber(redis.call('HGET', key, ARGV[i]))
+  if not cur or tonumber(ARGV[i + 1]) > cur then redis.call('HSET', key, ARGV[i], ARGV[i + 1]) end
+  i = i + 2
+end
+local mark, before, ttl = ARGV[i], ARGV[i + 1], tonumber(ARGV[i + 2])
+if redis.call('HSETNX', key, mark, '1') == 1 then
+  for _, f in ipairs(redis.call('HKEYS', key)) do
+    local d = string.match(f, '^(%d%d%d%d%d%d%d%d):')
+    if d and d < before then redis.call('HDEL', key, f) end
+  end
+end
+redis.call('EXPIRE', key, ttl)
+return 1`;
+
+const HGETALL_MANY_SCRIPT = `
+local out = {}
+for i, k in ipairs(KEYS) do out[i] = redis.call('HGETALL', k) end
+return out`;
+
+/** HGETALL の [項目, 値, 項目, 値…] を表にする（空なら null） */
+function pairsToRecord(flat: unknown): Record<string, string> | null {
+  if (!Array.isArray(flat) || flat.length === 0) return null;
+  const record: Record<string, string> = {};
+  for (let i = 0; i + 1 < flat.length; i += 2) record[String(flat[i])] = String(flat[i + 1]);
+  return record;
+}
 
 async function guard<T>(run: () => Promise<T>): Promise<T> {
   try {
@@ -102,6 +159,31 @@ export function createRedisKv(config: { url: string; token: string }): Kv {
           if (cursor === "0") break;
         }
         return [...new Set(found)];
+      }),
+    hincr: (key, change) =>
+      guard(async () => {
+        const add = Object.entries(change.add).filter(([, by]) => Number.isSafeInteger(by) && by !== 0);
+        const max = Object.entries(change.max).filter(([, v]) => Number.isSafeInteger(v));
+        await redis.eval(
+          HINCR_SCRIPT,
+          [key],
+          [
+            String(add.length),
+            ...add.flatMap(([field, by]) => [field, String(by)]),
+            String(max.length),
+            ...max.flatMap(([field, v]) => [field, String(v)]),
+            change.dayMark,
+            change.pruneBefore,
+            String(change.ttlSec),
+          ],
+        );
+      }),
+    hgetallMany: (keys) =>
+      guard(async () => {
+        if (keys.length === 0) return [];
+        const result = (await redis.eval(HGETALL_MANY_SCRIPT, keys, [])) as unknown;
+        const rows = Array.isArray(result) ? result : [];
+        return keys.map((_, i) => pairsToRecord(rows[i]));
       }),
   };
 }
@@ -176,6 +258,32 @@ function createTableKv(
         return value;
       }, true),
     keys: (prefix) => serial((t) => Object.keys(t).filter((k) => k.startsWith(prefix) && live(t, k)), false),
+    // ★ハッシュは JSON の文字として持つ（Redis と同じ動きになるよう、期限は書くたびに延ばし直す）
+    hincr: (key, change) =>
+      serial((t) => {
+        const cur = live(t, key);
+        const hash = cur ? (JSON.parse(cur.value) as Record<string, string>) : {};
+        for (const [field, by] of Object.entries(change.add)) {
+          if (Number.isSafeInteger(by) && by !== 0) hash[field] = String(Number(hash[field] ?? 0) + by);
+        }
+        for (const [field, v] of Object.entries(change.max)) {
+          if (Number.isSafeInteger(v) && !(Number(hash[field]) >= v)) hash[field] = String(v);
+        }
+        if (!(change.dayMark in hash)) {
+          hash[change.dayMark] = "1";
+          for (const field of Object.keys(hash)) {
+            const day = datePrefixOf(field);
+            if (day !== null && day < change.pruneBefore) delete hash[field];
+          }
+        }
+        t[key] = { value: JSON.stringify(hash), expiresAt: now() + change.ttlSec * 1000 };
+      }, true),
+    hgetallMany: (keys) =>
+      serial((t) => keys.map((k) => {
+        const entry = live(t, k);
+        const hash = entry ? (JSON.parse(entry.value) as Record<string, string>) : null;
+        return hash && Object.keys(hash).length > 0 ? hash : null;
+      }), false),
   };
 }
 

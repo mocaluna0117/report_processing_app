@@ -11,6 +11,9 @@ export const FOLIO_LOGOUT_TITLE =
 /** 問い合わせを開く項目（2026-09-25 にヘッダーの段から、このメニューへ移した） */
 export const CONTACT_MENU_LABEL = "問い合わせ";
 
+/** 利用状況を開く項目（管理者だけ。2026-10-02） */
+export const USAGE_MENU_LABEL = "利用状況";
+
 export interface AccountMenuView {
   /** アイコンのボタンの読み上げ名・吹き出し */
   label: string;
@@ -21,6 +24,8 @@ export interface AccountMenuView {
   sub: string;
   /** 「アカウント」へのリンク（出さないときは null） */
   accountLink: string | null;
+  /** 「利用状況」へのリンク（管理者だけ。出さないときは null） */
+  usageLink: string | null;
   /**
    * 問い合わせを開く項目（出さないときは null）。
    * ★パスワードを決める前の人には出さない（問い合わせの口を使えない・小窓も置かれていない）
@@ -37,6 +42,7 @@ export function accountMenuView(marker: SignedInMarker): AccountMenuView {
     sub: `ログインID: ${marker.id}${marker.admin ? "・管理者" : ""}`,
     // ★パスワードを決める前は、その画面にいるので出さない
     accountLink: marker.mustChange ? null : marker.admin ? "アカウント（パスワード・楽楽精算・管理）" : "アカウント（パスワード・楽楽精算）",
+    usageLink: marker.admin && !marker.mustChange ? USAGE_MENU_LABEL : null,
     contact: marker.mustChange ? null : CONTACT_MENU_LABEL,
   };
 }

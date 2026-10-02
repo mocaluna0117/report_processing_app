@@ -5,12 +5,14 @@
  * ★仮のパスワードは、作った・発行したときに1回だけ小窓に出す。閉じたら画面からも消す。
  * ★サーバー（/api/accounts）が毎回、管理者かどうかを確かめる。ここでの表示は目安だけ。
  */
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ModalShell } from "@/components/modal-shell";
 import type { AdminResponse } from "@/lib/account/admin";
 import { accountStatusText, adminConfirmText, createBlocker, roleText } from "@/lib/account/admin-view";
 import { TEMP_PASSWORD_NOTE } from "@/lib/account/messages";
 import type { AccountSummary } from "@/lib/account/record";
+import { whenText } from "@/lib/usage/view";
 
 const INPUT_CLASS = "mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm";
 const SMALL_BUTTON =
@@ -71,6 +73,9 @@ export function AccountAdmin({ selfId }: { selfId: string }) {
       <h2 className="text-lg font-semibold">アカウントの管理</h2>
       <p className="mt-1 text-sm text-slate-600">
         管理者だけに出ています。人を足す・パスワードを忘れた人に仮のパスワードを出す・止める、ができます。
+        <Link href="/account/usage" className="ml-1 font-medium text-blue-700 underline">
+          利用状況を見る
+        </Link>
       </p>
 
       {message && (
@@ -89,13 +94,14 @@ export function AccountAdmin({ selfId }: { selfId: string }) {
               <th className="border-b border-slate-200 px-3 py-2">ログインID</th>
               <th className="border-b border-slate-200 px-3 py-2">役割</th>
               <th className="border-b border-slate-200 px-3 py-2">状態</th>
+              <th className="border-b border-slate-200 px-3 py-2">最終ログイン</th>
               <th className="border-b border-slate-200 px-3 py-2">操作</th>
             </tr>
           </thead>
           <tbody>
             {accounts === null ? (
               <tr>
-                <td colSpan={5} className="px-3 py-3 text-slate-500">
+                <td colSpan={6} className="px-3 py-3 text-slate-500">
                   読み込んでいます…
                 </td>
               </tr>
@@ -109,6 +115,7 @@ export function AccountAdmin({ selfId }: { selfId: string }) {
                     <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2 font-mono text-xs">{account.id}</td>
                     <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2">{roleText(account)}</td>
                     <td className={`border-b border-slate-100 px-3 py-2 ${TONE_CLASS[status.tone]}`}>{status.text}</td>
+                    <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2 text-slate-600">{whenText(account.loginAt, now)}</td>
                     <td className="border-b border-slate-100 px-3 py-2">
                       {self ? (
                         <span className="text-xs text-slate-400">自分（パスワード・表示名は上の欄で変えます）</span>

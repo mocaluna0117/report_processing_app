@@ -4,6 +4,8 @@ import { GuardError } from "./guard";
 import { type LogFields, type Stage, log } from "./log";
 import type { ErrorEvent, ProgressStage, RakurakuEvent } from "./protocol";
 import { SessionError } from "./session";
+import { type Metric, rakurakuFailure } from "@/lib/usage/metrics";
+import { scheduleUsage } from "@/lib/usage/record";
 
 /**
  * 進み具合と結果を、行ごとの JSON（NDJSON）で流す応答。
@@ -36,6 +38,11 @@ export interface NdjsonOptions {
   startedAt?: number;
   /** 何も流れない間に生存確認を送る間隔。途中の中継が黙った接続を切らないように */
   pingIntervalMs?: number;
+  /**
+   * 利用状況に数える（lib/usage）。成功したら ok を、失敗したら符号を数える。
+   * ★ブラウザが接続を切った（ABORTED）のは失敗に数えない
+   */
+  usage?: { id: string | null; ok: Metric | null };
 }
 
 export const PING_INTERVAL_MS = 10_000;
@@ -123,6 +130,12 @@ export function ndjsonResponse(
     signal: aborter.signal,
   };
 
+  let settle: (metrics: Metric[]) => void = () => undefined;
+  if (options.usage) {
+    const { usage } = options;
+    scheduleUsage(usage.id, new Promise<Metric[]>((resolve) => (settle = resolve)));
+  }
+
   const ping = setInterval(() => void write({ type: "ping" }), options.pingIntervalMs ?? PING_INTERVAL_MS);
 
   void (async () => {
@@ -130,6 +143,7 @@ export function ndjsonResponse(
       await run(sink);
       await write({ type: "done" });
       log(options.stage, { ...notes, ok: true, ms_total: Date.now() - startedAt });
+      settle(options.usage?.ok ? [options.usage.ok] : []);
     } catch (error) {
       const event = toErrorEvent(error);
       await write(event);
@@ -138,7 +152,10 @@ export function ndjsonResponse(
       const detail = error instanceof RakurakuError ? error.detail : undefined;
       const crash = error instanceof RakurakuError ? error.crash : undefined;
       log(options.stage, { ...notes, ...crash, ok: false, code, detail, ms_total: Date.now() - startedAt });
+      settle(aborter.signal.aborted ? [] : rakurakuFailure(event.code));
     } finally {
+      // ★どちらにも来なかったとき（記録の途中の例外など）も、待たせたままにしない
+      settle([]);
       clearInterval(ping);
       await chain;
       closed = true;

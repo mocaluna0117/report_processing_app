@@ -16,6 +16,8 @@ export const KEYS = {
   boot: (hash: string) => `folio:boot:${hash}`,
   /** 楽楽精算の自動ログインの状態（lib/rakuraku/credential-state.ts と同じキー。★folio:acct: で始めない＝一覧に混ざらない） */
   rakuraku: (id: string) => `folio:rk:${id}`,
+  /** 利用状況（lib/usage/record.ts。回数と時刻だけ。★folio:acct: で始めない＝一覧に混ざらない） */
+  usage: (id: string) => `folio:use:${id}`,
 };
 
 /** 失敗を数える長さ（15分） */
@@ -86,9 +88,10 @@ export function createAccountStore(kv: Kv): AccountStore {
       }
       return null;
     },
-    // ★楽楽精算の自動ログインの状態も一緒に消す（同じ ID で作り直した人に残さない）
+    // ★楽楽精算の自動ログインの状態と利用状況も一緒に消す（同じ ID で作り直した人に残さない）
     remove: async (id) => {
       await kv.del(KEYS.rakuraku(id));
+      await kv.del(KEYS.usage(id));
       await kv.del(KEYS.account(id));
     },
     list: async () => {

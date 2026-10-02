@@ -10,6 +10,7 @@ import { withSessionPage } from "@/lib/rakuraku/session-browser";
 import { ndjsonResponse } from "@/lib/rakuraku/stream";
 import { requireSignedIn } from "@/lib/account/current";
 import { sessionSubjectOf } from "@/lib/rakuraku/subject";
+import { kindMetric } from "@/lib/usage/metrics";
 
 /**
  * 一覧から、取得する伝票（承認済みで、まだ取っていないもの）を見つける。
@@ -85,6 +86,6 @@ export async function POST(request: Request) {
         return { routes: { [kind.id]: result.remembered } };
       }, { tenant });
     },
-    { stage: "list", startedAt: started },
+    { stage: "list", startedAt: started, usage: { id: signed.id, ok: kindMetric("scan", raw) } },
   );
 }

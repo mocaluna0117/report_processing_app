@@ -4,6 +4,7 @@ import { createRateLimiter } from "@/lib/contact/rate-limit";
 import { sendWithResend } from "@/lib/contact/send";
 import { assertSameOrigin } from "@/lib/rakuraku/guard";
 import { requireSignedIn } from "@/lib/account/current";
+import { scheduleUsage } from "@/lib/usage/record";
 
 /**
  * 問い合わせ（不具合・要望）を開発者へメールで送る口。
@@ -53,5 +54,6 @@ export async function POST(request: Request) {
   );
   // ★送れた／送れなかったの種類だけを残す（中身は書かない）
   if (!result.body.ok) console.error(`[contact] ${result.body.code}`);
+  else scheduleUsage(signed.id, ["contact"]);
   return json(result.status, result.body);
 }

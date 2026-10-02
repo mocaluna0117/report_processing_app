@@ -9,6 +9,7 @@ import {
   type FlaggedItem,
 } from "@/lib/work-categories";
 import { requireSignedIn } from "@/lib/account/current";
+import { scheduleUsage } from "@/lib/usage/record";
 
 export const runtime = "nodejs";
 // Vercel等のサーバーレス環境での関数実行上限
@@ -127,6 +128,7 @@ export async function POST(request: Request): Promise<NextResponse<WorkCategorie
 
   try {
     const { hits, model, skipped } = await callGemini(apiKey, images);
+    scheduleUsage(signed.id, ["gemini.vision"]);
     return NextResponse.json({
       categories: hits,
       engine: "gemini",
@@ -135,6 +137,7 @@ export async function POST(request: Request): Promise<NextResponse<WorkCategorie
       ...(skipped.length > 0 ? { skipped } : {}),
     });
   } catch (e) {
+    scheduleUsage(signed.id, ["gemini.fail"]);
     return NextResponse.json({ categories: [], engine: "none", error: String(e) });
   }
 }
