@@ -134,7 +134,7 @@ describe.skipIf(!fonts)("完了報告書PDF", () => {
   it("★長い項目と補足は本紙の次の枠に入る (縮めない・注意も出ない)", async () => {
     const long =
       "基礎の巾木仕上げ施工時に土台水切りや通気パッキン周辺の通気スリットまで塗り込まれて隙間が閉塞・阻害されている状況";
-    const { pageCount, compact, warnings, data } = await render([long, "補足: 通気スリットの清掃も必要"]);
+    const { pageCount, compact, warnings, data } = await render([long, "・通気スリットの清掃も必要"]);
     expect(pageCount).toBe(1);
     expect(warnings.some((w) => w.includes("枠に収まらない"))).toBe(false);
     expect(compact[0]).toContain(long);
@@ -148,11 +148,11 @@ describe.skipIf(!fonts)("完了報告書PDF", () => {
   it("★補足で本紙の5つの枠を超えると別紙に回り、補足は項目の下に入る", async () => {
     const items = [
       "①壁のひび",
-      "補足: 3階北側の2か所",
+      "・3階北側の2か所",
       "②床のきしみ",
-      "補足: 玄関のみ",
+      "・玄関のみ",
       "③建具の調整",
-      "補足: 2階の洋室",
+      "・2階の洋室",
     ];
     const { pageCount, compact, data } = await render(items);
     expect(data.useAppendix).toBe(true);

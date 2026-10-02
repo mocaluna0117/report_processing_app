@@ -42,10 +42,13 @@ const phone = (p: string, relation = ""): Contact => ({ phone: p, relation, conf
 describe("splitInstructionItems", () => {
   it("丸数字と番号付きの先頭を落とす", () => {
     expect(splitInstructionItems("①壁のひび\n②床のきしみ")).toEqual(["壁のひび", "床のきしみ"]);
-    expect(splitInstructionItems("(21)21件目\n1.番号付き\n・中黒")).toEqual([
-      "21件目",
-      "番号付き",
-      "中黒",
+    expect(splitInstructionItems("(21)21件目\n1.番号付き")).toEqual(["21件目", "番号付き"]);
+  });
+
+  it("★「・」の行は項目ではなく、直前の項目の補足 (2026-10-02)", () => {
+    expect(splitInstructionItems("①壁のひび\n・3階北側\n②床のきしみ")).toEqual([
+      "壁のひび",
+      "床のきしみ",
     ]);
   });
 
@@ -365,7 +368,7 @@ describe("本紙の割り付け (折り返しと補足)", () => {
   });
 
   it("★補足はその項目の次の枠に「・」付きで入る", () => {
-    const d = build("①壁のひび\n補足: 3階北側の2か所\n②床のきしみ");
+    const d = build("①壁のひび\n・3階北側の2か所\n②床のきしみ");
     expect(d.supplements).toEqual([["3階北側の2か所"], []]);
     expect(d.main.slice(0, 3)).toEqual([
       { no: "①", text: "壁のひび" },
@@ -375,7 +378,7 @@ describe("本紙の割り付け (折り返しと補足)", () => {
   });
 
   it("★折り返しと補足で5つの枠を超えたら別紙に回す (件数は5件以下でも)", () => {
-    const d = build(`①${LONG}\n補足: 通気スリットの清掃も必要\n②建具の調整\n補足: 玄関のみ\n③外壁の汚れ`);
+    const d = build(`①${LONG}\n・通気スリットの清掃も必要\n②建具の調整\n・玄関のみ\n③外壁の汚れ`);
     expect(d.items).toHaveLength(3);
     expect(d.useAppendix).toBe(true);
     expect(d.main[0]).toEqual({ no: "", text: APPENDIX_REFERENCE_TEXT });
@@ -384,7 +387,7 @@ describe("本紙の割り付け (折り返しと補足)", () => {
   it("★別紙の項目にも補足が付く (項目の下の細い欄に書く)", () => {
     const items = ["壁のひび", "床のきしみ", "建具の調整", "外壁の汚れ", "雨樋の詰まり", "天井の凹凸"];
     const summary = items
-      .map((s, i) => `${"①②③④⑤⑥"[i]}${s}${i === 1 ? "\n補足: 2階のみ" : ""}`)
+      .map((s, i) => `${"①②③④⑤⑥"[i]}${s}${i === 1 ? "\n・2階のみ" : ""}`)
       .join("\n");
     const d = build(summary);
     expect(d.useAppendix).toBe(true);
@@ -393,7 +396,7 @@ describe("本紙の割り付け (折り返しと補足)", () => {
   });
 
   it("★補足が何行もあれば、1つにつき「・」の行が1行ずつ（本紙も別紙も。2026-09-25）", () => {
-    const d = build("①壁のひび\n補足: 3階北側\n補足: 写真は3枚目\n②床のきしみ");
+    const d = build("①壁のひび\n・3階北側\n・写真は3枚目\n②床のきしみ");
     expect(d.supplements).toEqual([["3階北側", "写真は3枚目"], []]);
     expect(d.main.slice(0, 4)).toEqual([
       { no: "①", text: "壁のひび" },
@@ -405,7 +408,7 @@ describe("本紙の割り付け (折り返しと補足)", () => {
 
   it("★本紙の5行: 1つの項目に補足4つまでは本紙、5つで別紙に回す", () => {
     const withSupplements = (n: number) =>
-      build(["壁のひび", ...Array.from({ length: n }, (_, i) => `補足: 補足${i + 1}`)].join("\n"));
+      build(["壁のひび", ...Array.from({ length: n }, (_, i) => `・補足${i + 1}`)].join("\n"));
     expect(withSupplements(4).useAppendix).toBe(false);
     const five = withSupplements(5);
     expect(five.useAppendix).toBe(true);
@@ -413,7 +416,7 @@ describe("本紙の割り付け (折り返しと補足)", () => {
   });
 
   it("★作業内容・是正内容の№は項目ごとに1行ずつ (続き・補足では増やさない)", () => {
-    const d = build(`①${LONG}\n補足: 通気スリットの清掃も必要\n②建具の調整`);
+    const d = build(`①${LONG}\n・通気スリットの清掃も必要\n②建具の調整`);
     // 指示内容は ①・続き・補足・② の4行
     expect(d.main.map((m) => m.no)).toEqual(["①", "", "", "②", ""]);
     // 作業内容は ①② が続けて並ぶ
@@ -427,7 +430,7 @@ describe("本紙の割り付け (折り返しと補足)", () => {
   });
 
   it("ちょうど5行なら本紙のまま (41文字は1行)", () => {
-    const d = build(`①${"あ".repeat(41)}\n補足: 補足1件\n②短い項目\n③短い項目\n④短い項目`);
+    const d = build(`①${"あ".repeat(41)}\n・補足1件\n②短い項目\n③短い項目\n④短い項目`);
     expect(d.useAppendix).toBe(false);
     expect(d.main.map((m) => m.no)).toEqual(["①", "", "②", "③", "④"]);
   });

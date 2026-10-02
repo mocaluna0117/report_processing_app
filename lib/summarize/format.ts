@@ -18,17 +18,20 @@ export interface FormatOptions {
   emptyText?: string;
   /**
    * 事象ごとの補足の並び (items と同じ並び。1つの事象に何行でも。空の並びなら補足なし。2026-09-25)。
-   * 補足1つにつき、事象の次に「補足: …」の行を1行ずつ入れる (完了報告書では「・…」の行が1つずつ)。
+   * 補足1つにつき、事象の次に「・…」の行を1行ずつ入れる (完了報告書でも「・…」の行が1つずつ)。
    */
   supplements?: readonly (readonly string[])[];
 }
 
-/** 補足の行の頭。読み取りは lib/summary.ts の SUPPLEMENT_LINE が受け持つ */
-export const SUPPLEMENT_PREFIX = "補足: ";
+/**
+ * 補足の行の頭。読み取りは lib/summary.ts の SUPPLEMENT_LINE が受け持つ。
+ * ★2026-10-02 に「補足: 」から「・」に変えた (セルに「・」で書けば補足になる)
+ */
+export const SUPPLEMENT_PREFIX = "・";
 
 /**
  * 補足の文を整える。前後の空白と、先頭に打った「・」を落とす。
- * ★完了報告書では「・」を付けて載せるので、打った「・」を残すと「・・」になる
+ * ★完了報告書・本文の行では「・」を付けて書くので、打った「・」を残すと「・・」になる
  */
 export function cleanSupplement(text: string): string {
   return text.trim().replace(/^[・･•]+\s*/, "").trim();
@@ -39,7 +42,7 @@ export function cleanSupplement(text: string): string {
  * - 事象が2件以上なら「①事象」「②事象」…を改行で並べる
  * - 1件だけなら番号を付けない
  * - 0件なら「不具合の指摘なし」(emptyText で変えられる)
- * - 補足があれば、その事象の次に「補足: …」の行を補足の数だけ入れる
+ * - 補足があれば、その事象の次に「・…」の行を補足の数だけ入れる
  * - メモがあれば末尾に「メモ: …」の行を追加する
  */
 export function formatPhenomena(

@@ -96,11 +96,11 @@ describe("normalizeStoredRow", () => {
 
   it("★区分ごとの本文に補足が2つあっても、共通のセル（鏡）に2行とも残る。何度通しても同じ", () => {
     const categories: WorkCategoryEntry[] = [
-      { value: "クロス", confidence: "ok", summary: "クロスに凹凸\n補足: 3か所\n補足: 写真2枚目" },
+      { value: "クロス", confidence: "ok", summary: "クロスに凹凸\n・3か所\n・写真2枚目" },
       { value: "サッシ", confidence: "ok", summary: "サッシの結露" },
     ];
     const once = normalizeStoredRow(row({ summary: "古い本文", categories }));
-    expect(once.cells[SUMMARY_COL]).toBe("①クロスに凹凸\n補足: 3か所\n補足: 写真2枚目\n②サッシの結露");
+    expect(once.cells[SUMMARY_COL]).toBe("①クロスに凹凸\n・3か所\n・写真2枚目\n②サッシの結露");
     expect(once.categories.map((c) => c.summary)).toEqual(categories.map((c) => c.summary));
     expect(normalizeStoredRow(once)).toEqual(once);
   });

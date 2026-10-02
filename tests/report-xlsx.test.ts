@@ -188,7 +188,7 @@ describe("buildReportXlsx", () => {
   it("書き換えた3シートは整形式のXMLのまま", () => {
     const { input, main, appendix } = build([
       "壁のひび",
-      "補足: 3階北側",
+      "・3階北側",
       "床のきしみ",
       "a",
       "b",
@@ -224,7 +224,7 @@ describe("buildReportXlsx", () => {
   it("★作業内容の№は項目ごとに1行ずつ (続き・補足があっても詰めて並べる)", () => {
     const long =
       "基礎の巾木仕上げ施工時に土台水切りや通気パッキン周辺の通気スリットまで塗り込まれて隙間が閉塞・阻害されている状況";
-    const { main } = build([long, "補足: 通気スリットの清掃も必要", "建具の調整"]);
+    const { main } = build([long, "・通気スリットの清掃も必要", "建具の調整"]);
     // 指示内容は ①・続き・補足・② の4行
     expect(cell(main, "B16")).toContain("<v>①</v>");
     expect(cell(main, "B19")).toContain("<v>②</v>");
@@ -238,7 +238,7 @@ describe("buildReportXlsx", () => {
     const { appendix, parts } = build([
       "①壁のひび",
       "②床のきしみ",
-      "補足: 2階のみ",
+      "・2階のみ",
       "③建具の調整",
       "④外壁の汚れ",
       "⑤雨樋の詰まり",
@@ -271,8 +271,8 @@ describe("buildReportXlsx", () => {
     const { appendix, parts } = build([
       "①壁のひび",
       "②床のきしみ",
-      "補足: 2階のみ",
-      "補足: 写真は2枚目",
+      "・2階のみ",
+      "・写真は2枚目",
       "③建具の調整",
       "④外壁の汚れ",
       "⑤雨樋の詰まり",

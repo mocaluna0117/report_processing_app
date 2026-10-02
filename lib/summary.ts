@@ -10,10 +10,15 @@ import { NO_DEFECT_TEXT, cleanSupplement, formatPhenomena } from "@/lib/summariz
 import { SUMMARY_COL } from "@/lib/tsv";
 import { findCategoryInText } from "@/lib/work-categories";
 
-const LEADING_NUMBER = /^(?:[①-⑳]|\(\d+\)|\d+[.)、]|・)\s*/;
+// ★「・」は番号として扱わない（2026-10-02 から補足の行の頭）
+const LEADING_NUMBER = /^(?:[①-⑳]|\(\d+\)|\d+[.)、])\s*/;
 const NOTE_LINE = /^メモ\s*[:：]\s*/;
-/** 「補足: 」の行 (直前の項目への書き足し。1つの項目に何行でも)。全角コロンも受ける */
-const SUPPLEMENT_LINE = /^補足\s*[:：]\s*/;
+/**
+ * 補足の行 (直前の項目への書き足し。1つの項目に何行でも)。行の頭の「・」(半角の「･」「•」も) で見分ける。
+ * ★2026-10-02 までは「補足: 」の行だった。保存済みの記録を読めるよう、前の書き方も受ける
+ *   (書き戻すときは「・」に揃う)
+ */
+const SUPPLEMENT_LINE = /^(?:[・･•]|補足\s*[:：])\s*/;
 
 /** アフター受付内容を、指示内容の項目と点検員メモに分ける */
 export interface SummaryParts {
