@@ -285,6 +285,22 @@ export function pickPostalCode(...raws: readonly string[]): PostalResult {
   return firstIssue ?? { postalCode: "" };
 }
 
+/**
+ * 画面の入力欄で郵便番号を整える (入力欄から離れたときに当てる)。
+ * 7桁として読めたときだけ 123-4567 にし、読めない値はそのまま残す (推測で直さない)。
+ */
+export function tidyPostalInput(value: string): string {
+  return normalizePostalCode(value).postalCode || value;
+}
+
+/**
+ * 画面の入力欄で引渡日を整える (入力欄から離れたときに当てる)。
+ * 日付として読めたときだけ yyyy/mm/dd にし、読めない値はそのまま残す。
+ */
+export function tidyDateInput(value: string): string {
+  return normalizeHandoverDate(value).date ?? value;
+}
+
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function isEmail(s: string): boolean {

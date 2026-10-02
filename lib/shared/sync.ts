@@ -45,6 +45,7 @@ import {
   type SharedCustomerEdits,
   mergeCustomerEdits,
   pickSharedCustomerEdits,
+  withoutCustomerEdits,
 } from "@/lib/shared/customer-edits";
 import {
   type SharedDataset,
@@ -125,6 +126,8 @@ export interface LedgerSyncReport {
   count: number;
   /** この端末へ取り込んだ件数（追加＋更新） */
   applied: number;
+  /** 共有フォルダーで消されていたので、この端末からも消した件数（手入力のお客様） */
+  removed: number;
   written: boolean;
 }
 
@@ -218,7 +221,7 @@ export async function syncShared(
     customers: { applied: 0, unmatched: 0, written: false },
     examples: emptyExamples(() => ({ count: 0, written: false })),
     ledger,
-    customerLedger: { count: 0, applied: 0, written: false },
+    customerLedger: { count: 0, applied: 0, removed: 0, written: false },
     failures: [],
   };
 
@@ -238,6 +241,8 @@ export async function syncShared(
 
   // ---- 顧客データの台帳（★手直しより先。新しい台帳の上に手直しを乗せる） ----
   const ledgerDataset = SHARED_DATASETS["customer-ledger"];
+  /** 消された手入力のお客様（その手直しは、もう当てる先が無いので手直しのファイルからも落とす） */
+  let deletedCustomerIds: string[] = [];
   try {
     const mineLedger = await deps.loadLedger();
     const result = await folder.update(
@@ -247,9 +252,11 @@ export async function syncShared(
       now,
     );
     const applied = await deps.applyLedger(result.items);
+    deletedCustomerIds = Object.keys(result.items.manual?.deleted ?? {});
     report.customerLedger = {
       count: ledgerCount(result.items),
       applied: applied.reduce((n, r) => n + r.added + r.updated, 0),
+      removed: applied.reduce((n, r) => n + (r.source === "manual" ? r.removed : 0), 0),
       written: result.written,
     };
   } catch (e) {
@@ -262,7 +269,11 @@ export async function syncShared(
     const result = await folder.update(
       editsDataset,
       pickSharedCustomerEdits,
-      (current) => (current ? mergeCustomerEdits(current, mineCustomers) : mineCustomers),
+      (current) =>
+        withoutCustomerEdits(
+          current ? mergeCustomerEdits(current, mineCustomers) : mineCustomers,
+          deletedCustomerIds,
+        ),
       now,
     );
     const merged = await deps.mergeCustomerEdits(result.items);

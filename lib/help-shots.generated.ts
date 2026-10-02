@@ -20,8 +20,8 @@ export const HELP_SHOT_GEOMETRY: Readonly<Record<string, HelpShotGeometry>> = {
   },
   "after-import": {
     width: 2496,
-    height: 604,
-    hotspots: [{ x: 50, y: 69.3 }, { x: 3.3, y: 10.9 }],
+    height: 644,
+    hotspots: [{ x: 50, y: 71.2 }, { x: 3.3, y: 10.2 }],
   },
   "after-shared": {
     width: 1344,
@@ -30,8 +30,8 @@ export const HELP_SHOT_GEOMETRY: Readonly<Record<string, HelpShotGeometry>> = {
   },
   "after-intake": {
     width: 2496,
-    height: 1641,
-    hotspots: [{ x: 24.8, y: 8.3 }, { x: 50, y: 77.7 }, { x: 6.4, y: 94.8 }],
+    height: 1781,
+    hotspots: [{ x: 24.8, y: 8.3 }, { x: 50, y: 79.4 }, { x: 6.4, y: 95.2 }],
   },
   "after-cases": {
     width: 2496,

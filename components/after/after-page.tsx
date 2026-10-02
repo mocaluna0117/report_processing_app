@@ -6,6 +6,10 @@ import { BlockedReason } from "@/components/blocked-reason";
 import { FlowSteps } from "@/components/flow-steps";
 import { CustomerCard } from "@/components/after/customer-card";
 import { CustomerImport, type CustomerSummary } from "@/components/after/customer-import";
+import {
+  CUSTOMER_REGISTER_FIRST_INPUT,
+  CustomerRegister,
+} from "@/components/after/customer-register";
 import { CustomerSearch } from "@/components/after/customer-search";
 import { SharedFolderPanel } from "@/components/after/shared-folder";
 import { ExamplesDialog } from "@/components/examples-dialog";
@@ -21,12 +25,22 @@ import { applyEdits, effectiveFields, needsReview, resetEdits } from "@/lib/afte
 import { type AfterFlowInput, afterFlow, isFreshAfter } from "@/lib/after/flow";
 import {
   clearCustomers,
+  deleteManualCustomer,
   loadCustomers,
   saveCustomerEdits,
   saveImport,
+  saveManualCustomer,
   type ImportReport,
 } from "@/lib/after/customer-store";
 import { parseCustomerFile } from "@/lib/after/import";
+import {
+  MANUAL_ID_PREFIX,
+  type ManualDraft,
+  createManualCustomer,
+  emptyManualDraft,
+  isEmptyDraft,
+  manualBlockedReason,
+} from "@/lib/after/manual";
 import { buildCaseStaff } from "@/lib/after/match-staff";
 import {
   AFTER_HIDDEN_COLUMNS,
@@ -77,6 +91,10 @@ export function AfterPage() {
   const [registerNotice, setRegisterNotice] = useState<string | null>(null);
   const [mailCaseId, setMailCaseId] = useState<string | null>(null);
   const [reportCaseId, setReportCaseId] = useState<string | null>(null);
+  /** 手入力で登録する欄の下書き (別のお客様を見に行っても消えないよう、ここで持つ) */
+  const [manualDraft, setManualDraft] = useState<ManualDraft>(emptyManualDraft);
+  const [savingManual, setSavingManual] = useState(false);
+  const [manualError, setManualError] = useState<string | null>(null);
 
   const storage = usePersistence({
     restore: async () => {
@@ -136,25 +154,33 @@ export function AfterPage() {
   }, [cases, storage.canPersist]);
 
   // 要約の途中で画面を切り替えると受付が消えるので確認を出す
+  // (お客様の登録欄に打ちかけの内容も、画面を切り替えると消える)
+  const manualDraftEmpty = isEmptyDraft(manualDraft);
   useEffect(() => {
     setNavigationGuard(
-      registering ? "受付を登録中です。画面を切り替えると失われます。移動しますか？" : null,
+      registering
+        ? "受付を登録中です。画面を切り替えると失われます。移動しますか？"
+        : !manualDraftEmpty
+          ? "お客様の登録欄に、まだ登録していない内容があります。画面を切り替えると失われます。移動しますか？"
+          : null,
     );
     return () => setNavigationGuard(null);
-  }, [registering]);
+  }, [registering, manualDraftEmpty]);
 
   const selected = useMemo(
     () => customers.find((c) => c.id === selectedId) ?? null,
     [customers, selectedId],
   );
   const summary: CustomerSummary = useMemo(() => {
-    const bySource = { suketto: 0, dx: 0 };
+    const bySource = { suketto: 0, dx: 0, manual: 0 };
     let lastImportedAt: number | null = null;
     let review = 0;
     for (const c of customers) {
       bySource[c.source] += 1;
-      if (lastImportedAt === null || c.importedAt > lastImportedAt) lastImportedAt = c.importedAt;
       if (needsReview(c)) review += 1;
+      // 手入力の登録は「取り込み」ではないので数えない
+      if (c.source === "manual") continue;
+      if (lastImportedAt === null || c.importedAt > lastImportedAt) lastImportedAt = c.importedAt;
     }
     return { total: customers.length, bySource, lastImportedAt, needsReview: review };
   }, [customers]);
@@ -246,6 +272,65 @@ export function AfterPage() {
     }
   };
 
+  /** 手入力の欄を出す (選んでいたお客様を外し、最初の入力欄へ移る) */
+  const startManual = () => {
+    setSelectedId(null);
+    // 選んでいたお客様の欄と入れ替わるので、描き終わってから移る
+    requestAnimationFrame(() => document.getElementById(CUSTOMER_REGISTER_FIRST_INPUT)?.focus());
+  };
+
+  /** 顧客データに無いお客様を手入力で登録し、そのまま選んだ状態にする */
+  const registerManual = async () => {
+    if (manualBlockedReason(manualDraft) || savingManual) return;
+    setSavingManual(true);
+    setManualError(null);
+    const customer = createManualCustomer(manualDraft, `${MANUAL_ID_PREFIX}${uid()}`, Date.now());
+    try {
+      await saveManualCustomer(customer);
+    } catch (e) {
+      // ★保存できないまま画面にだけ足すと、あとの手直しが保存されずに消えるので足さない
+      setManualError(
+        `お客様を登録できませんでした (${e instanceof Error ? e.message : String(e)})`,
+      );
+      setSavingManual(false);
+      return;
+    }
+    setCustomers((prev) => [...prev, customer]);
+    setSelectedId(customer.id);
+    setManualDraft(emptyManualDraft());
+    setSavingManual(false);
+    storage.refreshUsage();
+    // ★共有フォルダーの台帳に載せる (もう1台にはこの道でしか届かない)
+    shared.scheduleSync();
+  };
+
+  /** 手入力で登録したお客様を消す (取り込んだお客様は消せない) */
+  const deleteManual = async () => {
+    if (!selected || selected.source !== "manual") return;
+    const target = selected;
+    const lines = [
+      `${effectiveFields(target).ownerName || "このお客様"} を削除します。取り消せません。`,
+    ];
+    if (cases.some((c) => c.customerId === target.id)) lines.push("受付一覧の行は消えずに残ります。");
+    if (shared.connected) {
+      lines.push("★共有フォルダーにつないでいるため、次の同期で相手の端末からも消えます。");
+    }
+    lines.push("よろしいですか？");
+    if (!confirm(lines.join("\n"))) return;
+    try {
+      await deleteManualCustomer(target.id);
+    } catch (e) {
+      storage.setStorageError(
+        `お客様を削除できませんでした (${e instanceof Error ? e.message : String(e)})`,
+      );
+      return;
+    }
+    setCustomers((prev) => prev.filter((c) => c.id !== target.id));
+    setSelectedId(null);
+    storage.refreshUsage();
+    shared.scheduleSync();
+  };
+
   const resetCustomer = async () => {
     if (!selected) return;
     const next = resetEdits(selected, Date.now());
@@ -267,9 +352,13 @@ export function AfterPage() {
   };
 
   const deleteCustomers = async () => {
+    const manualNote =
+      summary.bySource.manual > 0
+        ? `（手入力で登録したお客様 ${summary.bySource.manual}件 も含みます）`
+        : "";
     if (
       !confirm(
-        `顧客データ ${customers.length}件 をこの端末から削除します。取り消せません。よろしいですか？`,
+        `顧客データ ${customers.length}件 をこの端末から削除します${manualNote}。取り消せません。よろしいですか？`,
       )
     ) {
       return;
@@ -419,8 +508,11 @@ export function AfterPage() {
 
         <SharedFolderPanel id="after-shared" shared={shared} canPersist={storage.canPersist} />
 
-        {customers.length > 0 && (
-          <div id="after-search" tabIndex={-1} className="grid scroll-mt-4 gap-6 lg:grid-cols-2">
+        {/* ★顧客データを取り込む前から出す (取り込まなくても、手入力でお客様を登録できる)。
+            前回の内容を読み終えるまでは出さない (空の登録欄が一瞬見えてしまうため) */}
+        {(storage.restored || customers.length > 0) && (
+          // ★1列のときも grid-cols-1 を付ける（列の幅が一覧の長い1行に押し広げられて、横にはみ出すため）
+          <div id="after-search" tabIndex={-1} className="grid scroll-mt-4 grid-cols-1 gap-6 lg:grid-cols-2">
             <CustomerSearch
               customers={customers}
               query={query}
@@ -429,13 +521,25 @@ export function AfterPage() {
               onSelect={setSelectedId}
               reviewOnly={reviewOnly}
               onReviewOnlyChange={setReviewOnly}
+              onNew={startManual}
             />
             {selected ? (
-              <CustomerCard customer={selected} onChange={editCustomer} onReset={resetCustomer} />
+              <CustomerCard
+                customer={selected}
+                onChange={editCustomer}
+                onReset={resetCustomer}
+                onDelete={selected.source === "manual" ? () => void deleteManual() : undefined}
+              />
             ) : (
-              <section className="flex items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-400">
-                左の一覧からお客様を選ぶと、内容を確認・修正できます
-              </section>
+              <CustomerRegister
+                customers={customers}
+                draft={manualDraft}
+                onDraftChange={setManualDraft}
+                onSubmit={() => void registerManual()}
+                onSelect={setSelectedId}
+                busy={savingManual}
+                error={manualError}
+              />
             )}
           </div>
         )}

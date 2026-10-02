@@ -40,6 +40,7 @@ export type SeenCustomerFiles = Record<string, FileMark>;
 export const SOURCE_LABEL: Readonly<Record<CustomerSource, string>> = {
   suketto: "助っ人クラウド",
   dx: "点検保守台帳 (DX)",
+  manual: "手入力",
 };
 
 /**

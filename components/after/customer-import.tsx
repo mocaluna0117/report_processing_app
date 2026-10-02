@@ -8,6 +8,7 @@ import type { CustomerSource } from "@/lib/after/types";
 const SOURCE_LABEL: Record<CustomerSource, string> = {
   suketto: "助っ人クラウド",
   dx: "点検保守台帳 (DX)",
+  manual: "手入力",
 };
 
 export interface CustomerSummary {
@@ -63,12 +64,14 @@ export function CustomerImport({
                 {summary.total.toLocaleString()}件
                 <span className="ml-2 text-xs text-slate-500">
                   ({SOURCE_LABEL.suketto} {summary.bySource.suketto.toLocaleString()}件 /{" "}
-                  {SOURCE_LABEL.dx} {summary.bySource.dx.toLocaleString()}件・最終取り込み{" "}
-                  {formatDate(summary.lastImportedAt)})
+                  {SOURCE_LABEL.dx} {summary.bySource.dx.toLocaleString()}件
+                  {summary.bySource.manual > 0 &&
+                    ` / ${SOURCE_LABEL.manual} ${summary.bySource.manual.toLocaleString()}件`}
+                  ・最終取り込み {formatDate(summary.lastImportedAt)})
                 </span>
               </>
             ) : (
-              "まだ取り込んでいません。顧客情報のxlsx / csv を取り込んでください"
+              "まだ取り込んでいません。顧客情報のxlsx / csv を取り込んでください (台帳に無いお客様は「お客様の情報」に手入力で登録できます)"
             )}
           </p>
           {summary.needsReview > 0 && (

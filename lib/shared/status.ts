@@ -167,6 +167,11 @@ export function sharedStatus(input: SharedStatusInput): SharedStatusView {
         `共有フォルダーから顧客データを ${report.customerLedger.applied.toLocaleString()}件 取り込みました。`,
       );
     }
+    if (report.customerLedger.removed > 0) {
+      notes.push(
+        `もう1台で消された手入力のお客様 ${report.customerLedger.removed.toLocaleString()}件 を、この端末からも消しました。`,
+      );
+    }
     for (const line of report.ledger.imported) notes.push(line);
     for (const skipped of report.ledger.skipped) {
       notes.push(`「${skipped.file}」は顧客データとして読めないので飛ばしました（${skipped.message}）`);
@@ -235,7 +240,10 @@ export function usesSharedFolder(pathname: string): boolean {
  */
 export function changedCustomers(report: SyncReport): boolean {
   return (
-    report.customers.applied > 0 || report.customerLedger.applied > 0 || report.ledger.imported.length > 0
+    report.customers.applied > 0 ||
+    report.customerLedger.applied > 0 ||
+    report.customerLedger.removed > 0 ||
+    report.ledger.imported.length > 0
   );
 }
 

@@ -9,7 +9,10 @@
  * ★手直し（edits）はここに入れない。別のファイル（顧客の手直し.json）で分け合う。
  *   台帳は取り込んだときにしか変わらないが、手直しは直すたびに変わるため、分けておく。
  * ★補完（supplements）・検索語（searchKey）も入れない。取り込みから決まるので、当てるときに作り直す。
+ * ★手入力で登録したお客様（manual）もここに載せる。元のファイルが無いので、2台目へ届く道はこれだけ。
+ *   1件ずつ消せるので、**消した印（deleted）も一緒に運ぶ**（印が無いと、相手のファイルから戻ってくる）。
  */
+import { buildSearchKey } from "@/lib/after/normalize";
 import type { Customer, CustomerFields, CustomerIssue, CustomerSource } from "@/lib/after/types";
 
 /** 共有フォルダーに置く、顧客1件ぶんの取り込み値 */
@@ -28,13 +31,19 @@ export interface LedgerSource {
   /** その取り込み元をいつ取り込んだか（いちばん新しい importedAt） */
   at: number;
   customers: LedgerCustomer[];
+  /**
+   * 消した印（顧客の id → 消した時刻）。手入力のお客様（manual）だけが持つ。
+   * ★印のある id は、どちらの端末にあっても載せない（id は登録のたびに作るので、同じ id が
+   *   登録し直されることは無い。時刻は比べずに、印があれば消す）。
+   */
+  deleted?: Record<string, number>;
 }
 
 export type SharedLedger = Partial<Record<CustomerSource, LedgerSource>>;
 
 export const emptyLedger = (): SharedLedger => ({});
 
-const SOURCES: readonly CustomerSource[] = ["suketto", "dx"];
+const SOURCES: readonly CustomerSource[] = ["suketto", "dx", "manual"];
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -43,7 +52,7 @@ function isLedgerCustomer(v: unknown): v is LedgerCustomer {
   if (!isRecord(v)) return false;
   return (
     typeof v.id === "string" &&
-    (v.source === "suketto" || v.source === "dx") &&
+    (v.source === "suketto" || v.source === "dx" || v.source === "manual") &&
     typeof v.sourceKey === "string" &&
     typeof v.sourceRow === "number" &&
     isRecord(v.imported) &&
@@ -64,10 +73,24 @@ export function pickSharedLedger(v: unknown): SharedLedger | null {
   for (const source of SOURCES) {
     const found = v[source];
     if (!isRecord(found) || !Array.isArray(found.customers)) continue;
+    // ★ほかの取り込み元の顧客が紛れ込んでいたら落とす（規則の違う束に混ざらないように）
     out[source] = {
       at: typeof found.at === "number" && Number.isFinite(found.at) ? found.at : 0,
-      customers: found.customers.filter(isLedgerCustomer),
+      customers: found.customers.filter(
+        (c): c is LedgerCustomer => isLedgerCustomer(c) && c.source === source,
+      ),
     };
+    const deleted = source === "manual" ? pickDeleted(found.deleted) : {};
+    if (Object.keys(deleted).length > 0) out[source].deleted = deleted;
+  }
+  return out;
+}
+
+function pickDeleted(v: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!isRecord(v)) return out;
+  for (const [id, at] of Object.entries(v)) {
+    if (typeof at === "number" && Number.isFinite(at)) out[id] = at;
   }
   return out;
 }
@@ -75,12 +98,18 @@ export function pickSharedLedger(v: unknown): SharedLedger | null {
 const latestImportedAt = (customers: readonly LedgerCustomer[]): number =>
   customers.reduce((max, c) => (c.importedAt > max ? c.importedAt : max), 0);
 
-/** この端末の顧客データから、共有に載せる形を作る */
-export function extractLedger(customers: readonly Customer[]): SharedLedger {
+/**
+ * この端末の顧客データから、共有に載せる形を作る。
+ * manualDeleted: この端末で消した手入力のお客様の印（lib/after/customer-store.ts が保存している）
+ */
+export function extractLedger(
+  customers: readonly Customer[],
+  manualDeleted: Readonly<Record<string, number>> = {},
+): SharedLedger {
   const out: SharedLedger = {};
   for (const source of SOURCES) {
     const mine = customers
-      .filter((c) => c.source === source)
+      .filter((c) => c.source === source && !(source === "manual" && c.id in manualDeleted))
       .map(
         (c): LedgerCustomer => ({
           id: c.id,
@@ -96,7 +125,31 @@ export function extractLedger(customers: readonly Customer[]): SharedLedger {
       .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     if (mine.length > 0) out[source] = { at: latestImportedAt(mine), customers: mine };
   }
+  if (Object.keys(manualDeleted).length > 0) {
+    out.manual = {
+      at: out.manual?.at ?? 0,
+      customers: out.manual?.customers ?? [],
+      deleted: sortedMarks(manualDeleted),
+    };
+  }
   return out;
+}
+
+/** 印を id の順に並べる（中身が同じなら同じ JSON になるように） */
+function sortedMarks(marks: Readonly<Record<string, number>>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const id of Object.keys(marks).sort()) out[id] = marks[id];
+  return out;
+}
+
+/** 消した印を重ねる（id ごとに新しい時刻。可換・冪等） */
+export function mergeDeletedMarks(
+  a: Readonly<Record<string, number>> = {},
+  b: Readonly<Record<string, number>> = {},
+): Record<string, number> {
+  const merged: Record<string, number> = { ...a };
+  for (const [id, at] of Object.entries(b)) merged[id] = Math.max(merged[id] ?? at, at);
+  return sortedMarks(merged);
 }
 
 /** 同じ id が並んだときの決め方（どちらが先でも同じ結果になるように） */
@@ -112,6 +165,8 @@ const newer = (a: LedgerCustomer, b: LedgerCustomer): LedgerCustomer => {
  *   （同じ id は新しい方）。月ごとの差分を片方だけが取り込んでいても、消えない。
  * ★助っ人クラウドは**丸ごと入れ替える**取り込み元なので、新しく取り込んだ方の一式を採る。
  *   和集合にすると、消したはずの行が相手から戻ってきてしまう。
+ * ★手入力は**足し込んでから、消した印のある id を落とす**。2台で別々に登録しても両方残り、
+ *   片方で消せばもう片方からも消える。
  */
 export function mergeSharedLedger(a: SharedLedger, b: SharedLedger): SharedLedger {
   const out: SharedLedger = {};
@@ -122,6 +177,21 @@ export function mergeSharedLedger(a: SharedLedger, b: SharedLedger): SharedLedge
   const suketto = pickReplacing(a.suketto, b.suketto);
   if (suketto) out.suketto = suketto;
 
+  const manual = mergeManual(a.manual, b.manual);
+  if (manual) out.manual = manual;
+
+  return out;
+}
+
+function mergeManual(a?: LedgerSource, b?: LedgerSource): LedgerSource | undefined {
+  const union = mergeAdditive(a, b);
+  if (!union) return undefined;
+  const deleted = mergeDeletedMarks(a?.deleted, b?.deleted);
+  const out: LedgerSource = {
+    at: union.at,
+    customers: union.customers.filter((c) => !(c.id in deleted)),
+  };
+  if (Object.keys(deleted).length > 0) out.deleted = deleted;
   return out;
 }
 
@@ -163,8 +233,10 @@ export function toCustomers(source: LedgerSource): Customer[] {
       edits: {},
       issues: c.issues,
       corporate: c.corporate,
-      // ★検索語と補完は取り込みのときに作り直される（mergeImported / withSupplements）
-      searchKey: "",
+      // ★取り込み値から作っておく。初めて届いた顧客は、取り込みの道（withSupplements）で
+      //   補完が無ければ作り直されないので、空のままだと検索に掛からない
+      //   （手直しのある顧客は mergeImported が手直し込みで作り直す）
+      searchKey: buildSearchKey(c.imported),
       importedAt: c.importedAt,
       editedAt: null,
     }),

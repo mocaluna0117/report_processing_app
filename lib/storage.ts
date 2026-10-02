@@ -113,6 +113,7 @@ export const SETTING_KEY_RAKURAKU_CREDENTIAL_PREFIX = "rakuraku:credential:";
  * - `shared:examplesDeleted:<種類>` … 消した手本の印（消したことを相手へ伝えるため）
  * - `shared:customerFiles` … 共有フォルダーの顧客ファイルを取り込んだときの目印
  *   （大きさと更新時刻。変わっていないファイルを取り込み直さないため）
+ * - `shared:manualCustomersDeleted` … 消した手入力のお客様の印（id → 時刻。消したことを相手へ伝えるため）
  * ★いずれも設定なので「保存データを消去」では消さない（専用のボタンで消す）。
  * ★顧客の個人情報はここには置かない（共有フォルダー側のファイルと、customers ストアにある）。
  */
@@ -121,6 +122,7 @@ export const SETTING_KEY_SHARED_DEVICE_ID = "shared:deviceId";
 export const SETTING_KEY_SHARED_LAST_SYNC = "shared:lastSync";
 export const SETTING_KEY_SHARED_CUSTOMER_FILES = "shared:customerFiles";
 export const sharedExamplesDeletedKey = (kind: string): string => `shared:examplesDeleted:${kind}`;
+export const SETTING_KEY_SHARED_MANUAL_DELETED = "shared:manualCustomersDeleted";
 
 export function isStorageAvailable(): boolean {
   return typeof indexedDB !== "undefined";

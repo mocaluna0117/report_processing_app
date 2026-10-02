@@ -184,3 +184,82 @@ describe("当てる形に戻す", () => {
     expect(sameLedgerSource(one, undefined)).toBe(false);
   });
 });
+
+// 手入力で登録したお客様（2026-10-02）。元のファイルが無いので、2台目へ届く道は台帳だけ。
+// 1件ずつ消せるので、消した印も一緒に運ぶ。
+describe("手入力のお客様", () => {
+  it("この端末の台帳に、手入力の分と消した印を載せる（消した id は載せない）", () => {
+    const got = extractLedger(
+      [customer("mn:a", "manual", 5), customer("mn:b", "manual", 7), customer("dx:1", "dx")],
+      { "mn:b": 9, "mn:z": 3 },
+    );
+    expect(got.manual).toEqual({
+      at: 5,
+      customers: [entry("mn:a", "manual", 5)],
+      deleted: { "mn:b": 9, "mn:z": 3 },
+    });
+    expect(got.dx?.customers.map((c) => c.id)).toEqual(["dx:1"]);
+  });
+
+  it("★2台で別々に登録しても両方残る（足し込む）", () => {
+    const merged = mergeSharedLedger(
+      ledger({ manual: { at: 1, customers: [entry("mn:a", "manual", 1)] } }),
+      ledger({ manual: { at: 2, customers: [entry("mn:b", "manual", 2)] } }),
+    );
+    expect(merged.manual?.customers.map((c) => c.id)).toEqual(["mn:a", "mn:b"]);
+  });
+
+  it("★片方で消せば、もう片方にあっても落ちる（印は残る）", () => {
+    const merged = mergeSharedLedger(
+      ledger({ manual: { at: 1, customers: [entry("mn:a", "manual", 1), entry("mn:b", "manual", 1)] } }),
+      ledger({ manual: { at: 0, customers: [], deleted: { "mn:a": 5 } } }),
+    );
+    expect(merged.manual).toEqual({
+      at: 1,
+      customers: [entry("mn:b", "manual", 1)],
+      deleted: { "mn:a": 5 },
+    });
+  });
+
+  it("★どちらが先でも同じ結果（可換）で、何度重ねても変わらない（冪等）", () => {
+    const a = ledger({
+      dx: { at: 1, customers: [entry("dx:1", "dx", 1)] },
+      manual: { at: 3, customers: [entry("mn:a", "manual", 3), entry("mn:c", "manual", 1)], deleted: { "mn:x": 1 } },
+    });
+    const b = ledger({
+      manual: { at: 4, customers: [entry("mn:b", "manual", 4)], deleted: { "mn:c": 6, "mn:x": 2 } },
+    });
+    const ab = mergeSharedLedger(a, b);
+    expect(JSON.stringify(ab)).toBe(JSON.stringify(mergeSharedLedger(b, a)));
+    expect(JSON.stringify(mergeSharedLedger(ab, b))).toBe(JSON.stringify(ab));
+    expect(ab.manual?.customers.map((c) => c.id)).toEqual(["mn:a", "mn:b"]);
+    expect(ab.manual?.deleted).toEqual({ "mn:c": 6, "mn:x": 2 });
+  });
+
+  it("ファイルから読む（消した印は手入力の分だけ。ほかの取り込み元の顧客が紛れていたら落とす）", () => {
+    const got = pickSharedLedger({
+      manual: {
+        at: 1,
+        customers: [entry("mn:a", "manual"), entry("dx:1", "dx")],
+        deleted: { "mn:b": 2, "mn:c": "壊れた値" },
+      },
+      dx: { at: 1, customers: [entry("dx:1", "dx")], deleted: { "dx:1": 2 } },
+    });
+    expect(got?.manual).toEqual({ at: 1, customers: [entry("mn:a", "manual")], deleted: { "mn:b": 2 } });
+    expect(got?.dx).toEqual({ at: 1, customers: [entry("dx:1", "dx")] });
+  });
+
+  it("件数に手入力の分も入る", () => {
+    expect(
+      ledgerCount(ledger({ dx: { at: 1, customers: [entry("dx:1", "dx")] }, manual: { at: 1, customers: [entry("mn:a", "manual")] } })),
+    ).toBe(2);
+  });
+});
+
+describe("当てる形に戻すときの検索語", () => {
+  it("★取り込み値から作っておく（初めて届いた顧客が検索に掛からなかった）", () => {
+    const [got] = toCustomers({ at: 1, customers: [entry("dx:1", "dx")] });
+    expect(got.searchKey).toContain("ヤマダタロウ");
+    expect(got.searchKey).toContain("2101230101");
+  });
+});

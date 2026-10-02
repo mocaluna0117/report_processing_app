@@ -3,8 +3,11 @@
 import type { ResultRow } from "@/lib/process";
 import type { Contact } from "@/lib/types";
 
-/** suketto: 助っ人クラウド (旧システム・取込は一度きり) / dx: 点検保守台帳 (今後の正) */
-export type CustomerSource = "suketto" | "dx";
+/**
+ * suketto: 助っ人クラウド (旧システム・取込は一度きり) / dx: 点検保守台帳 (今後の正) /
+ * manual: 画面で手入力して登録したお客様 (取り込み元のファイルが無い。台帳に無いお客様のため)
+ */
+export type CustomerSource = "suketto" | "dx" | "manual";
 
 /** 取り込み・編集の対象になる項目 (この単位で利用者の修正を上書きする) */
 export interface CustomerFields {
@@ -37,7 +40,7 @@ export interface CustomerIssue {
 }
 
 export interface Customer {
-  /** dx:<PJ> / sk:<取込内容のハッシュ> */
+  /** dx:<PJ> / sk:<取込内容のハッシュ> / mn:<登録したときに作るランダムな値> */
   id: string;
   source: CustomerSource;
   /** 元の管理ID・物件番号 (取り込み元をたどるため) */

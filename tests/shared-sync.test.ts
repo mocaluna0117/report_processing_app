@@ -1,7 +1,14 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { effectiveFields } from "@/lib/after/customer";
-import { clearCustomers, loadCustomers } from "@/lib/after/customer-store";
+import {
+  clearCustomers,
+  deleteManualCustomer,
+  loadCustomers,
+  saveCustomerEdits,
+  saveManualCustomer,
+} from "@/lib/after/customer-store";
+import { createManualCustomer, emptyManualDraft } from "@/lib/after/manual";
 import type { Customer, CustomerFields } from "@/lib/after/types";
 import {
   clearStoredExamples,
@@ -23,6 +30,7 @@ import {
 } from "@/lib/shared/examples";
 import { DEFAULT_SHARED_TIMING, SharedFolder } from "@/lib/shared/folder";
 import { loadDeviceId, loadLastSync, newDeviceId } from "@/lib/shared/store";
+import { type SharedLedger, extractLedger, mergeSharedLedger, pickSharedLedger } from "@/lib/shared/ledger";
 import { hasAnySharedData, syncShared } from "@/lib/shared/sync";
 import type { InquiryExample } from "@/lib/summarize/examples";
 import { STORE_CUSTOMERS, withStore } from "@/lib/storage";
@@ -415,5 +423,74 @@ describe("前の形（直下に置いていた分）からの移し替え", () =
 
     await syncShared(mine, { now: 100 });
     expect(fs.text(EDITS.file)).toBe("直下に残っていた別の中身");
+  });
+});
+
+// 手入力で登録したお客様（2026-10-02）。元のファイルが無いので、もう1台へは台帳のファイルでしか届かない。
+describe("手入力のお客様", () => {
+  const manual = (id = "mn:1") =>
+    createManualCustomer({ ...emptyManualDraft(), ownerName: "架空 花子", address: "東京都架空区南町4-5-6" }, id, 10);
+
+  const pushLedger = async (folder: SharedFolder, mine: SharedLedger, now: number) => {
+    await folder.ensureDataDir();
+    return folder.update(LEDGER, pickSharedLedger, (c) => (c ? mergeSharedLedger(c, mine) : mine), now);
+  };
+
+  it("★台帳のファイルに載り、それしか持たない端末にも検索できる形で届く", async () => {
+    const { fs, mine } = setup();
+    await saveManualCustomer(manual());
+    await syncShared(mine, { now: 100, allowFirstWrite: true });
+    const file = JSON.parse(fs.text(at(LEDGER.file)) ?? "");
+    expect(file.items.manual.customers.map((c: { id: string }) => c.id)).toEqual(["mn:1"]);
+
+    // この端末を空にして（＝ファイルしか持たない2台目）同期し直す
+    await clearCustomers();
+    const report = await syncShared(mine, { now: 200 });
+    expect(report.customerLedger.applied).toBe(1);
+    const got = await loadCustomers();
+    expect(got.map((c) => c.id)).toEqual(["mn:1"]);
+    expect(got[0].searchKey).toContain("架空花子");
+  });
+
+  it("★この端末で消すと、台帳から落ちて消した印が残り、その手直しも手直しのファイルから落ちる", async () => {
+    const { fs, mine } = setup();
+    await saveManualCustomer(manual());
+    await saveCustomerEdits("mn:1", { emails: ["hanako@example.com"] }, 50);
+    await syncShared(mine, { now: 100, allowFirstWrite: true });
+    expect(Object.keys(JSON.parse(fs.text(at(EDITS.file)) ?? "").items)).toContain("mn:1");
+
+    await deleteManualCustomer("mn:1", 150);
+    const report = await syncShared(mine, { now: 200 });
+    const ledger = JSON.parse(fs.text(at(LEDGER.file)) ?? "").items;
+    expect(ledger.manual.customers).toEqual([]);
+    expect(ledger.manual.deleted).toEqual({ "mn:1": 150 });
+    expect(Object.keys(JSON.parse(fs.text(at(EDITS.file)) ?? "").items)).not.toContain("mn:1");
+    // ★「見つからない手直し」として数えない
+    expect(report.customers.unmatched).toBe(0);
+    expect(await loadCustomers()).toEqual([]);
+  });
+
+  it("★相手が消したお客様は、この端末からも消える（画面を読み直す印も立つ）", async () => {
+    const { fs, mine } = setup();
+    await saveManualCustomer(manual());
+    await syncShared(mine, { now: 100, allowFirstWrite: true });
+
+    await pushLedger(other(fs), { manual: { at: 0, customers: [], deleted: { "mn:1": 150 } } }, 160);
+    const report = await syncShared(mine, { now: 200 });
+    expect(report.customerLedger.removed).toBe(1);
+    expect(await loadCustomers()).toEqual([]);
+  });
+
+  it("★2台で別々に登録しても、両方の端末に両方そろう", async () => {
+    const { fs, mine } = setup();
+    await saveManualCustomer(manual("mn:a"));
+    await syncShared(mine, { now: 100, allowFirstWrite: true });
+
+    const theirs = createManualCustomer({ ...emptyManualDraft(), ownerName: "山田 太郎" }, "mn:b", 20);
+    await pushLedger(other(fs), extractLedger([theirs]), 160);
+    await syncShared(mine, { now: 200 });
+    expect((await loadCustomers()).map((c) => c.id).sort()).toEqual(["mn:a", "mn:b"]);
+    const file = JSON.parse(fs.text(at(LEDGER.file)) ?? "");
+    expect(file.items.manual.customers.map((c: { id: string }) => c.id)).toEqual(["mn:a", "mn:b"]);
   });
 });

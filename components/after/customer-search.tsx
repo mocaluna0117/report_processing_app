@@ -7,6 +7,7 @@ import type { Customer } from "@/lib/after/types";
 const SOURCE_BADGE: Record<Customer["source"], string> = {
   suketto: "助っ人",
   dx: "DX",
+  manual: "手入力",
 };
 
 /** 顧客の検索と選択 (氏名・カナ・PJ・物件名・住所・電話で探せる) */
@@ -18,6 +19,7 @@ export function CustomerSearch({
   onSelect,
   reviewOnly,
   onReviewOnlyChange,
+  onNew,
   limit = 50,
 }: {
   customers: Customer[];
@@ -27,6 +29,8 @@ export function CustomerSearch({
   onSelect: (id: string) => void;
   reviewOnly: boolean;
   onReviewOnlyChange: (value: boolean) => void;
+  /** 選択を外して、手入力で登録する欄を出す */
+  onNew: () => void;
   limit?: number;
 }) {
   // 入力のたびに全件を走査するので、描画は遅延させて入力を軽く保つ
@@ -42,9 +46,18 @@ export function CustomerSearch({
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4">
-      <label className="block text-sm font-medium" htmlFor="customer-search">
-        お客様を探す
-      </label>
+      <div className="flex items-center justify-between gap-2">
+        <label className="block text-sm font-medium" htmlFor="customer-search">
+          お客様を探す
+        </label>
+        <button
+          type="button"
+          onClick={onNew}
+          className="whitespace-nowrap rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+        >
+          ＋ 手入力で登録
+        </button>
+      </div>
       <input
         id="customer-search"
         type="search"
@@ -71,7 +84,9 @@ export function CustomerSearch({
       <ul className="mt-2 max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-md border border-slate-200">
         {matched.length === 0 && (
           <li className="px-3 py-4 text-center text-sm text-slate-400">
-            該当するお客様がいません
+            {customers.length === 0
+              ? "まだお客様がいません。顧客データを取り込むか、「お客様の情報」に手入力で登録してください"
+              : "該当するお客様がいません"}
           </li>
         )}
         {matched.map((customer) => {

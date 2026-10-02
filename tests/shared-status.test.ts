@@ -28,7 +28,7 @@ const report = (over: Partial<SyncReport> = {}): SyncReport => ({
   customers: { applied: 2, unmatched: 0, written: true },
   examples: { inquiry: { count: 8, written: false }, inspection: { count: 4, written: false } },
   ledger: { imported: [], pending: [], skipped: [], conflicts: [] },
-  customerLedger: { count: 5, applied: 0, written: false },
+  customerLedger: { count: 5, applied: 0, removed: 0, written: false },
   failures: [],
   ...over,
 });
@@ -256,10 +256,14 @@ describe("同期で顧客データが変わったか", () => {
 
   it("★手直し・台帳の JSON・顧客ファイル、どれで変わっても読み直す", () => {
     expect(changedCustomers({ ...base, customers: { applied: 1, unmatched: 0, written: false } })).toBe(true);
-    expect(changedCustomers({ ...base, customerLedger: { count: 5, applied: 5, written: false } })).toBe(true);
+    expect(changedCustomers({ ...base, customerLedger: { count: 5, applied: 5, removed: 0, written: false } })).toBe(true);
     expect(
       changedCustomers({ ...base, ledger: { ...base.ledger, imported: ["助っ人クラウド.xlsx を取り込みました"] } }),
     ).toBe(true);
+  });
+
+  it("★もう1台で消された手入力のお客様を消しただけでも読み直す（画面に残り続けないように）", () => {
+    expect(changedCustomers({ ...base, customerLedger: { count: 5, applied: 0, removed: 1, written: false } })).toBe(true);
   });
 });
 

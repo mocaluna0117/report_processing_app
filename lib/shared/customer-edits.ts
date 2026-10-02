@@ -55,7 +55,7 @@ const isSyncLike = (v: unknown): boolean =>
 export function isSharedCustomerEntry(v: unknown): v is SharedCustomerEntry {
   if (!isRecord(v)) return false;
   return (
-    (v.source === "dx" || v.source === "suketto") &&
+    (v.source === "dx" || v.source === "suketto" || v.source === "manual") &&
     typeof v.sourceKey === "string" &&
     isRecord(v.edits) &&
     isStamps(v.editStamps) &&
@@ -161,6 +161,20 @@ export function mergeCustomerEdits(
     out[id] = left && right ? mergeCustomerEntry(left, right) : (left ?? right);
   }
   return out;
+}
+
+/**
+ * 消したお客様の手直しを落とす（手入力のお客様を消したとき）。
+ * ★当てる先が無い手直しは「見つからない手直し」として数えられ続けるので、ファイルからも消す。
+ * ★落とすものが無ければ同じ参照を返す。
+ */
+export function withoutCustomerEdits(
+  edits: SharedCustomerEdits,
+  ids: readonly string[],
+): SharedCustomerEdits {
+  if (!ids.some((id) => id in edits)) return edits;
+  const drop = new Set(ids);
+  return Object.fromEntries(Object.entries(edits).filter(([id]) => !drop.has(id)));
 }
 
 /** 手直しのある顧客だけを取り出す（何も直していない顧客は載せない） */

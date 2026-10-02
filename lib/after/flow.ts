@@ -17,7 +17,8 @@ export const AFTER_STEPS: readonly FlowStepDef[] = [
   {
     id: "select",
     label: "お客様を選ぶ",
-    description: "氏名・カナ・PJ・物件名・住所・電話番号で探して、お客様を選びます。",
+    description:
+      "氏名・カナ・PJ・物件名・住所・電話番号で探して、お客様を選びます。顧客データに無いお客様は「お客様の情報」に手入力で登録できます。",
     targetId: "after-search",
   },
   {
@@ -72,12 +73,12 @@ export function afterFlow(input: AfterFlowInput): FlowPlan {
         ? { kind: "done", note: `${input.customerCount.toLocaleString()}件` }
         : {
             kind: "ready",
-            hint: "顧客情報の xlsx / csv を「顧客データ」の枠にドロップしてください (助っ人クラウド・点検保守台帳のどちらでも構いません)",
+            hint: "顧客情報の xlsx / csv を「顧客データ」の枠にドロップしてください (助っ人クラウド・点検保守台帳のどちらでも構いません)。台帳に無いお客様は「お客様の情報」に手入力で登録できます",
           };
 
   const select: StepEval =
     input.customerCount === 0
-      ? { kind: "ready", hint: "先に顧客データを取り込んでください" }
+      ? { kind: "ready", hint: "先に顧客データを取り込むか、「お客様の情報」に手入力で登録してください" }
       : input.hasSelected
         ? { kind: "done" }
         : {

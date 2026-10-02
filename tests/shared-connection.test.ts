@@ -35,7 +35,7 @@ const report = (over: Partial<SyncReport> = {}): SyncReport => ({
   customers: { applied: 0, unmatched: 0, written: false },
   examples: { inquiry: { count: 0, written: false }, inspection: { count: 0, written: false } },
   ledger: { imported: [], pending: [], skipped: [], conflicts: [] },
-  customerLedger: { count: 0, applied: 0, written: false },
+  customerLedger: { count: 0, applied: 0, removed: 0, written: false },
   failures: [],
   ...over,
 });

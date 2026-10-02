@@ -21,8 +21,22 @@ import {
   applySharedCustomerEdits,
   extractCustomerEdits,
 } from "@/lib/shared/customer-edits";
-import { type SharedLedger, extractLedger, sameLedgerSource, toCustomers } from "@/lib/shared/ledger";
-import { STORE_CUSTOMERS, request, withStore } from "@/lib/storage";
+import {
+  type LedgerSource,
+  type SharedLedger,
+  extractLedger,
+  mergeDeletedMarks,
+  sameLedgerSource,
+  toCustomers,
+} from "@/lib/shared/ledger";
+import {
+  SETTING_KEY_SHARED_MANUAL_DELETED,
+  STORE_CUSTOMERS,
+  loadMeta,
+  request,
+  saveMeta,
+  withStore,
+} from "@/lib/storage";
 
 export interface ImportReport {
   source: CustomerSource;
@@ -33,7 +47,7 @@ export interface ImportReport {
   imported: number;
   added: number;
   updated: number;
-  /** 全置換で消えた件数 (助っ人クラウドのみ) */
+  /** 全置換で消えた件数 (助っ人クラウドのみ。手入力は共有フォルダーで消された件数) */
   removed: number;
   /** 点検保守台帳と同じ物件だったので消した (取り込まなかった) 助っ人クラウドの件数 */
   dedupRemoved: number;
@@ -60,10 +74,12 @@ export async function countCustomers(): Promise<{
   lastImportedAt: number | null;
 }> {
   const customers = await loadCustomers();
-  const bySource: Record<CustomerSource, number> = { suketto: 0, dx: 0 };
+  const bySource: Record<CustomerSource, number> = { suketto: 0, dx: 0, manual: 0 };
   let lastImportedAt: number | null = null;
   for (const c of customers) {
     bySource[c.source] = (bySource[c.source] ?? 0) + 1;
+    // 手入力の登録は「取り込み」ではないので数えない
+    if (c.source === "manual") continue;
     if (lastImportedAt === null || c.importedAt > lastImportedAt) lastImportedAt = c.importedAt;
   }
   return { total: customers.length, bySource, lastImportedAt };
@@ -79,8 +95,12 @@ export async function countCustomers(): Promise<{
  * 点検保守台帳が正なので、同じ物件が両方にあれば助っ人クラウド側を消し、
  * 台帳が空欄の項目だけを助っ人クラウドから補う。
  * どちらを先に取り込んでも、また何度取り込み直しても同じ結果になるよう、毎回まとめて判定する。
+ *
+ * ★手入力で登録したお客様には触らない (消さない・重複の判定にも入れない)。
+ *   取り込み元のファイルに無いお客様なので、ファイルを取り込み直しても無くなってはいけない。
  */
 export async function saveImport(parsed: ParsedImport): Promise<ImportReport> {
+  if (parsed.source === "manual") throw new Error("手入力のお客様はファイルから取り込めません");
   const replaceAll = parsed.source === "suketto";
   let added = 0;
   let updated = 0;
@@ -93,7 +113,9 @@ export async function saveImport(parsed: ParsedImport): Promise<ImportReport> {
 
   // 解析はトランザクションの外で終えてあるので、ここでは IndexedDB の操作だけを流す
   await withStore(STORE_CUSTOMERS, "readwrite", async (store) => {
-    const existing = ((await request(store.getAll())) as Customer[]).map(normalizeStoredCustomer);
+    const existing = ((await request(store.getAll())) as Customer[])
+      .map(normalizeStoredCustomer)
+      .filter((c) => c.source !== "manual");
     const previous = new Map(existing.map((c) => [c.id, c]));
 
     // 取り込んだ分に、前回の修正・補完を引き継ぐ
@@ -168,6 +190,46 @@ export async function saveImport(parsed: ParsedImport): Promise<ImportReport> {
     needsReview: saved.filter(needsReview).length,
     skipped: parsed.skipped,
   };
+}
+
+/** 手入力で登録したお客様を保存する */
+export async function saveManualCustomer(customer: Customer): Promise<void> {
+  if (customer.source !== "manual") throw new Error("手入力のお客様ではありません");
+  await withStore(STORE_CUSTOMERS, "readwrite", (store) => {
+    store.put(customer);
+  });
+}
+
+/** この端末で消した手入力のお客様の印 (id → 消した時刻) */
+export async function loadManualDeleted(): Promise<Record<string, number>> {
+  const raw = await loadMeta<unknown>(SETTING_KEY_SHARED_MANUAL_DELETED);
+  return mergeDeletedMarks(
+    typeof raw === "object" && raw !== null && !Array.isArray(raw)
+      ? Object.fromEntries(
+          Object.entries(raw).filter(([, at]) => typeof at === "number" && Number.isFinite(at)),
+        )
+      : {},
+  );
+}
+
+/**
+ * 手入力で登録したお客様を1件消す。
+ * ★先に消した印を残してから消す。印が無いと、共有フォルダーの台帳から次の同期で戻ってくる
+ *   (印を残したあとで消すのに失敗しても、次の同期で印のとおりに消える)。
+ * ★取り込んだお客様は消さない (ファイルを取り込み直すと戻るので、消しても意味が無い)。
+ */
+export async function deleteManualCustomer(id: string, now: number = Date.now()): Promise<void> {
+  const current = (await withStore(STORE_CUSTOMERS, "readonly", (s) => request(s.get(id)))) as
+    | Customer
+    | undefined;
+  if (current && current.source !== "manual") throw new Error("手入力のお客様ではありません");
+  await saveMeta(
+    SETTING_KEY_SHARED_MANUAL_DELETED,
+    mergeDeletedMarks(await loadManualDeleted(), { [id]: now }),
+  );
+  await withStore(STORE_CUSTOMERS, "readwrite", (store) => {
+    store.delete(id);
+  });
 }
 
 /** 1件の修正を保存する (画面の顧客カードから) */
@@ -269,9 +331,9 @@ export async function clearTenmatsuStaff(
   return next;
 }
 
-/** 共有フォルダーに載せる形で、この端末の台帳を取り出す */
+/** 共有フォルダーに載せる形で、この端末の台帳を取り出す (手入力のお客様の消した印も載せる) */
 export async function loadSharedLedger(): Promise<SharedLedger> {
-  return extractLedger(await loadCustomers());
+  return extractLedger(await loadCustomers(), await loadManualDeleted());
 }
 
 /**
@@ -280,10 +342,12 @@ export async function loadSharedLedger(): Promise<SharedLedger> {
  * ★取り込みと同じ道を通す（saveImport）。手直しの引き継ぎ・重複の解消・空欄の補完が
  *   そのまま効くので、規則が二重にならない。
  * ★中身が同じ取り込み元は書き戻さない（数千件の書き戻しは重い）。
+ * ★手入力のお客様は取り込みの道を通さない（重複の判定・全置換の対象ではないため）。
  */
 export async function applySharedLedger(ledger: SharedLedger): Promise<ImportReport[]> {
   const mine = extractLedger(await loadCustomers());
   const reports: ImportReport[] = [];
+  if (ledger.manual) reports.push(await applyManualLedger(ledger.manual));
   for (const source of ["dx", "suketto"] as const) {
     const incoming = ledger[source];
     if (!incoming || incoming.customers.length === 0) continue;
@@ -300,6 +364,61 @@ export async function applySharedLedger(ledger: SharedLedger): Promise<ImportRep
     );
   }
   return reports;
+}
+
+/**
+ * 共有フォルダーの台帳の「手入力」の分をこの端末へ当てる。
+ * - 消した印は、この端末の印に重ねて残す (次にこの端末から書き出すときも印を運ぶため)
+ * - 印のあるお客様はこの端末からも消す
+ * - この端末に無いお客様は足す。あるお客様は手直しを残したまま、新しい方の登録内容に揃える
+ */
+async function applyManualLedger(incoming: LedgerSource): Promise<ImportReport> {
+  const before = await loadManualDeleted();
+  const deleted = mergeDeletedMarks(before, incoming.deleted);
+  if (JSON.stringify(deleted) !== JSON.stringify(before)) {
+    await saveMeta(SETTING_KEY_SHARED_MANUAL_DELETED, deleted);
+  }
+  let added = 0;
+  let updated = 0;
+  let removed = 0;
+  await withStore(STORE_CUSTOMERS, "readwrite", async (store) => {
+    const existing = ((await request(store.getAll())) as Customer[])
+      .filter((c) => c && typeof c.id === "string")
+      .map(normalizeStoredCustomer);
+    const byId = new Map(existing.map((c) => [c.id, c]));
+    for (const c of existing) {
+      if (c.source !== "manual" || !(c.id in deleted)) continue;
+      store.delete(c.id);
+      removed += 1;
+    }
+    for (const c of toCustomers(incoming)) {
+      if (c.source !== "manual" || c.id in deleted) continue;
+      const mine = byId.get(c.id);
+      if (!mine) {
+        store.put(c);
+        added += 1;
+      } else if (mine.source === "manual" && c.importedAt > mine.importedAt) {
+        store.put(mergeImported(mine, c));
+        updated += 1;
+      }
+    }
+  });
+  return {
+    source: "manual",
+    fileName: "共有フォルダー",
+    sheetName: null,
+    totalRows: incoming.customers.length,
+    imported: added + updated,
+    added,
+    updated,
+    removed,
+    dedupRemoved: 0,
+    supplemented: 0,
+    dedupUncertain: 0,
+    editsPreserved: 0,
+    needsReview: 0,
+    skipped: [],
+  };
 }
 
 /** 共有フォルダーに載せる形で、この端末の手直しを取り出す */
