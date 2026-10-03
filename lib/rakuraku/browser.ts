@@ -1,12 +1,13 @@
 import "server-only";
-import { mkdir, mkdtemp, rm, statfs } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { chmod, mkdir, mkdtemp, rm, statfs, writeFile } from "node:fs/promises";
 import { freemem, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
 import type { Browser } from "playwright-core";
 import { RakurakuError } from "./errors";
 import { log } from "./log";
 import { SlotTimeoutError, createSlots } from "./slots";
-import { type SweepReport, listBrowserTemp, sweepBrowserTemp } from "./tmp-sweep";
+import { CORE_DUMP_PATTERN, type SweepReport, listBrowserTemp, sweepBrowserTemp } from "./tmp-sweep";
 
 /**
  * 楽楽精算を操作するためのブラウザを起こす。
@@ -93,19 +94,25 @@ const CLOSE_WAIT_MS = 15_000;
 /**
  * 片付けたあとの /tmp の空きがこれより少なければ、起動しない（2026-10-03 のログで、46MB 以下では
  * 全部が起動直後に TARGET_CLOSED、それより多いときは全部動いた）。
+ * ★以前はここでプロセスを終えてインスタンスを入れ替えていたが、Vercel は返事のあと止めるので
+ *   終了が次の呼び出しのときに走り、その呼び出しが HTTP 500 になった。入れ替えはしない
  */
 const MIN_TMP_FREE_MB = 100;
-/** このインスタンスを入れ替えると決めたか（1回だけ） */
-let recycling = false;
 
 /**
- * /tmp が足りないインスタンスを入れ替える。★返事を返し終えてから、このプロセスを終える。
- * 次の呼び出しは新しいインスタンス（/tmp が空）で動く。同じプロセスでほかのブラウザが動いているときは呼ばない。
+ * コアダンプを書かせずに Chromium を起こすための小さな起動スクリプト（ulimit -c 0 → exec Chromium）。
+ *
+ * ★2026-10-03: Chromium（--single-process の headless shell）は終わるときに落ち、1回ごとに約200MB の
+ *   コアダンプを /tmp に残していた。2〜3回で /tmp が埋まり、次の起動が TARGET_CLOSED で落ちていた。
+ * ★/bin/sh が無い環境では作らず、Chromium をそのまま起こす（null）。
  */
-function recycleInstanceSoon(): void {
-  if (recycling) return;
-  recycling = true;
-  setTimeout(() => process.exit(0), 3_000).unref?.();
+export async function writeNoCoreLauncher(executablePath: string, dir: string): Promise<string | null> {
+  if (!existsSync("/bin/sh")) return null;
+  const path = join(dir, "chromium-nocore.sh");
+  const quoted = `'${executablePath.replace(/'/g, "'\\''")}'`;
+  await writeFile(path, `#!/bin/sh\nulimit -c 0\nexec ${quoted} "$@"\n`);
+  await chmod(path, 0o755);
+  return path;
 }
 
 /**
@@ -181,7 +188,9 @@ const extractChromium = sharedOnce(async () => {
   // ★args を読む前に決める（描画の設定で args が変わるため）
   sparticuz.setGraphicsMode = false;
   const executablePath = await sparticuz.executablePath();
-  return { executablePath, args: [...sparticuz.args] };
+  // ★コアダンプを書かせない起動スクリプトを通して起こす（作れなければそのまま）
+  const launcher = await writeNoCoreLauncher(executablePath, tmpdir()).catch(() => null);
+  return { executablePath: launcher ?? executablePath, args: [...sparticuz.args] };
 });
 
 /**
@@ -238,10 +247,9 @@ export async function launchBrowser(): Promise<LaunchedBrowser> {
       const freeAfter = sweep.n_tmp_free_after_mb;
       if (serverless && freeAfter !== undefined && freeAfter < MIN_TMP_FREE_MB && activeBrowsers === 0) {
         log("launch", { ...snapshot, ...sweep, ok: false, code: "TMP_FULL" });
-        recycleInstanceSoon();
         throw new RakurakuError(
           "BROWSER_LAUNCH_FAILED",
-          "Folio のサーバーの作業場所がいっぱいだったので、サーバーを入れ替えています。10秒ほど待ってから、もう一度押してください",
+          "Folio のサーバーの作業場所がいっぱいで、楽楽精算を開くブラウザを起動できませんでした。少し待ってからもう一度押してください",
           { retryable: true },
         );
       }
@@ -278,6 +286,8 @@ export async function launchBrowser(): Promise<LaunchedBrowser> {
           await rm(join(tmpdir(), name), { recursive: true, force: true }).catch(() => null);
           ownedTemp.delete(name);
         }
+        // ★終わるときに落ちて残ったコアダンプも、その場で消す（書かせない設定が効かなかったときの備え）
+        if (isServerless()) await sweepBrowserTemp(tmpdir(), { only: [CORE_DUMP_PATTERN] }).catch(() => null);
         activeBrowsers = Math.max(0, activeBrowsers - 1);
         release();
       }

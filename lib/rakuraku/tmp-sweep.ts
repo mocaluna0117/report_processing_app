@@ -16,6 +16,9 @@ import { join } from "node:path";
  * ★同じインスタンスでほかのブラウザが動いているときは、作ってから時間の経ったものだけ消す
  *   （動いているブラウザのプロファイルを消すと、そのブラウザが落ちる）。
  */
+/** コアダンプの名前（core / core.<番号> / core.<プログラム名>.<番号>） */
+export const CORE_DUMP_PATTERN = /^core(\..+)?$/;
+
 export const BROWSER_TEMP_PATTERNS: readonly RegExp[] = [
   /^playwright_chromiumdev_profile-/,
   /^playwright-artifacts-/,
@@ -27,7 +30,9 @@ export const BROWSER_TEMP_PATTERNS: readonly RegExp[] = [
   /^\.config$/,
   /^\.local$/,
   /^\.pki$/,
-  /^core(\.\d+)?$/,
+  // ★Chromium が終わるときに落ちて書き出すコアダンプ（core.chromium.<番号>）。1つで見かけ約1GB・実際に約200MB。
+  //   これが /tmp を埋めていた本当の原因（2026-10-03、tmp_top で確認）。以前は core.<番号> の形しか見ていなかった
+  CORE_DUMP_PATTERN,
 ];
 
 /** Chromium 本体の展開先（@sparticuz/chromium）。消さない。大きさだけ別に数える */

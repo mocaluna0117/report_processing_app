@@ -2,6 +2,8 @@ import { mkdtemp, mkdir, readdir, rm, utimes, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
+import { writeNoCoreLauncher } from "@/lib/rakuraku/browser";
 import { TMP_TOP_PATTERN } from "@/lib/rakuraku/log";
 import { isBrowserTemp, listBrowserTemp, shapeOf, sweepBrowserTemp } from "@/lib/rakuraku/tmp-sweep";
 
@@ -29,6 +31,10 @@ describe("ブラウザの一時フォルダーの片付け", () => {
     expect(isBrowserTemp("rakuraku-abc")).toBe(true);
     expect(isBrowserTemp(".cache")).toBe(true);
     expect(isBrowserTemp(".pki")).toBe(true);
+    // ★Chromium のコアダンプ（2026-10-03 に /tmp を埋めていた本当の原因）
+    expect(isBrowserTemp("core.chromium.12345")).toBe(true);
+    expect(isBrowserTemp("core")).toBe(true);
+    expect(isBrowserTemp("corefonts")).toBe(false);
     expect(isBrowserTemp("chromium")).toBe(false);
     expect(isBrowserTemp("al2023")).toBe(false);
   });
@@ -78,5 +84,24 @@ describe("ブラウザの一時フォルダーの片付け", () => {
 
   it("場所が無くても投げない", async () => {
     await expect(sweepBrowserTemp(join(base, "none"))).resolves.toMatchObject({ n_tmp_swept: 0 });
+  });
+});
+
+describe.skipIf(process.platform === "win32")("コアダンプを書かせない起動スクリプト", () => {
+  it("★コアダンプの上限を 0 にしてから、引数をそのまま渡して起こす", async () => {
+    const launcher = await writeNoCoreLauncher("/bin/sh", base);
+    expect(launcher).toBe(join(base, "chromium-nocore.sh"));
+    const run = spawnSync(launcher!, ["-c", 'ulimit -c; echo "$1 $2"', "x", "架空 の", "引数"], { encoding: "utf8" });
+    expect(run.stdout.trim().split("\n")).toEqual(["0", "架空 の 引数"]);
+  });
+
+  it("実行ファイルの場所に ' が入っていても壊れない", async () => {
+    const dir = join(base, "it's");
+    await mkdir(dir);
+    const target = join(dir, "echo.sh");
+    await writeFile(target, '#!/bin/sh\necho ok "$@"\n');
+    await import("node:fs/promises").then((fs) => fs.chmod(target, 0o755));
+    const launcher = await writeNoCoreLauncher(target, base);
+    expect(spawnSync(launcher!, ["a"], { encoding: "utf8" }).stdout.trim()).toBe("ok a");
   });
 });
