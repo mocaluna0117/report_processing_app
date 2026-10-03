@@ -71,9 +71,10 @@ export interface ExpenseReport {
 export interface BuildInput {
   year: number;
   month: number;
+  /** アフター進捗管理表の行（複数ファイルなら全部。行の fileNo でファイルを見分ける） */
   after: readonly ProgressRow[];
   noSite: readonly ProgressRow[];
-  /** 年次点検進捗管理表。選ばなかったら null */
+  /** 年次点検進捗管理表（複数ファイルなら全部）。選ばなかったら null */
   inspection: readonly ProgressRow[] | null;
   end: readonly EndRow[];
   tenmatsu: readonly TenmatsuEntry[];
@@ -269,6 +270,29 @@ function rowsOf(u: Unit, n: number): ReportRow[] {
   });
 }
 
+/** 受付を見分ける鍵（PJ・物件名・受付日・完了日・受付内容の1行目） */
+function caseKey(c: ProgressCase): string {
+  const h = c.head;
+  return [c.source, h.pjText.normalize("NFKC").replace(/\s/g, ""), propertyKey(h.propertyName), c.receivedAt, c.completedAt, firstLine(h.content)].join("|");
+}
+
+/** 別のファイルに同じ受付があれば、先に選んだファイルのほうを残す */
+export function dedupeCases(cases: readonly ProgressCase[]): { cases: ProgressCase[]; dropped: number } {
+  const seen = new Map<string, number | undefined>();
+  const out: ProgressCase[] = [];
+  let dropped = 0;
+  for (const c of cases) {
+    const key = caseKey(c);
+    if (seen.has(key) && seen.get(key) !== c.head.fileNo) {
+      dropped += 1;
+      continue;
+    }
+    if (!seen.has(key)) seen.set(key, c.head.fileNo);
+    out.push(c);
+  }
+  return { cases: out, dropped };
+}
+
 const fmtDate = (serial: number) => {
   const [y, m, d] = dateOf(serial);
   return `${y}/${m}/${d}`;
@@ -279,10 +303,18 @@ export function buildExpenseReport(input: BuildInput): ExpenseReport {
   const warnings: string[] = [];
   const isInspectionRow = (r: ProgressRow) => INSPECTION_TYPE.test(r.receptionType.normalize("NFKC").trim());
 
+  // ★期の変わり目などで同じ受付が2つのファイルに載っていたら、1つにまとめる
+  const after = dedupeCases(groupCases(input.after));
+  const inspection = dedupeCases(groupCases(input.inspection ?? []));
+  const merged = after.dropped + inspection.dropped;
+  if (merged > 0) {
+    warnings.push(`同じ受付が複数のファイルに載っていたので、1つにまとめました（${merged}件）`);
+  }
+
   let order = 0;
   const units: Unit[] = [
-    ...groupCases(input.after).map((c) => fromCase(c, order++)),
-    ...groupCases(input.inspection ?? []).map((c) => fromCase(c, order++)),
+    ...after.cases.map((c) => fromCase(c, order++)),
+    ...inspection.cases.map((c) => fromCase(c, order++)),
     ...groupCases(input.noSite.filter((r) => !isInspectionRow(r))).map((c) => fromCase(c, order++)),
     ...input.end.map((r) => fromEnd(r, order++)),
   ];

@@ -47,7 +47,16 @@ const NAME_HINTS: Record<SheetSlot, { must: RegExp; not?: RegExp }> = {
   end: { must: /エンド立[会合]/ },
 };
 
-/** 名前で見当を付ける。候補が複数なら更新日時が新しいもの。無ければ null */
+/** 名前の先頭の年月（「2026.4～…」なら 202604）。無ければ 0 */
+function periodOf(name: string): number {
+  const m = /(20\d{2})[.\-/年](\d{1,2})/.exec(name.normalize("NFKC"));
+  return m ? Number(m[1]) * 100 + Number(m[2]) : 0;
+}
+
+/**
+ * 名前で見当を付ける。候補が複数なら、名前の年月（期）が新しいもの → 更新日時が新しいもの。無ければ null。
+ * ★更新日時だけで選ぶと、前の期の表をあとから開いて保存しただけで、そちらを選んでしまう
+ */
 export function guessFile(files: readonly FolderXlsx[], slot: SheetSlot): FolderXlsx | null {
   const hint = NAME_HINTS[slot];
   const hits = files.filter((f) => {
@@ -55,7 +64,7 @@ export function guessFile(files: readonly FolderXlsx[], slot: SheetSlot): Folder
     return hint.must.test(name) && !(hint.not?.test(name) ?? false);
   });
   if (hits.length === 0) return null;
-  return [...hits].sort((a, b) => b.lastModified - a.lastModified)[0];
+  return [...hits].sort((a, b) => periodOf(b.name) - periodOf(a.name) || b.lastModified - a.lastModified)[0];
 }
 
 export const pathText = (path: readonly string[]) => path.join(" / ");

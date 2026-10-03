@@ -15,6 +15,11 @@ export interface ProgressRow {
   source: ProgressSource;
   /** シートの行番号（1始まり。画面の注意に出す） */
   rowNo: number;
+  /**
+   * 何番目に選んだファイルの行か（同じ表を複数ファイル選べる。2026-10-03）。
+   * ★ファイルの境目をまたいで★の続きにしない・同じ受付が2つのファイルにあれば1つにまとめる、に使う
+   */
+  fileNo?: number;
   /** ★の行か（物件数の列。★の無い行は直前の★の続き） */
   star: boolean;
   pjText: string;
@@ -207,7 +212,12 @@ export function groupCases(rows: readonly ProgressRow[]): ProgressCase[] {
   for (const row of rows) {
     const last = cases.at(-1);
     const continues =
-      anyStar && !row.star && last !== undefined && last.source === row.source && (!row.pjText || row.pjText === last.head.pjText);
+      anyStar &&
+      !row.star &&
+      last !== undefined &&
+      last.source === row.source &&
+      last.head.fileNo === row.fileNo &&
+      (!row.pjText || row.pjText === last.head.pjText);
     if (continues) last.rows.push(row);
     else cases.push({ source: row.source, rows: [row], head: row, receivedAt: null, completedAt: null });
   }

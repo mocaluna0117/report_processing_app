@@ -35,5 +35,11 @@ describe("共有フォルダーの中の xlsx", () => {
     // 同じ種類が2つなら、新しく更新した方
     expect(guessFile(files, "end")?.name).toBe("2026.4～エンド立会管理表（8期）.xlsx");
     expect(guessFile([], "end")).toBeNull();
+    // ★前の期の表をあとから保存して更新日時が新しくても、名前の年月が新しい期を選ぶ
+    const periods = [
+      { path: ["2026.4～アフター進捗管理表（8期）.xlsx"], name: "2026.4～アフター進捗管理表（8期）.xlsx", lastModified: 1 },
+      { path: ["2025.4～アフター進捗管理表（7期）.xlsx"], name: "2025.4～アフター進捗管理表（7期）.xlsx", lastModified: 9 },
+    ];
+    expect(guessFile(periods, "after")?.name).toBe("2026.4～アフター進捗管理表（8期）.xlsx");
   });
 });

@@ -166,6 +166,35 @@ describe("顛末書を結ぶ", () => {
   });
 });
 
+describe("複数のファイル（期をまたぐ月）", () => {
+  it("★2つのファイルの行をどちらも使う", () => {
+    const report = build({
+      after: [progress({ fileNo: 0, propertyName: "前の期", completedAt: d(8, 2) }), progress({ fileNo: 1, propertyName: "今の期", completedAt: d(8, 9) })],
+    });
+    expect(report.sections[0].rows.map((r) => r.propertyName)).toEqual(["前の期", "今の期"]);
+  });
+
+  it("★同じ受付が2つのファイルに載っていたら1つにまとめ、注意に出す（同じファイルの中の重なりはまとめない）", () => {
+    const same = { pjText: "1234-1", propertyName: "架空邸", receivedAt: d(7, 1), completedAt: d(8, 3), content: "架空の受付" };
+    const report = build({
+      // 先に選んだファイルに2件（同じファイルの中の重なりは残す）、あとのファイルに同じものが1件
+      after: [progress({ ...same, fileNo: 0 }), progress({ ...same, fileNo: 0 }), progress({ ...same, fileNo: 1 })],
+    });
+    expect(report.sections[0].rows).toHaveLength(2);
+    expect(report.warnings).toContain("同じ受付が複数のファイルに載っていたので、1つにまとめました（1件）");
+  });
+
+  it("★ファイルの境目をまたいで★の続きにしない", () => {
+    const report = build({
+      after: [
+        progress({ fileNo: 0, pjText: "1234-1", propertyName: "前の期の受付", completedAt: d(8, 2) }),
+        progress({ fileNo: 1, star: false, pjText: "1234-1", propertyName: "次のファイルの1行目", completedAt: d(8, 5) }),
+      ],
+    });
+    expect(report.sections[0].rows.map((r) => r.propertyName)).toEqual(["前の期の受付", "次のファイルの1行目"]);
+  });
+});
+
 describe("担当者別の件数", () => {
   it("★連名は 0.5 ずつ・役職は落とす・名簿に無い名前は注意に出す", () => {
     const report = build({

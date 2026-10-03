@@ -29,6 +29,14 @@ const WARN_CLASS = "mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-
 
 /** 選んだ表。共有フォルダーの中のファイルか、PC から選んだファイル */
 type Pick = { kind: "shared"; path: string[] } | { kind: "file"; file: File };
+type Picks = Record<SheetSlot, Pick[]>;
+
+/** 複数のファイルを選べる表（期をまたぐ月など。2026-10-03） */
+const MULTI_SLOTS: ReadonlySet<SheetSlot> = new Set(["after", "inspection"]);
+
+const pickKey = (pick: Pick) =>
+  pick.kind === "shared" ? `shared:${pick.path.join("/")}` : `file:${pick.file.name}:${pick.file.size}:${pick.file.lastModified}`;
+const pickName = (pick: Pick) => (pick.kind === "shared" ? pathText(pick.path) : `PC から選んだファイル: ${pick.file.name}`);
 
 const SLOT_LABELS: Record<SheetSlot, string> = {
   noSite: "進捗管理表（現場対応なし）",
@@ -39,19 +47,23 @@ const SLOT_LABELS: Record<SheetSlot, string> = {
 
 /** 前回選んだ場所（このブラウザだけの便利のため。読めなくても動く） */
 const PICKS_KEY = "folio:shishutsu:picks";
-function loadRememberedPicks(): Partial<Record<SheetSlot, string>> {
+function loadRememberedPicks(): Partial<Record<SheetSlot, string[]>> {
   try {
     const raw = window.localStorage.getItem(PICKS_KEY);
-    return raw ? (JSON.parse(raw) as Partial<Record<SheetSlot, string>>) : {};
+    const parsed = raw ? (JSON.parse(raw) as Partial<Record<SheetSlot, string | string[]>>) : {};
+    // 以前は1つずつ（文字列）で覚えていた
+    return Object.fromEntries(
+      Object.entries(parsed).map(([slot, v]) => [slot, Array.isArray(v) ? v : typeof v === "string" ? [v] : []]),
+    ) as Partial<Record<SheetSlot, string[]>>;
   } catch {
     return {};
   }
 }
-function rememberPicks(picks: Partial<Record<SheetSlot, Pick | null>>): void {
+function rememberPicks(picks: Picks): void {
   try {
-    const out: Partial<Record<SheetSlot, string>> = {};
-    for (const [slot, pick] of Object.entries(picks) as [SheetSlot, Pick | null][]) {
-      if (pick?.kind === "shared") out[slot] = pick.path.join("/");
+    const out: Partial<Record<SheetSlot, string[]>> = {};
+    for (const [slot, list] of Object.entries(picks) as [SheetSlot, Pick[]][]) {
+      out[slot] = list.flatMap((p) => (p.kind === "shared" ? [p.path.join("/")] : []));
     }
     window.localStorage.setItem(PICKS_KEY, JSON.stringify(out));
   } catch {
@@ -84,7 +96,7 @@ export function ShishutsuPage() {
   const [month, setMonth] = useState(initial.month);
   const [step, setStep] = useState<Step>("start");
   const [hadNoSite, setHadNoSite] = useState<boolean | null>(null);
-  const [picks, setPicks] = useState<Record<SheetSlot, Pick | null>>({ noSite: null, after: null, inspection: null, end: null });
+  const [picks, setPicks] = useState<Picks>({ noSite: [], after: [], inspection: [], end: [] });
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,9 +121,12 @@ export function ShishutsuPage() {
         setPicks((prev) => {
           const next = { ...prev };
           for (const slot of Object.keys(SLOT_LABELS) as SheetSlot[]) {
-            if (next[slot]?.kind === "file") continue;
-            const hit = files.find((f) => f.path.join("/") === remembered[slot]) ?? guessFile(files, slot);
-            next[slot] = hit ? { kind: "shared", path: hit.path } : null;
+            if (next[slot].some((p) => p.kind === "file")) continue;
+            const known = (remembered[slot] ?? [])
+              .map((path) => files.find((f) => f.path.join("/") === path))
+              .filter((f): f is FolderXlsx => f !== undefined);
+            const hits = known.length > 0 ? known : [guessFile(files, slot)].filter((f): f is FolderXlsx => f !== null);
+            next[slot] = (MULTI_SLOTS.has(slot) ? hits : hits.slice(0, 1)).map((f): Pick => ({ kind: "shared", path: f.path }));
           }
           return next;
         });
@@ -163,8 +178,10 @@ export function ShishutsuPage() {
     }
   };
 
-  const choose = (slot: SheetSlot, pick: Pick | null) => {
-    setPicks((prev) => ({ ...prev, [slot]: pick }));
+  /** その表の選び方を置き換える（複数を選べない表は先頭の1つだけ） */
+  const choose = (slot: SheetSlot, list: Pick[]) => {
+    const unique = list.filter((p, i) => list.findIndex((q) => pickKey(q) === pickKey(p)) === i);
+    setPicks((prev) => ({ ...prev, [slot]: MULTI_SLOTS.has(slot) ? unique : unique.slice(0, 1) }));
     setReport(null);
   };
 
@@ -178,21 +195,30 @@ export function ShishutsuPage() {
   const create = async () => {
     setError(null);
     setReport(null);
-    if (!picks.after) return setError("アフター進捗管理表を選んでください");
-    if (!picks.end) return setError("エンド立会管理表を選んでください");
-    if (hadNoSite && !picks.noSite) return setError("進捗管理表（現場対応なし）を選んでください（無かった月は「無かった」を選んでください）");
+    if (picks.after.length === 0) return setError("アフター進捗管理表を選んでください");
+    if (picks.end.length === 0) return setError("エンド立会管理表を選んでください");
+    if (hadNoSite && picks.noSite.length === 0) return setError("進捗管理表（現場対応なし）を選んでください（無かった月は「無かった」を選んでください）");
     if (tenmatsu.kind !== "ok") return setError("顛末書の記録を読めていません（下の「顛末書」の欄を見てください）");
     setBusy(true);
     try {
+      let fileNo = 0;
+      /** 選んだファイルを全部読む（行にファイルの番号を付ける）。1つも選んでいなければ null */
       const progress = async (slot: "after" | "noSite" | "inspection", source: ProgressRow["source"]) => {
-        const pick = picks[slot];
-        if (!pick) return null;
-        return readProgressSheet(await openSheets(await readPick(pick), password, SLOT_LABELS[slot]), source, SLOT_LABELS[slot]);
+        const list = picks[slot];
+        if (list.length === 0) return null;
+        const rows: ProgressRow[] = [];
+        for (const pick of list) {
+          const label = list.length > 1 ? `${SLOT_LABELS[slot]}（${pickName(pick)}）` : SLOT_LABELS[slot];
+          const no = fileNo++;
+          const read = readProgressSheet(await openSheets(await readPick(pick), password, label), source, label);
+          rows.push(...read.map((r) => ({ ...r, fileNo: no })));
+        }
+        return rows;
       };
       const after = (await progress("after", "after")) ?? [];
       const noSite = hadNoSite ? ((await progress("noSite", "noSite")) ?? []) : [];
       const inspection = await progress("inspection", "inspection");
-      const end = readEndSheet(await openSheets(await readPick(picks.end), password, SLOT_LABELS.end));
+      const end = readEndSheet(await openSheets(await readPick(picks.end[0]), password, SLOT_LABELS.end));
       const built = buildExpenseReport({ year, month, after, noSite, inspection, end, tenmatsu: tenmatsu.entries });
       const res = await fetch(EXPENSE_TEMPLATE_PATH, { cache: "no-store" });
       if (!res.ok) throw new Error(`支出報告書のひな形を読み込めませんでした（HTTP ${res.status}）`);
@@ -274,7 +300,7 @@ export function ShishutsuPage() {
             </button>
           </div>
           {hadNoSite && (
-            <SlotPicker slot="noSite" pick={picks.noSite} files={sharedFiles} sharedReady={sharedReady} onChange={choose} disabled={busy} />
+            <SlotPicker slot="noSite" picks={picks.noSite} files={sharedFiles} sharedReady={sharedReady} onChange={choose} disabled={busy} />
           )}
         </section>
       )}
@@ -300,9 +326,9 @@ export function ShishutsuPage() {
             </p>
           )}
           {sharedError && <p className={ERROR_CLASS}>{sharedError}</p>}
-          <SlotPicker slot="after" pick={picks.after} files={sharedFiles} sharedReady={sharedReady} onChange={choose} disabled={busy} />
-          <SlotPicker slot="inspection" pick={picks.inspection} files={sharedFiles} sharedReady={sharedReady} onChange={choose} disabled={busy} optional />
-          <SlotPicker slot="end" pick={picks.end} files={sharedFiles} sharedReady={sharedReady} onChange={choose} disabled={busy} />
+          <MultiSlotPicker slot="after" picks={picks.after} files={sharedFiles} sharedReady={sharedReady} onChange={choose} disabled={busy} />
+          <MultiSlotPicker slot="inspection" picks={picks.inspection} files={sharedFiles} sharedReady={sharedReady} onChange={choose} disabled={busy} optional />
+          <SlotPicker slot="end" picks={picks.end} files={sharedFiles} sharedReady={sharedReady} onChange={choose} disabled={busy} />
           <label className="mt-4 block text-sm">
             <span className="mb-1 block font-medium">パスワード付きの表のパスワード</span>
             <input
@@ -333,23 +359,28 @@ export function ShishutsuPage() {
   );
 }
 
-function SlotPicker(props: {
+type SlotPickerProps = {
   slot: SheetSlot;
-  pick: Pick | null;
+  picks: Pick[];
   files: FolderXlsx[] | null;
   sharedReady: boolean;
-  onChange: (slot: SheetSlot, pick: Pick | null) => void;
+  onChange: (slot: SheetSlot, list: Pick[]) => void;
   disabled: boolean;
   optional?: boolean;
-}) {
-  const { slot, pick, files, sharedReady, onChange, disabled, optional } = props;
+};
+
+const XLSX_ACCEPT = ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+/** 1つだけ選ぶ表（現場対応なし・エンド立会） */
+function SlotPicker({ slot, picks, files, sharedReady, onChange, disabled, optional }: SlotPickerProps) {
   const id = `shishutsu-${slot}`;
+  const pick = picks[0] ?? null;
   const value = pick?.kind === "shared" ? pick.path.join("/") : pick?.kind === "file" ? "__file" : "";
   return (
     <div className="mt-4">
       <label htmlFor={id} className="block text-sm font-medium">
         {SLOT_LABELS[slot]}
-        {optional && <span className="ml-2 text-xs font-normal text-slate-500">（無ければ選ばない。1T・2T・３ヶ月の行が入りません）</span>}
+        {optional && <span className="ml-2 text-xs font-normal text-slate-500">（無ければ選ばない）</span>}
       </label>
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <select
@@ -361,7 +392,7 @@ function SlotPicker(props: {
             const v = e.target.value;
             if (v === "__file") return;
             const hit = files?.find((f) => f.path.join("/") === v);
-            onChange(slot, hit ? { kind: "shared", path: hit.path } : null);
+            onChange(slot, hit ? [{ kind: "shared", path: hit.path }] : []);
           }}
         >
           <option value="">（選ばない）</option>
@@ -370,18 +401,93 @@ function SlotPicker(props: {
               {pathText(f.path)}
             </option>
           ))}
-          {pick?.kind === "file" && <option value="__file">PC から選んだファイル: {pick.file.name}</option>}
+          {pick?.kind === "file" && <option value="__file">{pickName(pick)}</option>}
         </select>
         <label className={`${SECONDARY_BUTTON_CLASS} cursor-pointer px-3 py-1.5 text-xs`}>
           PC から選ぶ
           <input
             type="file"
-            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            accept={XLSX_ACCEPT}
             className="sr-only"
             disabled={disabled}
             onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file) onChange(slot, { kind: "file", file });
+              if (file) onChange(slot, [{ kind: "file", file }]);
+              e.target.value = "";
+            }}
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 複数選べる表（アフター進捗・年次点検）。選んだファイルを並べ、足す・外すができる。
+ * ★期をまたぐ月は前の期と今の期の両方を選ぶ（同じ受付が両方にあれば1つにまとめる）
+ */
+function MultiSlotPicker({ slot, picks, files, sharedReady, onChange, disabled, optional }: SlotPickerProps) {
+  const id = `shishutsu-${slot}`;
+  const chosen = new Set(picks.map(pickKey));
+  const rest = (files ?? []).filter((f) => !chosen.has(pickKey({ kind: "shared", path: f.path })));
+  return (
+    <div className="mt-4">
+      <p id={`${id}-label`} className="text-sm font-medium">
+        {SLOT_LABELS[slot]}
+        <span className="ml-2 text-xs font-normal text-slate-500">
+          （複数選べます。期をまたぐ月は前の期の表も足してください{optional ? "。1つも選ばなければ 1T・2T・３ヶ月の行は入りません" : ""}）
+        </span>
+      </p>
+      {picks.length === 0 ? (
+        <p className="mt-1 text-sm text-slate-500">まだ選んでいません</p>
+      ) : (
+        <ul className="mt-1 space-y-1" aria-labelledby={`${id}-label`}>
+          {picks.map((pick) => (
+            <li key={pickKey(pick)} className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="min-w-0 break-all rounded border border-slate-200 bg-slate-50 px-2 py-1">{pickName(pick)}</span>
+              <button
+                type="button"
+                className="cursor-pointer text-xs font-semibold text-slate-600 underline hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={disabled}
+                aria-label={`${pickName(pick)} を外す`}
+                onClick={() => onChange(slot, picks.filter((p) => pickKey(p) !== pickKey(pick)))}
+              >
+                外す
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <select
+          id={id}
+          aria-label={`${SLOT_LABELS[slot]}を足す`}
+          className={`${INPUT_CLASS} max-w-full sm:w-[34rem]`}
+          value=""
+          disabled={disabled || !sharedReady || rest.length === 0}
+          onChange={(e) => {
+            const hit = files?.find((f) => f.path.join("/") === e.target.value);
+            if (hit) onChange(slot, [...picks, { kind: "shared", path: hit.path }]);
+          }}
+        >
+          <option value="">{sharedReady ? "共有フォルダーから足す…" : "（共有フォルダーにつなぐと選べます）"}</option>
+          {rest.map((f) => (
+            <option key={f.path.join("/")} value={f.path.join("/")}>
+              {pathText(f.path)}
+            </option>
+          ))}
+        </select>
+        <label className={`${SECONDARY_BUTTON_CLASS} cursor-pointer px-3 py-1.5 text-xs`}>
+          PC から足す
+          <input
+            type="file"
+            accept={XLSX_ACCEPT}
+            multiple
+            className="sr-only"
+            disabled={disabled}
+            onChange={(e) => {
+              const added = [...(e.target.files ?? [])].map((file): Pick => ({ kind: "file", file }));
+              if (added.length > 0) onChange(slot, [...picks, ...added]);
               e.target.value = "";
             }}
           />
