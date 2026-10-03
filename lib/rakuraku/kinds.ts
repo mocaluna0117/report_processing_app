@@ -332,6 +332,45 @@ export const KINDS: Readonly<Record<KindId, RakurakuKind>> = {
       copyFromLinked: ["payee", "amount"],
     },
   },
+
+  seikyu: {
+    id: "seikyu",
+    label: "請求書作成依頼書",
+    filePrefix: "請求書作成依頼書№",
+    // ★ワークフロー側だけ（2026-10-04 利用者の決定）。一覧の workflowId=5 は利用者が楽楽精算で確かめた値
+    routes: [
+      {
+        id: "shinsei",
+        label: ROUTE_LABELS.shinsei,
+        scope: "own",
+        listPath: "sapWorkflowShinseiKensaku/initializeView?workflowId=5&refId=5",
+        listUrlMarker: "sapWorkflowShinseiKensaku",
+        menuText: "請求書作成依頼書",
+        menuSteps: [{ text: "ワークフロー" }, { text: "業務" }, { text: "一覧", near: "請求書作成依頼書" }],
+        menuStepWaitMs: 5_000,
+        detailUrlMarker: "sapWorkflowDenpyo/detailView",
+      },
+    ],
+    list: {
+      ...LIST_BASE,
+      // 一覧の見出しは利用者が確かめた表記（合計は「合計④(税込)」）
+      columns: {
+        shinsei_date: "申請日",
+        shinseisha: "申請者",
+        customer_name: "得意先名",
+        property_name: "物件名",
+        billing_date: "請求日付(契約日)",
+        amount: "合計④(税込)",
+      },
+    },
+    detail: {
+      ...DETAIL_BASE,
+      // ★伝票画面は「1.」「2.」…と明細が並び、それぞれに請求種別・①金額(税抜)がある。
+      //   pickLabeledValue は最初に見つかった値を返すので、1つ目の明細の値になる（利用者の決定どおり）
+      labels: { shinsei_date: "申請日", billing_type: "請求種別", amount_ex_tax: "①金額(税抜)" },
+    },
+    keepParts: false,
+  },
 };
 
 /** 種類の設定。★知らない種類は受け付けない（黙って顛末書に落とさない） */

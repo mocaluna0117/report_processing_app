@@ -277,6 +277,36 @@ describe.skipIf(!browser)("紐づく伝票を一覧から探す（捺印決裁�
   }, 60_000);
 });
 
+describe.skipIf(!browser)("請求書作成依頼書の一覧（2026-10-04）", () => {
+  it("★得意先名・物件名・請求日付(契約日)・合計④(税込)を見出しの文字で読む（見出しの括弧が全角でも）", async () => {
+    const page = await browser!.newPage();
+    await page.goto(`${server!.url}/seikyu_list.html`, { waitUntil: "load" });
+    const seikyu = resolveKind(KINDS.seikyu, KINDS.seikyu.routes[0]);
+    const rows = await readTableRows(await contentFrame(page), seikyu);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      denpyo_no: "SK00009101",
+      status: "承認済",
+      shinsei_date: "2026/09/30",
+      shinseisha: "架空 三郎",
+      customer_name: "架空工務店",
+      property_name: "架空台3丁目A号棟",
+      billing_date: "2026/09/01",
+      amount: "330,000",
+    });
+    expect(rows[0].href).toContain("sapWorkflowDenpyo/detailView");
+    await page.close();
+  });
+
+  it("顛末書の一覧の見出しは今までどおり読める（全角半角をそろえても変わらない）", async () => {
+    const page = await openList();
+    const rows = await readTableRows(await contentFrame(page), kind);
+    expect(rows[0]).toMatchObject({ denpyo_no: "TE00009001" });
+    expect(rows[0].amount).toBeTruthy();
+    await page.close();
+  });
+});
+
 describe.skipIf(!browser)("頼まれた伝票をまとめて一覧から探す（読み直し）", () => {
   it("★全部見つかったら、それ以上ページを送らない", async () => {
     const page = await openList({ pages: 4 });

@@ -194,7 +194,7 @@ describe("受け取った中身の検査（サーバーで通す）", () => {
   });
 
   it("画面の選択肢は、ヘッダーの画面と「分からない」", () => {
-    expect(CONTACT_PAGES.map((p) => p.path)).toEqual(["/", "/after", "/tenmatsu", "/senketsu", "/natsuin", ""]);
+    expect(CONTACT_PAGES.map((p) => p.path)).toEqual(["/", "/after", "/tenmatsu", "/senketsu", "/natsuin", "/seikyu", ""]);
     expect(CONTACT_CATEGORIES.map((c) => c.label)).toEqual(["不具合", "改善の要望", "質問", "その他"]);
   });
 });

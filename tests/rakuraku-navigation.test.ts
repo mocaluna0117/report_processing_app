@@ -232,6 +232,16 @@ describe.skipIf(!browser)("メニュー多段: ワークフロー → 押印の�
   });
 });
 
+describe.skipIf(!browser)("メニュー多段: ワークフロー → 業務 → 請求書作成依頼書の「一覧」（2026-10-04）", () => {
+  it("★3段たどって請求書作成依頼書の一覧を開ける（隣の「一覧」を押さない）", async () => {
+    const page = await open("menu_steps.html");
+    const location = await gotoList(page, menuKind(KINDS.seikyu), tenant(), { log, timing: QUICK });
+    expect(location.frame.url()).toContain("wf=seikyu");
+    expect(location.frame.url()).toContain("clicks=3");
+    await page.close();
+  });
+});
+
 describe.skipIf(!browser)("一覧へ直接移動し、本当に一覧かを確かめる", () => {
   it("トップ（frameset）の中で一覧へ移動できる", async () => {
     const page = await open("top_frameset.html");

@@ -57,7 +57,9 @@ export function tenmatsuStepDefs(kind: DocKind): FlowStepDef[] {
       ? "取得した直後はすべて「アップロード待ち」です。一覧の「書類を足す」から書類を入れて確定すると、保存先フォルダーに入ります。"
       : kind.id === "tenmatsu"
         ? "取得したPDFは保存先フォルダーにあります。実行予算の入力とクラウド格納が済んだら、一覧の右端の印を押して記録します。"
-        : "取得したPDFは保存先フォルダーにあります。クラウド格納が済んだら、一覧の右端の印を押して記録します。";
+        : kind.id === "seikyu"
+          ? "取得したPDFは保存先フォルダーにあります。お客様への送付とクラウド格納が済んだら、一覧の右端の印を押して記録します。"
+          : "取得したPDFは保存先フォルダーにあります。クラウド格納が済んだら、一覧の右端の印を押して記録します。";
   return [
     {
       id: "folder",
@@ -231,6 +233,7 @@ const KIND_LABELS: Record<DocKindId, string> = {
   tenmatsu: "顛末書",
   senketsu: "専決決裁書",
   natsuin: "捺印決裁書",
+  seikyu: "請求書作成依頼書",
 };
 const otherLabel = (id: DocKindId) => KIND_LABELS[id];
 

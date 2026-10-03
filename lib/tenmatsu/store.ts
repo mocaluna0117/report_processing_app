@@ -15,6 +15,8 @@ import {
   META_SENKETSU_LIST,
   META_TENMATSU_LIST,
   SETTING_KEY_NATSUIN_MAX_PER_RUN,
+  META_SEIKYU_LIST,
+  SETTING_KEY_SEIKYU_MAX_PER_RUN,
   SETTING_KEY_RAKURAKU_CREDENTIAL_PREFIX,
   SETTING_KEY_RAKURAKU_USER_ID,
   SETTING_KEY_SENKETSU_MAX_PER_RUN,
@@ -72,6 +74,16 @@ const KEYS: Record<
     dept: "natsuin:dept",
     pdfStats: "natsuin:pdfStats",
     route: "natsuin:route",
+  },
+  seikyu: {
+    list: META_SEIKYU_LIST,
+    maxPerRun: SETTING_KEY_SEIKYU_MAX_PER_RUN,
+    source: "seikyu:source",
+    folder: "seikyu:folder",
+    folderList: "seikyu:folderList",
+    dept: "seikyu:dept",
+    pdfStats: "seikyu:pdfStats",
+    route: "seikyu:route",
   },
 };
 

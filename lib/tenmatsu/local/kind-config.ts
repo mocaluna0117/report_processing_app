@@ -68,13 +68,15 @@ const PROCESSED_FILES: Record<KindId, string> = {
   tenmatsu: "processed.json",
   senketsu: "processed_senketsu.json",
   natsuin: "processed_natsuin.json",
+  seikyu: "processed_seikyu.json",
 };
 
-/** 完了の印。★顛末書だけ実行予算の入力がある（専決決裁書・捺印決裁書はクラウド格納だけ） */
+/** 完了の印。★顛末書は実行予算、請求書作成依頼書はお客様送付がある（専決決裁書・捺印決裁書はクラウド格納だけ） */
 const FLAG_KEYS: Record<KindId, readonly FlagKey[]> = {
   tenmatsu: ["budget_entered", "cloud_stored"],
   senketsu: ["cloud_stored"],
   natsuin: ["cloud_stored"],
+  seikyu: ["sent_to_customer", "cloud_stored"],
 };
 
 function build(id: KindId): LocalKindConfig {
@@ -99,4 +101,5 @@ export const LOCAL_KINDS: Readonly<Record<KindId, LocalKindConfig>> = {
   tenmatsu: build("tenmatsu"),
   senketsu: build("senketsu"),
   natsuin: build("natsuin"),
+  seikyu: build("seikyu"),
 };

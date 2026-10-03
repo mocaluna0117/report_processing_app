@@ -96,6 +96,16 @@ function present(cfg: LocalKindConfig, entry: Entry): Partial<ListItem> {
         amount: text(entry.amount),
         property_name: parseLabeledField(text(entry[detail.propertyNameSource ?? "content"]), label),
       };
+    case "seikyu":
+      // 物件名・得意先名・請求日付・合計は一覧の列、請求種別・金額(税抜)は伝票画面の1つ目の明細
+      return {
+        customer_name: text(entry.customer_name),
+        property_name: text(entry.property_name),
+        billing_date: text(entry.billing_date),
+        amount: text(entry.amount),
+        amount_ex_tax: text(entry.amount_ex_tax),
+        billing_type: text(entry.billing_type),
+      };
   }
 }
 

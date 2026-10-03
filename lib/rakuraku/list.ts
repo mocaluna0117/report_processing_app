@@ -78,7 +78,8 @@ export async function readTableRows(frame: Frame, kind: ResolvedKind): Promise<L
       const title = (el.getAttribute("title") || "").trim().replace(/\s+/g, " ");
       return title.length > shown.length ? title : shown;
     };
-    const norm = (s: string) => s.replace(/[\s\u3000.]/g, "");
+    // ★全角・半角の違い（「（税込）」と「(税込)」、丸数字）は同じに見る。両側に同じ変換をかける（2026-10-04）
+    const norm = (s: string) => s.normalize("NFKC").replace(/[\s\u3000.]/g, "");
     // 完全一致を優先し、見つからなければ双方向の部分一致（「伝票No.」「伝票番号」等の揺れ）
     const findCol = (cells: string[], want: string) => {
       const w = norm(want);

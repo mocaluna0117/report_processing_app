@@ -101,6 +101,53 @@ describe("一覧を組み立てる（顛末書）", () => {
   });
 });
 
+describe("一覧を組み立てる（請求書作成依頼書）", () => {
+  it("★得意先名・物件名・請求日付・合計(税込)・金額(税抜)・請求種別を出し、印はお客様送付とクラウド格納の2つで完了を決める", async () => {
+    const { store, cache } = setup("請求書作成依頼書");
+    const seikyu = LOCAL_KINDS.seikyu;
+    await appendProcessed(
+      store,
+      seikyu,
+      "SK1",
+      "請求書作成依頼書№0001.pdf",
+      {
+        customer_name: "架空工務店",
+        property_name: "架空台3丁目A号棟",
+        billing_date: "2026/09/30",
+        amount: "110,000",
+        amount_ex_tax: "100,000",
+        billing_type: "完工金",
+        // 記録に残さない項目は落ちる
+        where: "注文受注物件：架空",
+      },
+      at(1),
+    );
+    let [item] = await buildListItems(store, seikyu, cache);
+    expect(item).toMatchObject({
+      customer_name: "架空工務店",
+      property_name: "架空台3丁目A号棟",
+      billing_date: "2026/09/30",
+      amount: "110,000",
+      amount_ex_tax: "100,000",
+      billing_type: "完工金",
+      sent_to_customer: false,
+      cloud_stored: false,
+      completed: false,
+    });
+    expect("budget_entered" in item || "pj" in item || "supervisor" in item).toBe(false);
+    expect(isListItemLike(item)).toBe(true);
+
+    await setFlags(store, seikyu, "SK1", { sent_to_customer: true }, at(2));
+    [item] = await buildListItems(store, seikyu, cache);
+    expect(item).toMatchObject({ sent_to_customer: true, cloud_stored: false, completed: false });
+    await setFlags(store, seikyu, "SK1", { cloud_stored: true }, at(3));
+    [item] = await buildListItems(store, seikyu, cache);
+    expect(item.completed).toBe(true);
+    // 顛末書の印は請求書作成依頼書には付けられない
+    await expect(setFlags(store, seikyu, "SK1", { budget_entered: true }, at(4))).rejects.toThrow();
+  });
+});
+
 describe("一覧を組み立てる（専決決裁書・捺印決裁書）", () => {
   it("★専決決裁書は表題と「内容」からの物件名。どこで・監督・営業・PJ はキーごと持たない", async () => {
     const { store, cache } = setup("専決決裁書");

@@ -20,14 +20,15 @@ const DETAIL_PATHS: Record<KindId, Partial<Record<RouteId, string>>> = {
     shinsei: "sapWorkflowDenpyo/detailView?tmpFlg=false&eDenpyoNo=SE00009001&workflowId=3&refId=3",
   },
   natsuin: { shinsei: "sapWorkflowDenpyo/detailView?tmpFlg=false&eDenpyoNo=NK00009001&workflowId=8&refId=8" },
+  seikyu: { shinsei: "sapWorkflowDenpyo/detailView?tmpFlg=false&eDenpyoNo=SK00009001&workflowId=5&refId=5" },
 };
 
 const routesOf = (kind: { id: KindId; routes: readonly ListRoute[] }) =>
   kind.routes.map((route) => ({ route, detailPath: DETAIL_PATHS[kind.id][route.id] }));
 
 describe("種類ごとの画面の設定", () => {
-  it("3種類がそろっている", () => {
-    expect(Object.keys(KINDS).sort()).toEqual(["natsuin", "senketsu", "tenmatsu"]);
+  it("4種類がそろっている", () => {
+    expect(Object.keys(KINDS).sort()).toEqual(["natsuin", "seikyu", "senketsu", "tenmatsu"]);
   });
 
   for (const kind of Object.values(KINDS)) {
@@ -104,7 +105,7 @@ describe("★種類をまたいで設定が漏れない", () => {
   it("「どこで」と PJ は顛末書だけ", () => {
     expect(KINDS.tenmatsu.detail.labels).toHaveProperty("where");
     expect(KINDS.tenmatsu.detail.labels).toHaveProperty("pj");
-    for (const id of ["senketsu", "natsuin"] as const) {
+    for (const id of ["senketsu", "natsuin", "seikyu"] as const) {
       expect(KINDS[id].detail.labels).not.toHaveProperty("where");
       expect(KINDS[id].detail.labels).not.toHaveProperty("pj");
       expect(KINDS[id].list.columns).not.toHaveProperty("where");
@@ -114,7 +115,7 @@ describe("★種類をまたいで設定が漏れない", () => {
   it("合成（捺印決裁書が専決決裁書を取り込む）と部品の保持は捺印決裁書だけ", () => {
     expect(KINDS.natsuin.compose).toBeDefined();
     expect(KINDS.natsuin.keepParts).toBe(true);
-    for (const id of ["tenmatsu", "senketsu"] as const) {
+    for (const id of ["tenmatsu", "senketsu", "seikyu"] as const) {
       expect(KINDS[id].compose).toBeUndefined();
       expect(KINDS[id].keepParts).toBe(false);
     }
@@ -162,5 +163,25 @@ describe("種類の取り出し", () => {
   it("★知らない種類は黙って顛末書に落とさず、止める", () => {
     expect(() => getKind("unknown")).toThrow("知らない種類");
     expect(isKindId("")).toBe(false);
+  });
+});
+
+describe("請求書作成依頼書（2026-10-04）", () => {
+  const k = KINDS.seikyu;
+  it("★ワークフロー側だけ・一覧は workflowId=5（利用者が確かめた値）", () => {
+    expect(k.routes.map((r) => r.id)).toEqual(["shinsei"]);
+    expect(k.routes[0].listPath).toContain("workflowId=5&refId=5");
+    expect(k.routes[0].unverified).toBeUndefined();
+    expect(k.routes[0].menuSteps?.map((s) => s.text)).toEqual(["ワークフロー", "業務", "一覧"]);
+  });
+  it("★一覧から得意先名・物件名・請求日付(契約日)・合計④(税込)、伝票画面から請求種別・①金額(税抜)を読む", () => {
+    expect(k.list.columns).toMatchObject({
+      customer_name: "得意先名",
+      property_name: "物件名",
+      billing_date: "請求日付(契約日)",
+      amount: "合計④(税込)",
+    });
+    expect(k.detail.labels).toMatchObject({ billing_type: "請求種別", amount_ex_tax: "①金額(税抜)" });
+    expect(k.keepParts).toBe(false);
   });
 });

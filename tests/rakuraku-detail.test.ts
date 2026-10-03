@@ -157,6 +157,17 @@ describe.skipIf(!browser)("伝票画面から項目を読む", () => {
     await page.close();
   });
 
+  it("★請求書作成依頼書: 明細が複数あっても、請求種別と①金額(税抜)は1つ目の明細の値を読む（④金額(税込)に当たらない）", async () => {
+    const page = await open("seikyu_detail.html");
+    const fields = await readDetailFields(page.mainFrame(), KINDS.seikyu);
+    expect(fields).toEqual({
+      shinsei_date: "2026/09/30 09:15:00",
+      billing_type: "着手金",
+      amount_ex_tax: "100,000",
+    });
+    await page.close();
+  });
+
   it("★表が遅れて描かれる画面は、描かれるまで待ってから読む（待たないと申請日が空になる）", async () => {
     // ほかの検証と並んで走ると読み込みが遅れるので、描かれるまでの遅れを長めにとる
     const page = await open("slow_detail.html?late=4000");

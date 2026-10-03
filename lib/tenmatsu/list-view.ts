@@ -23,7 +23,7 @@ import {
  * 一覧の絞り込み。completed は「全部 true」なので、フラグの絞り込みとは排他になる。
  * **全種類の値を並べた閉じた合併**にしておく (綴り違いを型で捕まえる)。
  */
-export type ListFilter = "all" | "budget" | "cloud";
+export type ListFilter = "all" | "budget" | "cloud" | "sent";
 
 /** 絞り込み1つ分。flagKey が null なら「すべて」 */
 export interface ListFilterDef {
@@ -74,6 +74,10 @@ const SEARCH_FIELDS = [
   "title",
   "content",
   "senketsu_no",
+  "customer_name",
+  "billing_type",
+  "billing_date",
+  "amount_ex_tax",
   "pj",
   "payee",
   "shinseisha",

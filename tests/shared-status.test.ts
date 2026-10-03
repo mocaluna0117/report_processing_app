@@ -223,9 +223,9 @@ describe("共有フォルダーの顧客ファイル", () => {
 });
 
 describe("ヘッダーから開くモーダル", () => {
-  it("★つながりが1つであることと、専決・捺印では同期しないことを先に言う", () => {
+  it("★つながりが1つであることと、専決・捺印・請求書作成依頼書では同期しないことを先に言う", () => {
     expect(SHARED_DIALOG_LEAD).toContain("Folio 全体で1つ");
-    expect(SHARED_DIALOG_LEAD).toContain("専決決裁書・捺印決裁書では同期しません");
+    expect(SHARED_DIALOG_LEAD).toContain("専決決裁書・捺印決裁書・請求書作成依頼書では同期しません");
   });
 
   it("はじめの説明は、台帳も共有することを書く（手直しだけと言わない）", () => {
@@ -243,6 +243,7 @@ describe("共有フォルダーのデータを使う画面", () => {
   it("★専決決裁書・捺印決裁書・ログインの画面は使わない（自動で同期しない）", () => {
     expect(usesSharedFolder("/senketsu")).toBe(false);
     expect(usesSharedFolder("/natsuin")).toBe(false);
+    expect(usesSharedFolder("/seikyu")).toBe(false);
     expect(usesSharedFolder("/login")).toBe(false);
   });
 });

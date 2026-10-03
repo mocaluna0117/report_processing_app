@@ -10,10 +10,10 @@ import type { SurveyReport } from "@/lib/rakuraku/parse/survey";
 
 export type { SurveyReport } from "@/lib/rakuraku/parse/survey";
 
-export type KindId = "tenmatsu" | "senketsu" | "natsuin";
+export type KindId = "tenmatsu" | "senketsu" | "natsuin" | "seikyu";
 
 export function isKindId(value: unknown): value is KindId {
-  return value === "tenmatsu" || value === "senketsu" || value === "natsuin";
+  return value === "tenmatsu" || value === "senketsu" || value === "natsuin" || value === "seikyu";
 }
 
 /**

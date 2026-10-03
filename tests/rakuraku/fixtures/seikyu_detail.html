@@ -1,0 +1,60 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>請求書作成依頼書 詳細</title>
+<!--
+  楽楽精算の請求書作成依頼書の伝票画面の「構造」を写したテスト用ページ（2026-10-04、利用者の画面の写真から）。
+  データはすべて架空。実在の得意先名・物件名・申請者名は含まない。
+
+  確認したいこと:
+    - 明細が「1.」「2.」…と並び、それぞれに 請求種別 / ①金額(税抜) / ②税率 / ③消費税 / ④金額(税込) がある
+    - ★請求種別と①金額(税抜)は **1つ目の明細の値** を読む（利用者の決定。2つ目以降は読まない）
+    - 「①金額(税抜)」を探して「④金額(税込)」に当たらない
+    - 丸数字・括弧が全角でも半角でも同じに読む
+-->
+<body>
+<form name="sapWorkflowDenpyoActionForm" method="post" action="/dummy/sapWorkflowDenpyo/initializeView">
+
+<table class="d_table_contents">
+  <tr><th>伝票No.</th><td>SK00001001</td></tr>
+  <tr><th>申請者</th><td>架空 三郎(990033)</td></tr>
+  <tr><th>申請日</th><td>2026/09/30 09:15:00</td></tr>
+  <tr><th>得意先名</th><td>架空工務店</td></tr>
+  <tr><th>物件名</th><td>架空台3丁目A号棟</td></tr>
+
+  <!-- 明細 1. -->
+  <tr><th colspan="2">1.</th></tr>
+  <tr><th>請求種別</th><td>着手金</td></tr>
+  <tr><th>①金額(税抜)</th><td>100,000</td></tr>
+  <tr><th>②税率</th><td>10%</td></tr>
+  <tr><th>③消費税</th><td>10,000</td></tr>
+  <tr><th>④金額(税込)</th><td>110,000</td></tr>
+
+  <!-- 明細 2.（★読まない） -->
+  <tr><th colspan="2">2.</th></tr>
+  <tr><th>請求種別</th><td>完工金</td></tr>
+  <tr><th>①金額(税抜)</th><td>200,000</td></tr>
+  <tr><th>②税率</th><td>10%</td></tr>
+  <tr><th>③消費税</th><td>20,000</td></tr>
+  <tr><th>④金額(税込)</th><td>220,000</td></tr>
+
+  <tr class="d_border_top">
+    <th class="tooltip"><span class="tooltipItem">添付ファイル</span></th>
+    <td>
+      <span class="fileName1 dummyLink szb-text-link-regular"
+            onclick="WorkflowDenpyo.downloadFileData(this, 'fileDataTmpFlg1', 'eFileNo1')"
+            tabindex="0">見積書（架空）.pdf</span>
+      <input type="hidden" name="fileNo1" value="55001">
+      <input type="hidden" name="eFileNo1" value="DUMMY1">
+    </td>
+  </tr>
+</table>
+
+<button class="common-btn white output accesskeyPrint" onclick="window.__printClicked = true; return false;">
+  <i class="fa fa-print darkblue">print</i>印刷</button>
+
+<script>
+var WorkflowDenpyo = {
+  downloadFileData: function (el) { window.__downloaded = (el.textContent || '').trim(); }
+};
+</script>
+</body>

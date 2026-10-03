@@ -85,6 +85,10 @@ export const SETTING_KEY_SENKETSU_MAX_PER_RUN = "senketsu:maxPerRun";
 export const META_NATSUIN_LIST = "natsuin:list";
 export const SETTING_KEY_NATSUIN_MAX_PER_RUN = "natsuin:maxPerRun";
 
+/** 請求書作成依頼書。専決決裁書と同じ扱い（「保存データを消去」では消さない） */
+export const META_SEIKYU_LIST = "seikyu:list";
+export const SETTING_KEY_SEIKYU_MAX_PER_RUN = "seikyu:maxPerRun";
+
 /**
  * 顛末書系タブの「取得の方法」（PCのツール＝旧 / このブラウザ＝新）と、新しい方式の設定。
  * キーの名前は種類ごとに `{種類}:…` で作る（lib/tenmatsu/store.ts の KEYS が唯一の対応表）。

@@ -157,8 +157,8 @@ export interface StatusPayload {
  * 種類ごとに使うキーは違う (顛末書は2つ、専決決裁書はクラウドだけ) が、
  * 綴り違いはここで型に落ちるようにする。
  */
-export type FlagKey = "budget_entered" | "cloud_stored";
-export const FLAG_KEYS: readonly FlagKey[] = ["budget_entered", "cloud_stored"];
+export type FlagKey = "budget_entered" | "cloud_stored" | "sent_to_customer";
+export const FLAG_KEYS: readonly FlagKey[] = ["budget_entered", "cloud_stored", "sent_to_customer"];
 /** 顛末書のフラグ (hasFlags の既定。種類を渡さない呼び出しは顛末書とみなす) */
 export const TENMATSU_FLAG_KEYS: readonly FlagKey[] = ["budget_entered", "cloud_stored"];
 
@@ -188,6 +188,8 @@ export interface ListItem {
   budget_entered?: boolean;
   /** クラウドへ格納し終えたか (同上) */
   cloud_stored?: boolean;
+  /** お客様へ送付し終えたか（請求書作成依頼書だけ。2026-10-04） */
+  sent_to_customer?: boolean;
   /**
    * 上の2つが揃ったか。サーバーが計算した値なので folio では計算し直さない。
    * exists は見ていないので、PDFが消えている行でも completed になり得る。
@@ -212,6 +214,12 @@ export interface ListItem {
    * 2026-10-03 より前に取得した記録には無い（顛末書タブの「税抜を読み直す」で埋める）
    */
   amount_ex_tax?: string | null;
+  /** 得意先名（請求書作成依頼書だけ。一覧から読んだ値） */
+  customer_name?: string | null;
+  /** 請求種別（請求書作成依頼書だけ。伝票画面の1つ目の明細） */
+  billing_type?: string | null;
+  /** 請求日付(契約日)（請求書作成依頼書だけ。一覧から読んだ値） */
+  billing_date?: string | null;
   /** 物件名 (一覧の「どこで」から取り出した値)。**施主名を含むことがある** */
   property_name?: string | null;
   /** 最終承認日。サーバー側が未実装なのでいまは常に null */
@@ -606,6 +614,7 @@ export function isListItemLike(v: unknown): v is ListItem {
     // 入っているときだけ型を確かめる (無い＝フラグ未対応のサーバー・古いキャッシュ)
     optionalBool(o.budget_entered) &&
     optionalBool(o.cloud_stored) &&
+    optionalBool(o.sent_to_customer) &&
     optionalBool(o.completed) &&
     (o.flags_updated_at === undefined ||
       typeof o.flags_updated_at === "string" ||
@@ -620,6 +629,10 @@ export function isListItemLike(v: unknown): v is ListItem {
     optionalText(o.title) &&
     optionalText(o.content) &&
     optionalText(o.senketsu_no) &&
+    optionalText(o.customer_name) &&
+    optionalText(o.billing_type) &&
+    optionalText(o.billing_date) &&
+    optionalText(o.amount_ex_tax) &&
     optionalText(o.pj) &&
     optionalText(o.supervisor) &&
     optionalText(o.sales_rep) &&

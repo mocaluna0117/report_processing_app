@@ -1,0 +1,50 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>請求書作成依頼書 一覧</title>
+<!--
+  請求書作成依頼書の一覧（ワークフロー → 業務）の「構造」を写したテスト用ページ。データはすべて架空。
+  確認したいこと:
+    - 得意先名・物件名・請求日付(契約日)・合計④(税込) を見出しの文字で読む（位置では読まない）
+    - ★見出しの括弧・丸数字が全角でも、設定（半角の括弧）と同じに見る
+    - 「合計④(税込)」を探して、ほかの合計（①金額(税抜)など）に当たらない
+-->
+<body>
+<table id="listTable" class="tabGroup d_table_contents d_table_contents_list szb-table-mu">
+  <tr>
+    <th><input type="checkbox"></th>
+    <th><a href="#">伝票No.</a></th>
+    <th><a href="#">申請日</a></th>
+    <th><a href="#">申請者</a></th>
+    <th><a href="#">得意先名</a></th>
+    <th><a href="#">物件名</a></th>
+    <th><a href="#">請求日付（契約日）</a></th>
+    <th><a href="#">①金額（税抜）</a></th>
+    <th><a href="#">合計④（税込）</a></th>
+    <th><a href="#">状態</a></th>
+  </tr>
+  <tr>
+    <td><input type="checkbox"></td>
+    <td><a class="w_denpyo szb-text-link" href="/TENANTPATH/sapWorkflowDenpyo/detailView?tmpFlg=false&amp;eDenpyoNo=DUMMY101&amp;workflowId=5&amp;refId=5">SK00009101</a></td>
+    <td>2026/09/30</td>
+    <td>架空 三郎</td>
+    <td>架空工務店</td>
+    <td>架空台3丁目A号棟</td>
+    <td>2026/09/01</td>
+    <td>100,000</td>
+    <td>330,000</td>
+    <td>承認済</td>
+  </tr>
+  <tr>
+    <td><input type="checkbox"></td>
+    <td><a class="w_denpyo szb-text-link" href="/TENANTPATH/sapWorkflowDenpyo/detailView?tmpFlg=false&amp;eDenpyoNo=DUMMY102&amp;workflowId=5&amp;refId=5">SK00009102</a></td>
+    <td>2026/09/29</td>
+    <td>架空 三郎</td>
+    <td>架空不動産</td>
+    <td>架空町4丁目</td>
+    <td>2026/08/20</td>
+    <td>50,000</td>
+    <td>55,000</td>
+    <td>依頼中</td>
+  </tr>
+</table>
+</body>

@@ -7,7 +7,7 @@
  */
 import type { KindId, RakurakuCode } from "@/lib/rakuraku/protocol";
 
-export const USAGE_KINDS = ["tenmatsu", "senketsu", "natsuin"] as const satisfies readonly KindId[];
+export const USAGE_KINDS = ["tenmatsu", "senketsu", "natsuin", "seikyu"] as const satisfies readonly KindId[];
 
 /** 楽楽精算の失敗の符号と、利用状況の画面に出す短い説明（★符号が増えたら型で気づく） */
 export const RAKURAKU_CODE_LABELS: Readonly<Record<RakurakuCode, string>> = {

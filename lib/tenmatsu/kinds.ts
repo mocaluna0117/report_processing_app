@@ -11,7 +11,7 @@ import type { SafetyNote } from "@/lib/privacy-notes";
 import type { FlagKey, HealthPayload } from "@/lib/tenmatsu/client";
 import { type ListFilterDef, LIST_FILTERS } from "@/lib/tenmatsu/list-view";
 
-export type DocKindId = "tenmatsu" | "senketsu" | "natsuin";
+export type DocKindId = "tenmatsu" | "senketsu" | "natsuin" | "seikyu";
 
 /** 一覧に出す、楽楽精算から読んだ文字列の項目 */
 export type TextField =
@@ -24,6 +24,9 @@ export type TextField =
   | "amount"
   | "payee"
   | "amount_ex_tax"
+  | "customer_name"
+  | "billing_type"
+  | "billing_date"
   | "final_approved_at";
 
 /** 右端の固定枠に出す完了の印 */
@@ -51,7 +54,7 @@ export interface DocKind {
   apiKind: DocKindId | null;
   /** 文中に差し込む名詞 */
   label: string;
-  route: "/tenmatsu" | "/senketsu" | "/natsuin";
+  route: "/tenmatsu" | "/senketsu" | "/natsuin" | "/seikyu";
   menuLabel: string;
   pageTitle: string;
   pageDescription: string;
@@ -239,7 +242,53 @@ export const NATSUIN: DocKind = defineKind({
   },
 });
 
-export const DOC_KINDS: readonly DocKind[] = [TENMATSU, SENKETSU, NATSUIN];
+export const SEIKYU: DocKind = defineKind({
+  id: "seikyu",
+  apiKind: "seikyu",
+  label: "請求書作成依頼書",
+  route: "/seikyu",
+  menuLabel: "請求書作成依頼書",
+  pageTitle: "Folio — 請求書作成依頼書",
+  pageDescription: "請求書作成依頼書PDFの取得 (楽楽精算から取得してPCのフォルダーへ保存) と取得済み一覧の確認",
+  filePrefix: "請求書作成依頼書№",
+  showStaffSync: false,
+  canRecompose: false,
+  // ★印は「お客様送付済み」と「クラウド格納済み」（2026-10-04 利用者の決定）
+  flagColumns: [
+    { key: "sent_to_customer", head: "お客様", label: "お客様送付済み", todo: "未送付", done: "送付済み" },
+    { key: "cloud_stored", head: "クラウド", label: "クラウド格納済み", todo: "未格納", done: "格納済み" },
+  ],
+  listFilters: [
+    { value: "all", label: "すべて", flagKey: null },
+    { value: "sent", label: "お客様へ未送付", flagKey: "sent_to_customer" },
+    { value: "cloud", label: "クラウド未格納", flagKey: "cloud_stored" },
+  ],
+  dataColumns: [
+    { head: "得意先名", field: "customer_name" },
+    { head: "物件名", field: "property_name" },
+    { head: "申請日", field: "shinsei_date" },
+    { head: "申請者", field: "shinseisha" },
+    { head: "合計(税込)", field: "amount", align: "right" },
+    { head: "金額(税抜)", field: "amount_ex_tax", align: "right" },
+    { head: "請求種別", field: "billing_type" },
+    { head: "請求日付(契約日)", field: "billing_date" },
+    { head: "最終承認日", field: "final_approved_at" },
+  ],
+  text: {
+    sensitiveFields: "得意先名・物件名・申請者・金額",
+    flagMarks: "送付済み・格納済みの印",
+    completedHint: "お客様送付済みとクラウド格納済みの両方にチェックが付いた行のことです",
+    resolveButton: "添付を足す",
+    recomposeButton: "差し替え",
+    flowNote: null,
+    flowDetails: [],
+    resolveNote: "どうしても手に入らないときは、欠けたまま確定することもできます",
+    storageDescription:
+      "請求書作成依頼書の取得済み一覧には、伝票№・得意先名・物件名 (お客様の氏名を含むことがあります)・申請者・合計(税込)・金額(税抜)・請求種別・請求日付・送付済み/格納済みの印・結合できなかった添付の名前が入ります。これらは1回に取る件数とあわせて、このブラウザ内にだけ保存され、folio のサーバーには送信されません。印の正本はPCの記録で、この一覧はその写しです (消しても再接続すれば戻ります)。PDFの実体はこのPCの保存先フォルダにあり、ブラウザには保存しません。定期点検の「保存データを消去」では消えません。共有の端末では、使い終わったら「一覧を消去」を押してください。",
+  },
+});
+
+export const DOC_KINDS: readonly DocKind[] = [TENMATSU, SENKETSU, NATSUIN, SEIKYU];
 /**
  * 以前の保存名の接頭辞（「No.」表記）。2026-09-16 に「№」へ変えた。
  * 以前の名前のPDFを見分けて、まとめて直すのに使う。
@@ -251,6 +300,7 @@ export const DOC_KIND_BY_ID: Record<DocKindId, DocKind> = {
   tenmatsu: TENMATSU,
   senketsu: SENKETSU,
   natsuin: NATSUIN,
+  seikyu: SEIKYU,
 };
 
 /**

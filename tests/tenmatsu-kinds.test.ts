@@ -4,6 +4,7 @@ import {
   DOC_KINDS,
   DOC_KIND_BY_ID,
   NATSUIN,
+  SEIKYU,
   SENKETSU,
   TENMATSU,
   clearListConfirmText,
@@ -253,8 +254,8 @@ describe("種類ぜんぶ", () => {
     expect(new Set(DOC_KINDS.map((k) => k.route)).size).toBe(DOC_KINDS.length);
   });
 
-  it("並び順は 顛末書 → 専決決裁書 → 捺印決裁書", () => {
-    expect(DOC_KINDS.map((k) => k.id)).toEqual(["tenmatsu", "senketsu", "natsuin"]);
+  it("並び順は 顛末書 → 専決決裁書 → 捺印決裁書 → 請求書作成依頼書", () => {
+    expect(DOC_KINDS.map((k) => k.id)).toEqual(["tenmatsu", "senketsu", "natsuin", "seikyu"]);
     expect(DOC_KIND_BY_ID.senketsu).toBe(SENKETSU);
   });
 
@@ -299,5 +300,42 @@ describe("PC側が対応しているか", () => {
     ]);
     expect(supportsKind(SENKETSU, only)).toBe(false);
     expect(unsupportedServerText(SENKETSU)).toContain("専決決裁書に未対応");
+  });
+});
+
+describe("請求書作成依頼書の設定（2026-10-04）", () => {
+  it("★印はお客様送付済み → クラウド格納済み。絞り込みもその2つ", () => {
+    expect(SEIKYU.flagColumns.map((c) => [c.key, c.label])).toEqual([
+      ["sent_to_customer", "お客様送付済み"],
+      ["cloud_stored", "クラウド格納済み"],
+    ]);
+    expect(SEIKYU.listFilters.map((f) => [f.value, f.flagKey])).toEqual([
+      ["all", null],
+      ["sent", "sent_to_customer"],
+      ["cloud", "cloud_stored"],
+    ]);
+  });
+
+  it("★列は 得意先名・物件名・合計(税込)・金額(税抜)・請求種別・請求日付(契約日) と汎用の列", () => {
+    expect(SEIKYU.dataColumns.map((c) => c.head)).toEqual([
+      "得意先名",
+      "物件名",
+      "申請日",
+      "申請者",
+      "合計(税込)",
+      "金額(税抜)",
+      "請求種別",
+      "請求日付(契約日)",
+      "最終承認日",
+    ]);
+    expect(SEIKYU.dataColumns.filter((c) => c.align === "right").map((c) => c.field)).toEqual(["amount", "amount_ex_tax"]);
+  });
+
+  it("画面の場所・PDFの名前", () => {
+    expect(SEIKYU.route).toBe("/seikyu");
+    expect(SEIKYU.filePrefix).toBe("請求書作成依頼書№");
+    expect(SEIKYU.apiKind).toBe("seikyu");
+    expect(SEIKYU.showStaffSync).toBe(false);
+    expect(SEIKYU.canRecompose).toBe(false);
   });
 });

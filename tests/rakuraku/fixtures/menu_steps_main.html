@@ -8,6 +8,7 @@
 <div id="panel" style="display:none">
   <div class="tab" onclick="showTab('shinsei')">行為の申請(稟議)</div>
   <div class="tab" onclick="showTab('oin')">押印の申請</div>
+  <div class="tab" onclick="showTab('gyomu')">業務</div>
 
   <div id="tab-shinsei" style="display:none">
     <table><tr><td>［行為の申請］ 稟議書</td>
@@ -25,6 +26,16 @@
         <td><button onclick="go('oboe')">一覧</button></td></tr>
     </table>
   </div>
+
+  <!-- 業務: 請求書作成依頼書（2026-10-04）。ここにも「一覧」が並ぶ -->
+  <div id="tab-gyomu" style="display:none">
+    <table>
+      <tr><td>［業務］ 発注依頼書</td>
+        <td><button onclick="go('hachu')">一覧</button></td></tr>
+      <tr><td>［業務］ 請求書作成依頼書</td>
+        <td><button onclick="go('seikyu')">一覧</button></td></tr>
+    </table>
+  </div>
 </div>
 
 <script>
@@ -34,6 +45,7 @@ function openPanel() { document.getElementById('panel').style.display = 'block';
 function showTab(name) {
   document.getElementById('tab-shinsei').style.display = 'none';
   document.getElementById('tab-oin').style.display = 'none';
+  document.getElementById('tab-gyomu').style.display = 'none';
   document.getElementById('tab-' + name).style.display = 'block';
 }
 function go(wf) {

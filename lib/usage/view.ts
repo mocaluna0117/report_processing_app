@@ -23,6 +23,7 @@ export const SUMMARY_COLUMNS: readonly UsageColumn[] = [
   { label: "顛末書", title: "楽楽精算から取得した伝票の件数", metrics: ["rk.fetch.tenmatsu"] },
   { label: "専決決裁書", title: "楽楽精算から取得した伝票の件数", metrics: ["rk.fetch.senketsu"] },
   { label: "捺印決裁書", title: "楽楽精算から取得した伝票の件数", metrics: ["rk.fetch.natsuin"] },
+  { label: "請求書作成依頼書", title: "楽楽精算から取得した伝票の件数", metrics: ["rk.fetch.seikyu"] },
   { label: "Gemini", title: "Gemini が答えた回数（要約・工事区分・カナ）", metrics: GEMINI_OK },
   { label: "Gemini の失敗", title: "Gemini が失敗して、ルールの処理などに切り替えた回数", metrics: ["gemini.fail"], failure: true },
   { label: "楽楽精算の失敗", title: "ログイン・一覧・取得・添付の失敗（本人が閉じたものは数えない）", metrics: ["rk.fail"], failure: true },
@@ -30,10 +31,14 @@ export const SUMMARY_COLUMNS: readonly UsageColumn[] = [
 
 /** 日ごとの表の列（人ごとの表より細かい） */
 export const DAY_COLUMNS: readonly UsageColumn[] = [
-  ...SUMMARY_COLUMNS.slice(0, 5),
-  { label: "一覧の読み込み", title: "楽楽精算の一覧を読み込んだ回数（顛末書・専決・捺印の合計）", metrics: ["rk.scan.tenmatsu", "rk.scan.senketsu", "rk.scan.natsuin"] },
+  ...SUMMARY_COLUMNS.slice(0, 6),
+  {
+    label: "一覧の読み込み",
+    title: "楽楽精算の一覧を読み込んだ回数（顛末書・専決・捺印・請求書作成依頼書の合計）",
+    metrics: ["rk.scan.tenmatsu", "rk.scan.senketsu", "rk.scan.natsuin", "rk.scan.seikyu"],
+  },
   { label: "楽楽精算のログイン", title: "楽楽精算へのログインが通った回数", metrics: ["rk.login"] },
-  ...SUMMARY_COLUMNS.slice(5),
+  ...SUMMARY_COLUMNS.slice(6),
   { label: "問い合わせ", title: "送った問い合わせの件数", metrics: ["contact"] },
 ];
 

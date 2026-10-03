@@ -216,7 +216,7 @@ export async function importRecords(store: FolderStore, cfg: LocalKindConfig, te
  * ★止めはしない（名前を変えて置いている人もいる）が、取り違えると別の種類の伝票が一覧に混ざる。
  */
 export function importNameWarning(cfg: LocalKindConfig, fileName: string): string | null {
-  const names = ["processed.json", "processed_senketsu.json", "processed_natsuin.json"];
+  const names = ["processed.json", "processed_senketsu.json", "processed_natsuin.json", "processed_seikyu.json"];
   const base = fileName.replace(/^.*[\\/]/, "");
   if (base === cfg.processedFile || !names.includes(base)) return null;
   return `選んだファイル（${base}）は${cfg.label}の記録（${cfg.processedFile}）ではない可能性があります。別の書類の伝票が一覧に混ざらないか確かめてください`;

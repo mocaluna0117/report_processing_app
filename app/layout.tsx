@@ -32,10 +32,12 @@ export default function RootLayout({
               HEADER_ONE_ROW のときは、広い画面でタブとボタンを1段目の中央へ入れる（CSS の格子で置き場所だけ変える） */}
           {/* ★ヘッダーの下は少し空ける（各画面の最初の説明の文と詰まって見えたため。2026-09-25）。
               ★margin だと各画面の最初の文の mt-4 と重なって（相殺されて）広がらないので、padding で空ける */}
+          {/* ★左の列（Folio と画面名）は画面名の幅より狭くしない。タブが6つになり、左右を同じ幅にすると
+              「アフターメンテナンス」「請求書作成依頼書」が切れた（2026-10-04）。余白があるときは今までどおりタブが中央 */}
           <header
             className={
               HEADER_ONE_ROW
-                ? "pb-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 min-[1240px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
+                ? "pb-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 min-[1240px]:grid-cols-[minmax(max-content,1fr)_auto_minmax(0,1fr)]"
                 : "pb-3"
             }
           >

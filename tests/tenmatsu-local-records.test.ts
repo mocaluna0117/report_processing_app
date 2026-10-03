@@ -55,12 +55,21 @@ describe("書類の種類ごとの記録の設定", () => {
     ]);
   });
 
+  it("★請求書作成依頼書は、一覧と伝票画面から読む項目を記録に残す（落とされない）・印はお客様送付とクラウド格納", () => {
+    expect(LOCAL_KINDS.seikyu.processedFile).toBe("processed_seikyu.json");
+    expect(LOCAL_KINDS.seikyu.metaKeys).toEqual(
+      expect.arrayContaining(["customer_name", "property_name", "billing_date", "amount", "billing_type", "amount_ex_tax"]),
+    );
+    expect(LOCAL_KINDS.seikyu.flagKeys).toEqual(["sent_to_customer", "cloud_stored"]);
+    expect(LOCAL_KINDS.seikyu.composed).toBe(false);
+  });
+
   it("★捺印決裁書は、紐づく専決決裁書から写す支払先・金額も記録に残す（落とされない）", () => {
     expect(LOCAL_KINDS.natsuin.metaKeys).toEqual(expect.arrayContaining(["payee", "amount", "senketsu_no", "remarks", "content"]));
   });
 
   it("★完了の印は画面の設定と同じ（取り違えると押した印が保存されない）", () => {
-    for (const id of ["tenmatsu", "senketsu", "natsuin"] as const) {
+    for (const id of ["tenmatsu", "senketsu", "natsuin", "seikyu"] as const) {
       expect(LOCAL_KINDS[id].flagKeys).toEqual(DOC_KIND_BY_ID[id].flagKeys);
       expect(LOCAL_KINDS[id].filePrefix).toBe(KINDS[id].filePrefix);
     }
