@@ -118,13 +118,25 @@ export function createFakeApi(script: FakeApiScript): FakeApi {
       emit(handlers);
       return answer;
     },
-    reread: async (request, handlers) => {
+    reread: async (request, handlers, _signal, into) => {
       rereads += 1;
       calls.push({ method: "reread", request });
       const answer = script.reread?.(request, rereads) ?? { fields: [], failed: [] };
-      if (answer instanceof RakurakuApiError) throw answer;
+      // 途中で落ちる形: 失敗の前に届いた分（partial）を into に入れてから投げる
+      if (answer instanceof RakurakuApiError) {
+        const partial = (answer as RakurakuApiError & { partial?: RereadResult }).partial;
+        if (into && partial) {
+          into.fields.push(...partial.fields);
+          into.failed.push(...partial.failed);
+        }
+        throw answer;
+      }
+      if (into) {
+        into.fields.push(...answer.fields);
+        into.failed.push(...answer.failed);
+      }
       emit(handlers);
-      return answer;
+      return into ?? answer;
     },
     fetch: async (request, handlers) => {
       calls.push({ method: "fetch", request });

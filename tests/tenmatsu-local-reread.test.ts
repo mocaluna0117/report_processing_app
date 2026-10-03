@@ -156,6 +156,21 @@ describe("読み直しの実行", () => {
     expect(status.processed).toBe(1);
   });
 
+  it("★途中でブラウザが落ちても、それまでに読めた分は記録に足してから止まる", async () => {
+    const s = setup();
+    await saved(s.store, "TE00000001", {});
+    await saved(s.store, "TE00000002", {});
+    const crash = Object.assign(new RakurakuApiError("TENANT_UNREACHABLE", "楽楽精算を開いていたブラウザが途中で止まりました（TARGET_CLOSED）", true), {
+      partial: { fields: [{ denpyoNo: "TE00000002", fields: { amount_ex_tax: "2 円" } }], failed: [] },
+    });
+    const { status, log } = await runReread(s, { reread: () => crash });
+    expect(status.state).toBe("error");
+    expect(log.some((l) => l.includes("止まる前に読めた 1件は記録に足しました"))).toBe(true);
+    const latest = (await readRecords(s.store, tenmatsu)).log;
+    expect(latest.find((e) => e.denpyo_no === "TE00000002")?.amount_ex_tax).toBe("2 円");
+    expect(latest.find((e) => e.denpyo_no === "TE00000001")?.amount_ex_tax).toBeUndefined();
+  });
+
   it("対象が無ければ楽楽精算に触らない", async () => {
     const s = setup();
     await saved(s.store, "TE00000001", { amount_ex_tax: "1 円" });

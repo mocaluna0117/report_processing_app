@@ -1,10 +1,11 @@
 import "server-only";
-import { mkdtemp, readdir, rm, stat, statfs } from "node:fs/promises";
+import { mkdtemp, rm, statfs } from "node:fs/promises";
 import { freemem, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
 import type { Browser } from "playwright-core";
 import { RakurakuError } from "./errors";
 import { SlotTimeoutError, createSlots } from "./slots";
+import { type SweepReport, listBrowserTemp, sweepBrowserTemp } from "./tmp-sweep";
 
 /**
  * 楽楽精算を操作するためのブラウザを起こす。
@@ -44,7 +45,7 @@ export type LaunchDiagnostics = {
   n_tmp_free_mb?: number;
   /** こちらが閉じる前にブラウザが切れたとき、起動から切れるまで（切れていなければ無い） */
   ms_browser_alive?: number;
-};
+} & Partial<SweepReport>;
 
 const INSTANCE_STARTED_AT = Date.now();
 let launchCount = 0;
@@ -73,6 +74,21 @@ export async function instanceSnapshot(): Promise<Omit<LaunchDiagnostics, "n_lau
 }
 
 const PROFILE_PREFIX = "rakuraku-";
+
+/** このインスタンスで動いているブラウザの数と、それらが作った一時フォルダー（片付けで消さない） */
+let activeBrowsers = 0;
+const ownedTemp = new Set<string>();
+/** 起動を1つずつ行う（起動の前後で増えた一時フォルダーを、その起動のものと決めるため） */
+let launchQueue: Promise<unknown> = Promise.resolve();
+function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
+  const run = launchQueue.then(fn, fn);
+  launchQueue = run.catch(() => null);
+  return run;
+}
+/** ほかのブラウザが動いているときに消してよい古さ */
+const STALE_TEMP_MS = 10 * 60 * 1000;
+/** 閉じるのを待つ上限。★これを過ぎても一時フォルダーは消す（残すと /tmp が埋まる） */
+const CLOSE_WAIT_MS = 15_000;
 
 /**
  * 同じ実行環境で同時に動かすブラウザの数と、空きを待つ上限（lib/rakuraku/slots.ts）。
@@ -167,27 +183,6 @@ function isServerless(): boolean {
 }
 
 /**
- * 前回の実行が残した作業フォルダーを片付ける。
- * Vercel は同じインスタンスを使い回すので、放っておくと /tmp が埋まる。
- */
-async function sweepOldProfiles(): Promise<void> {
-  try {
-    const base = tmpdir();
-    const now = Date.now();
-    for (const name of await readdir(base)) {
-      if (!name.startsWith(PROFILE_PREFIX)) continue;
-      const path = join(base, name);
-      const info = await stat(path).catch(() => null);
-      if (info && now - info.mtimeMs > 10 * 60 * 1000) {
-        await rm(path, { recursive: true, force: true }).catch(() => null);
-      }
-    }
-  } catch {
-    /* 片付けに失敗しても起動は続ける */
-  }
-}
-
-/**
  * ブラウザを起こす。★空きが無ければ待ち、待っても空かなければ BROWSER_BUSY（やり直してよい）。
  * 使い終わったら必ず close() する（空きを返す）。
  */
@@ -204,8 +199,30 @@ export async function launchBrowser(): Promise<LaunchedBrowser> {
   launchCount += 1;
   const snapshot = { n_launch_seq: launchCount, ...(await instanceSnapshot()) };
   let launched: Omit<LaunchedBrowser, "diagnostics">;
+  let sweep: SweepReport | null = null;
+  /** この起動で増えた一時フォルダー（閉じるときに消す） */
+  let created: string[] = [];
   try {
-    launched = await startBrowser();
+    launched = await oneAtATime(async () => {
+      // ★前回までの起動が残した一時フォルダーを片付けてから起こす（2026-10-03 の TARGET_CLOSED の原因）
+      // ★名前の形で消してよいのは Vercel の上だけ。手元の PC の一時フォルダーには、ほかのプロセス
+      //   （並行して走るテスト・別の Playwright）のプロファイルもあるので、自前の古いものだけ消す
+      const serverless = isServerless();
+      sweep = await sweepBrowserTemp(
+        tmpdir(),
+        !serverless
+          ? { onlyOlderThanMs: STALE_TEMP_MS, keep: ownedTemp, only: [/^rakuraku-/] }
+          : activeBrowsers === 0
+            ? {}
+            : { onlyOlderThanMs: STALE_TEMP_MS, keep: ownedTemp },
+      );
+      const before = serverless ? await listBrowserTemp(tmpdir()) : null;
+      const started = await startBrowser();
+      created = before ? [...(await listBrowserTemp(tmpdir()))].filter((name) => !before.has(name)) : [];
+      for (const name of created) ownedTemp.add(name);
+      activeBrowsers += 1;
+      return started;
+    });
   } catch (e) {
     release();
     // ★どの呼び元でも同じ知らせになるよう、ここで分類する
@@ -224,18 +241,28 @@ export async function launchBrowser(): Promise<LaunchedBrowser> {
     close: async () => {
       closing = true;
       try {
-        await launched.close();
+        // ★閉じ切るのを待ちすぎない（待っている間に関数が止められると、片付けが残る）
+        await Promise.race([launched.close(), sleep(CLOSE_WAIT_MS)]);
       } finally {
+        // ★Playwright 任せにせず、この起動で増えた一時フォルダーを自分で消す
+        for (const name of created) {
+          await rm(join(tmpdir(), name), { recursive: true, force: true }).catch(() => null);
+          ownedTemp.delete(name);
+        }
+        activeBrowsers = Math.max(0, activeBrowsers - 1);
         release();
       }
     },
-    diagnostics: () => ({ ...snapshot, ...(aliveMs === undefined ? {} : { ms_browser_alive: aliveMs }) }),
+    diagnostics: () => ({
+      ...snapshot,
+      ...(sweep ?? {}),
+      ...(aliveMs === undefined ? {} : { ms_browser_alive: aliveMs }),
+    }),
   };
 }
 
 async function startBrowser(): Promise<Omit<LaunchedBrowser, "diagnostics">> {
   const { chromium } = await import("playwright-core");
-  await sweepOldProfiles();
   const profileDir = await mkdtemp(join(tmpdir(), PROFILE_PREFIX));
   const base = {
     headless: true,
@@ -258,7 +285,14 @@ async function startBrowser(): Promise<Omit<LaunchedBrowser, "diagnostics">> {
     //   その引数を渡すので、二重に指定すると衝突する。
     //   sparticuz の args には --headless='shell' と --single-process が入っている
     //   （この Chromium は headless 専用ビルドなので外せない）。
-    return wrap(await retryOnTextFileBusy(() => chromium.launch({ ...base, executablePath, args })));
+    // ★ディスクキャッシュは自前の作業フォルダーに置き、小さくする（sparticuz の既定は 32MB で /tmp を食う）
+    const cacheArgs = [
+      `--disk-cache-dir=${join(profileDir, "cache")}`,
+      "--disk-cache-size=1048576",
+      `--crash-dumps-dir=${join(profileDir, "crash")}`,
+    ];
+    const launchArgs = [...args.filter((a) => !a.startsWith("--disk-cache-size=")), ...cacheArgs];
+    return wrap(await retryOnTextFileBusy(() => chromium.launch({ ...base, executablePath, args: launchArgs })));
   }
 
   const channel =

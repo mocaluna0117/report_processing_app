@@ -15,7 +15,7 @@ import type { FolderStore } from "./fs";
 import type { LocalKindConfig } from "./kind-config";
 import { RUN_LOGIN_MAX, type RunAuth, type RunHandle, RunStop } from "./job";
 import { type ProcessedData, hasValue, latestEntries, modifyRecords, readRecords } from "./records";
-import { type RakurakuApi, RakurakuApiError, type StreamHandlers } from "./server-api";
+import { type RakurakuApi, RakurakuApiError, type RereadResult, type StreamHandlers } from "./server-api";
 
 /** 読み直しで埋める項目（伝票画面のラベルは lib/rakuraku/kinds.ts） */
 export const REREAD_KEYS = ["amount_ex_tax"] as const;
@@ -196,20 +196,37 @@ export function startReread(deps: RereadDeps): RunHandle {
       const batch = queue.slice(0, BATCH);
       print("");
       print(`${batch.length}件を読みます（残り ${queue.length}件）`);
-      const result = await withSession((token) =>
-        api.reread(
-          {
-            sessionToken: token,
-            kind: cfg.id,
-            deptCode: deps.deptCode,
-            denpyoNos: batch,
-            ...(deps.routePin ? { route: deps.routePin } : {}),
-          },
-          handlers,
-        ),
-      );
-      const byNo = new Map(result.fields.map((f) => [f.denpyoNo, f.fields]));
-      written += await mergeDetailFields(store, cfg, byNo);
+      // ★届いた分はその場でためておき、途中で失敗しても（ブラウザが落ちた・ログインが切れた）記録に足す
+      const result: RereadResult = { fields: [], failed: [] };
+      const save = async () => {
+        const byNo = new Map(result.fields.map((f) => [f.denpyoNo, f.fields]));
+        const added = await mergeDetailFields(store, cfg, byNo);
+        written += added;
+        state.processed = written;
+        return byNo;
+      };
+      try {
+        await withSession((token) =>
+          api.reread(
+            {
+              sessionToken: token,
+              kind: cfg.id,
+              deptCode: deps.deptCode,
+              denpyoNos: batch,
+              ...(deps.routePin ? { route: deps.routePin } : {}),
+            },
+            handlers,
+            undefined,
+            result,
+          ),
+        );
+      } catch (e) {
+        const before = written;
+        await save();
+        if (written > before) print(`  （止まる前に読めた ${written - before}件は記録に足しました）`);
+        throw e;
+      }
+      const byNo = await save();
       for (const f of result.failed) {
         failed.push(f.denpyoNo);
         print(`  ! 伝票№ ${f.denpyoNo}: ${f.reason}`);

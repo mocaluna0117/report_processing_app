@@ -127,8 +127,11 @@ export interface RakurakuApi {
   scan(request: ScanRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<ScanResult>;
   fetch(request: FetchRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<FetchResult>;
   attachment(request: AttachmentRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<ReceivedFile>;
-  /** 取得済みの伝票の画面を開き直して、項目だけを読む（PDF は取らない） */
-  reread(request: RereadRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<RereadResult>;
+  /**
+   * 取得済みの伝票の画面を開き直して、項目だけを読む（PDF は取らない）。
+   * into を渡すと、届いた結果をその場でそこへ足していく（★途中で失敗しても、それまでの分を使えるように）
+   */
+  reread(request: RereadRequest, handlers?: StreamHandlers, signal?: AbortSignal, into?: RereadResult): Promise<RereadResult>;
   /** 画面の下見（楽楽精算の画面の作りだけを集める） */
   survey(request: SurveyRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<SurveyReport>;
 }
@@ -331,8 +334,8 @@ export function createRakurakuApi(options: { fetchImpl?: typeof fetch; baseUrl?:
       return out;
     },
 
-    reread: async (request, handlers = {}, signal) => {
-      const out: RereadResult = { fields: [], failed: [] };
+    reread: async (request, handlers = {}, signal, into) => {
+      const out: RereadResult = into ?? { fields: [], failed: [] };
       await stream(
         "reread",
         request,
