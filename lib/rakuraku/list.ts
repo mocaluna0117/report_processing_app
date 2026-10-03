@@ -435,3 +435,56 @@ export async function scanListForNo(
   }
   return null;
 }
+
+/**
+ * いま開いている一覧を送りながら、頼まれた伝票No.ぜんぶの行を探す（読み直し `/reread` 用）。
+ *
+ * ★一覧を開くのは呼ぶ側。ここは読むだけ。
+ * ★伝票No.は数字だけにして比べる。見つからなかった番号は結果に入らない（推測しない）。
+ * ★全部見つかったら、それ以上ページを送らない。期限・ページ数の上限でも止める。
+ */
+export async function findListRows(
+  page: Page,
+  kind: ResolvedKind,
+  wantNos: readonly string[],
+  options: { maxPages?: number; timing: ListTiming; log?: Log; deadlineAt?: number },
+): Promise<Map<string, { denpyoNo: string; href: string | null; status: string }>> {
+  const wanted = new Map<string, string>();
+  for (const no of wantNos) {
+    const digits = normalizeDenpyoDigits(no);
+    if (digits) wanted.set(digits, no);
+  }
+  const found = new Map<string, { denpyoNo: string; href: string | null; status: string }>();
+  if (wanted.size === 0) return found;
+  const limit = Math.min(options.maxPages ?? kind.list.maxPages, kind.list.maxPages);
+  const seen = new Set<string>();
+  const memo: { how?: NextHow } = {};
+
+  for (let pageNo = 1; pageNo <= limit; pageNo++) {
+    const frame = await contentFrame(page);
+    const rows = await readTableRows(frame, kind);
+    if (rows.length === 0) break;
+    const pager = await readPager(frame);
+    let newRows = 0;
+    for (const row of rows) {
+      if (seen.has(row.denpyo_no)) continue;
+      seen.add(row.denpyo_no);
+      newRows++;
+      const original = wanted.get(normalizeDenpyoDigits(row.denpyo_no) ?? "");
+      if (original && !found.has(original)) {
+        found.set(original, { denpyoNo: row.denpyo_no, href: row.href ?? null, status: row.status });
+      }
+    }
+    options.log?.(`  ${pageNo}ページ目: ${rows.length}行 / 見つかった伝票 累計${found.size}/${wanted.size}件`);
+    if (found.size >= wanted.size) break;
+    if (pager && pager[2] >= pager[0]) break; // 最後のページまで見た
+    if (newRows === 0) break; // ページ送りが効いていない
+    if (options.deadlineAt !== undefined && Date.now() >= options.deadlineAt) {
+      options.log?.("  （時間の上限が近いので、この先のページは読みません）");
+      break;
+    }
+    if (pageNo >= limit) break;
+    if (!(await advancePage(page, frame, kind, pager, memo, options.timing)).ok) break;
+  }
+  return found;
+}

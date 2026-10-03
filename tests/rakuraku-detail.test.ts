@@ -102,6 +102,7 @@ describe.skipIf(!browser)("伝票画面から項目を読む", () => {
       shinsei_date: "2026/09/04 17:51:38",
       where: "注文受注物件：架空台1丁目A号棟 施主名：架空 太郎 監督：架空 一郎/営業：架空 二郎",
       pj: "9901230101",
+      amount_ex_tax: "10,000 円",
     });
     expect(parseStaffNames(fields.where)).toEqual({ supervisor: "架空 一郎", sales_rep: "架空 二郎" });
     await page.close();
@@ -411,6 +412,7 @@ describe.skipIf(!browser)("伝票1件の項目を読む（通し）", () => {
       shinsei_date: "2026/09/04 17:51:38",
       where: "注文受注物件：架空台1丁目A号棟 施主名：架空 太郎 監督：架空 一郎/営業：架空 二郎",
       pj: "9901230101",
+      amount_ex_tax: "10,000 円",
       final_approved_at: "2026/09/06 13:45",
     });
     await record.frame.locator("button.accesskeyPrint").click({ timeout: 1_000 });

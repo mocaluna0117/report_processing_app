@@ -1,7 +1,7 @@
 import type { Browser, Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { KINDS, type ResolvedKind, resolveKind } from "@/lib/rakuraku/kinds";
-import { advancePage, collectTargets, readPager, readTableRows, scanListForNo } from "@/lib/rakuraku/list";
+import { advancePage, collectTargets, findListRows, readPager, readTableRows, scanListForNo } from "@/lib/rakuraku/list";
 import { contentFrame } from "@/lib/rakuraku/frames";
 import { isApproved } from "@/lib/rakuraku/parse/list";
 import { parsePropertyName } from "@/lib/rakuraku/parse/fields";
@@ -273,6 +273,26 @@ describe.skipIf(!browser)("紐づく伝票を一覧から探す（捺印決裁�
       (window as unknown as { __pageFeedBroken: boolean }).__pageFeedBroken = true;
     });
     expect(await scanListForNo(page, kind, "00009300", { timing: QUICK })).toBeNull();
+    await page.close();
+  }, 60_000);
+});
+
+describe.skipIf(!browser)("頼まれた伝票をまとめて一覧から探す（読み直し）", () => {
+  it("★全部見つかったら、それ以上ページを送らない", async () => {
+    const page = await openList({ pages: 4 });
+    const found = await findListRows(page, kind, ["TE00009002", "00009200"], { timing: QUICK });
+    expect([...found.keys()]).toEqual(["TE00009002", "00009200"]);
+    expect(found.get("00009200")?.denpyoNo).toBe("TE00009200");
+    expect(found.get("TE00009002")?.href).toContain("workflowDetailView");
+    expect(await pageNo(page)).toBe(2);
+    await page.close();
+  }, 60_000);
+
+  it("★見つからない番号は結果に入れず、最後のページで止まる", async () => {
+    const page = await openList({ pages: 3 });
+    const found = await findListRows(page, kind, ["TE00009300", "TE99999999"], { timing: QUICK });
+    expect([...found.keys()]).toEqual(["TE00009300"]);
+    expect(await pageNo(page)).toBe(3);
     await page.close();
   }, 60_000);
 });

@@ -18,7 +18,8 @@ export interface TableData {
 
 /** ラベル比較用の正規化。空白・全角空白・「.」を落とす（一覧の列探しと同じ規則） */
 export function normLabel(text: string | null | undefined): string {
-  return (text ?? "").replace(/[\s\u3000.]/g, "");
+  // ★全角・半角の括弧を同じに見る（「支払金額(税抜)」と「支払金額（税抜）」）。両側に同じ変換をかける
+  return (text ?? "").normalize("NFKC").replace(/[\s\u3000.]/g, "");
 }
 
 /**

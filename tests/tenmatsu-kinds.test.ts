@@ -43,10 +43,10 @@ describe("顛末書の設定 (いまの画面と1対1)", () => {
 
   it("列の並びと右寄せ", () => {
     expect(TENMATSU.dataColumns.map((c) => c.head)).toEqual([
-      "物件名", "申請日", "申請者", "支払金額(税込)", "支払先", "最終承認日",
+      "物件名", "申請日", "申請者", "支払金額(税込)", "支払金額(税抜)", "支払先", "最終承認日",
     ]);
     expect(TENMATSU.dataColumns.filter((c) => c.align === "right").map((c) => c.field))
-      .toEqual(["amount"]);
+      .toEqual(["amount", "amount_ex_tax"]);
   });
 
   it("★リクエストに kind を付けない (古いサーバーとの互換)", () => {

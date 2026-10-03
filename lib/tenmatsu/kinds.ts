@@ -23,6 +23,7 @@ export type TextField =
   | "shinseisha"
   | "amount"
   | "payee"
+  | "amount_ex_tax"
   | "final_approved_at";
 
 /** 右端の固定枠に出す完了の印 */
@@ -124,6 +125,7 @@ export const TENMATSU: DocKind = defineKind({
     { head: "申請日", field: "shinsei_date" },
     { head: "申請者", field: "shinseisha" },
     { head: "支払金額(税込)", field: "amount", align: "right" },
+    { head: "支払金額(税抜)", field: "amount_ex_tax", align: "right" },
     { head: "支払先", field: "payee" },
     { head: "最終承認日", field: "final_approved_at" },
   ],

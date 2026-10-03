@@ -240,6 +240,13 @@ export type RakurakuEvent =
    */
   | { type: "fields"; fields: Record<string, string> }
   /**
+   * 読み直し（`/reread`）で、1件の伝票画面から読んだ項目。★読めなかった項目はキーごと入らない。
+   * 使う側は**記録に無い項目だけ**足す（PDF・取得日時・印には触らない）。
+   */
+  | { type: "detail.fields"; denpyoNo: string; fields: Record<string, string> }
+  /** 読み直しで、その伝票だけ読めなかった（一覧に無い・画面が開けない）。ほかの伝票は続ける */
+  | { type: "detail.failed"; denpyoNo: string; code: RakurakuCode; reason: string }
+  /**
    * ファイルの始まり。name は画面に出ていた名前（本体は「本体」）、ext は**中身で確かめた**拡張子
    * （判定できなければ名前の拡張子、それも無ければ空文字）。bytes は全体の大きさ。
    */
@@ -393,6 +400,55 @@ export function parseFetchRequest(raw: unknown): Parsed<FetchRequest> {
       href: href as string | null,
       deptCode: deptCode as string | null,
       ...(typeof linkedNo === "string" && linkedNo.trim() !== "" ? { linkedNo: linkedNo.trim() } : {}),
+      ...(route !== undefined ? { route } : {}),
+    },
+  };
+}
+
+/** 読み直し1回で頼める伝票の数（時間の上限で全部は読めない。残りはブラウザが次の呼び出しで頼む） */
+export const REREAD_MAX_ITEMS = 500;
+
+/**
+ * `/reread` の本文。取得済みの伝票の画面を開き直して、項目だけを読む（PDF・添付は取らない）。
+ * ★伝票画面の URL は記録に残っていないので、サーバーが一覧を1回読んで探す。
+ */
+export interface RereadRequest {
+  sessionToken: string;
+  kind: KindId;
+  /** 部門の値。部門の切り替えが無いアカウントは null */
+  deptCode: string | null;
+  denpyoNos: string[];
+  /** 一覧の経路を固定する（画面の「一覧の経路」）。省略すると自動で順に試す */
+  route?: RouteId;
+}
+
+/** `/reread` の本文を確かめる */
+export function parseRereadRequest(raw: unknown): Parsed<RereadRequest> {
+  if (!isObject(raw)) return { ok: false, message: "本文を読めませんでした" };
+  const { sessionToken, kind, deptCode, denpyoNos, route } = raw;
+  if (typeof sessionToken !== "string" || sessionToken === "" || sessionToken.length > MAX_TOKEN_CHARS) {
+    return { ok: false, message: "sessionToken が要ります" };
+  }
+  if (!isKindId(kind)) return { ok: false, message: "書類の種類が不正です" };
+  if (deptCode !== null && (typeof deptCode !== "string" || !DEPT_CODE_RE.test(deptCode))) {
+    return { ok: false, message: "部門の値が不正です" };
+  }
+  if (
+    !Array.isArray(denpyoNos) ||
+    denpyoNos.length === 0 ||
+    denpyoNos.length > REREAD_MAX_ITEMS ||
+    !denpyoNos.every((no) => typeof no === "string" && no.trim() !== "" && no.length <= MAX_DENPYO_CHARS)
+  ) {
+    return { ok: false, message: `読み直す伝票No.は 1〜${REREAD_MAX_ITEMS}件で指定してください` };
+  }
+  if (route !== undefined && !isRouteId(route)) return { ok: false, message: "一覧の経路の指定が不正です" };
+  return {
+    ok: true,
+    value: {
+      sessionToken,
+      kind,
+      deptCode: deptCode as string | null,
+      denpyoNos: [...new Set((denpyoNos as string[]).map((no) => no.trim()))],
       ...(route !== undefined ? { route } : {}),
     },
   };

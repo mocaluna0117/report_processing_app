@@ -239,7 +239,8 @@ export const KINDS: Readonly<Record<KindId, RakurakuKind>> = {
     detail: {
       ...DETAIL_BASE,
       // ★pj はラベルで取れなければ「どこで」のすぐ下の行から探す（parse/tables.ts pickPjNearLabel）
-      labels: { shinsei_date: "申請日", where: "どこで", pj: "PJコード" },
+      // ★amount_ex_tax は支出報告書の原価に使う（2026-10-03 追加。一覧には税込しか無い）
+      labels: { shinsei_date: "申請日", where: "どこで", pj: "PJコード", amount_ex_tax: "支払金額(税抜)" },
     },
     keepParts: false,
   },

@@ -34,6 +34,7 @@ import { type RunAuth, type RunHandle, startRun } from "./job";
 import { LOCAL_KINDS, PENDING_MERGED_NAME, RUN_LIMITS } from "./kind-config";
 import { type StatsCache, buildListItems, memoryStatsCache } from "./list";
 import { PendingError } from "./manifest";
+import { startReread } from "./reread";
 import { completePending, recomposeSaved } from "./pending-ops";
 import {
   type BackfillTarget,
@@ -96,6 +97,11 @@ export type LocalFolderClient = TenmatsuClient & {
   candidatePdf(denpyoNo: string, name: string): Promise<Blob>;
   /** 以前の保存名（「顛末書No.1476.pdf」）を、いまの表記（「顛末書№1476.pdf」）に直す。★取得中は断る */
   renameLegacyNames(): Promise<{ renamed: number; skipped: { denpyoNo: string; reason: string }[] }>;
+  /**
+   * 保存済みの伝票の画面を開き直し、記録に無い項目（支払金額(税抜)）を足す。PDF は取らない。
+   * 取得と同じ「実行」の枠を使う（実行中は始めない。ログと状態は取得と同じ購読で届く）
+   */
+  reread(): Promise<{ started: boolean; status: StatusPayload }>;
 };
 
 const IDLE: StatusPayload = {
@@ -386,6 +392,22 @@ export function createLocalFolderClient(options: LocalFolderClientOptions): Loca
         const bytes = await store.readBytes([name]);
         return new Blob([bytes as BlobPart], { type: "application/pdf" });
       }),
+
+    reread: async () => {
+      if (running()) return { started: false, status: currentActiveRun()!.handle.snapshot() };
+      await guard(() => store.probe());
+      const handle = startReread({
+        store,
+        cfg,
+        api: options.api,
+        auth: options.auth,
+        deptCode: options.deptCode(),
+        routePin: options.routePin?.() ?? null,
+        sleep: options.sleep,
+      });
+      setActiveRun({ kind: options.kind, handle });
+      return { started: true, status: handle.snapshot() };
+    },
 
     renameLegacyNames: async () =>
       await guard(async () => {

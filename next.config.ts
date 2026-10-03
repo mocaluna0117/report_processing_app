@@ -37,6 +37,8 @@ const nextConfig: NextConfig = {
       "./写真報告書_例/**/*",
       "./点検報告書_例/**/*",
       "./完了報告書_例/**/*",
+      "./支出報告書_例/**/*",
+      "./進捗管理表_例/**/*",
       "./アフターメンテナンス顧客データ/**/*",
       "./certificates/**/*",
       "./tests/**/*",
@@ -54,6 +56,11 @@ const nextConfig: NextConfig = {
       {
         // テンプレートは名前が固定なので、作り直したら次の読み込みで反映されるようにする
         source: "/report/completion-report.xlsx",
+        headers: [{ key: "Cache-Control", value: "public, max-age=0, must-revalidate" }],
+      },
+      {
+        // 支出報告書のテンプレートも同じ (scripts/build_expense_template.py で作り直す)
+        source: "/report/expense-report.xlsx",
         headers: [{ key: "Cache-Control", value: "public, max-age=0, must-revalidate" }],
       },
       {

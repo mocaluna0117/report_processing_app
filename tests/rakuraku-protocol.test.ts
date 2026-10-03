@@ -5,8 +5,10 @@ import {
   parseAttachmentRequest,
   parseEventLine,
   parseFetchRequest,
+  parseRereadRequest,
   parseScanRequest,
   parseSurveyRequest,
+  REREAD_MAX_ITEMS,
   normalizeDepartmentsResponse,
   readNdjson,
 } from "@/lib/rakuraku/protocol";
@@ -247,5 +249,22 @@ describe("/attachment の本文を確かめる", () => {
     ["伝票No.が無い", { denpyoNo: "" }],
   ])("%sなら断る", (_label, patch) => {
     expect(parseAttachmentRequest({ ...ATT, ...patch }).ok).toBe(false);
+  });
+});
+
+describe("読み直し（/reread）の本文", () => {
+  const ok = { sessionToken: "t", kind: "tenmatsu", deptCode: null, denpyoNos: ["TE00000001", " TE00000002 ", "TE00000001"] };
+
+  it("★伝票No.の重複と前後の空白をそろえる", () => {
+    const parsed = parseRereadRequest(ok);
+    expect(parsed.ok && parsed.value.denpyoNos).toEqual(["TE00000001", "TE00000002"]);
+  });
+
+  it("空・多すぎ・文字列でない番号は断る（丸めない）", () => {
+    expect(parseRereadRequest({ ...ok, denpyoNos: [] }).ok).toBe(false);
+    expect(parseRereadRequest({ ...ok, denpyoNos: Array.from({ length: REREAD_MAX_ITEMS + 1 }, (_, i) => `TE${i}`) }).ok).toBe(false);
+    expect(parseRereadRequest({ ...ok, denpyoNos: [1] }).ok).toBe(false);
+    expect(parseRereadRequest({ ...ok, route: "elsewhere" }).ok).toBe(false);
+    expect(parseRereadRequest({ ...ok, sessionToken: "" }).ok).toBe(false);
   });
 });

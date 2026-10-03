@@ -74,6 +74,7 @@ function present(cfg: LocalKindConfig, entry: Entry): Partial<ListItem> {
       const where = text(entry.where);
       return {
         amount: text(entry.amount),
+        amount_ex_tax: text(entry.amount_ex_tax),
         payee: text(entry.payee),
         property_name: parsePropertyName(where),
         pj: text(entry.pj),

@@ -699,6 +699,46 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
     }
   };
 
+  /**
+   * 保存済みの顛末書の画面を開き直して、記録に無い「支払金額(税抜)」を足す（PDF は取らない）。
+   * ログインと部門の用意は取得と同じ。実行の枠・ログ・中止も取得と同じものを使う。
+   */
+  const startReread = async () => {
+    if (!client) return;
+    setRunError(null);
+    setListNotice(null);
+    if (getSessionToken() === null || (departments === null && !skipDepartment)) {
+      setPreparing(true);
+      try {
+        const dept = await loginAndLoadDepartments();
+        if (dept.kind === "no-session" || dept.kind === "failed" || dept.kind === "empty") return;
+        if (dept.kind === "list" && dept.needsChoice) {
+          setRunError("部門を選んでから、もう一度「税抜を読み直す」を押してください（楽楽精算へのログインは済んでいます）");
+          return;
+        }
+      } finally {
+        setPreparing(false);
+      }
+    }
+    setLogLines([]);
+    logSinceRef.current = 0;
+    setStarting(true);
+    try {
+      const result = await client.reread();
+      if (!result.started) {
+        setRunError("別の書類の取得が動いています。終わってから始めてください");
+        return;
+      }
+      setStatus(result.status);
+      setRunObserved(true);
+      setRunKey((k) => k + 1);
+    } catch (e) {
+      setRunError(`読み直しを始められませんでした (${errorText(e)})`);
+    } finally {
+      setStarting(false);
+    }
+  };
+
   const stopRun = () => {
     client?.abort();
     setStopping(true);
@@ -876,7 +916,13 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
           : null;
   const resolveDisabledReason =
     flagDisabledReason ?? (running || otherRunning ? "取得中は添付を結合できません。取得が終わってから操作してください" : null);
-  const completion = status && !running && runObserved ? describeCompletion(status, kind.label) : null;
+  const rereading = status?.mode === "reread";
+  const completion =
+    status && !running && runObserved
+      ? rereading && status.state === "done"
+        ? { tone: status.remaining > 0 ? ("notice" as const) : ("ok" as const), message: status.message }
+        : describeCompletion(status, kind.label)
+      : null;
   const deptLabel = departments?.find((d) => d.code === deptCode)?.label ?? null;
   /** このPCの楽楽精算の登録の状態（ログインできなかった直後は、サーバーの答えを待たずに「入れ直し」を出す） */
   const credentialState: CredentialView =
@@ -917,6 +963,9 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
   const recompose = recomposeNo ? (items.find((i) => i.denpyo_no === recomposeNo && !isPending(i)) ?? null) : null;
   const relinkItem = relinkNo ? (items.find((i) => i.denpyo_no === relinkNo && !isPending(i)) ?? null) : null;
   /** 以前の表記（顛末書No.…）のまま保存されているPDFの数 */
+  // ★支払金額(税抜)は 2026-10-03 から読む項目。それより前に取得した顛末書は読み直しで埋める（支出報告書の原価）
+  const rereadCount =
+    kind.id === "tenmatsu" ? items.filter((i) => !isPending(i) && !i.amount_ex_tax).length : 0;
   const legacyNameCount = items.filter((i) => !isPending(i) && i.exists && i.file.startsWith(legacyFilePrefix(kind))).length;
 
   return (
@@ -1112,7 +1161,9 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
                     ? "楽楽精算にログインしています…"
                     : "部門を読み込んでいます…"
                   : running
-                    ? `取得中… (${status?.done ?? 0}/${status?.total ?? 0} 完了)`
+                    ? rereading
+                      ? `読み直し中… (${status?.done ?? 0}/${status?.total ?? 0} 件)`
+                      : `取得中… (${status?.done ?? 0}/${status?.total ?? 0} 完了)`
                     : `${kind.label}を取得`}
               </button>
             </div>
@@ -1279,6 +1330,20 @@ export function TenmatsuFolderPage({ kind: kindId, header }: { kind: DocKindId; 
             </button>
           </div>
 
+          {rereadCount > 0 && listFresh && (
+            <p className="mt-2 rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+              支払金額(税抜)が記録に無い{kind.label}が {rereadCount}件あります（支出報告書の原価に使います）。
+              <button
+                type="button"
+                disabled={!connected || running || otherRunning || preparing}
+                onClick={() => void startReread()}
+                className="ml-2 cursor-pointer underline hover:text-sky-950 disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
+              >
+                {running && rereading ? "読み直しています…" : "税抜を読み直す"}
+              </button>
+              <span className="ml-1 text-xs text-sky-800">（楽楽精算の伝票画面を開き直して読むだけで、PDF は取り直しません）</span>
+            </p>
+          )}
           {legacyNameCount > 0 && (
             <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               以前の表記（{legacyFilePrefix(kind)}…）で保存したPDFが {legacyNameCount}件あります。

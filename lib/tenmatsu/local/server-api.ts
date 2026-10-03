@@ -20,6 +20,7 @@ import {
   type RakurakuCode,
   type RakurakuEvent,
   type ReceivedFile,
+  type RereadRequest,
   type RouteHow,
   type RouteId,
   type RouteScope,
@@ -108,6 +109,12 @@ export interface FetchResult {
   compose: ComposeEvent | null;
 }
 
+/** 読み直し（`/reread`）の結果。返事の無かった伝票は、時間の上限で読めなかったもの */
+export interface RereadResult {
+  fields: { denpyoNo: string; fields: Record<string, string> }[];
+  failed: { denpyoNo: string; code: RakurakuCode; reason: string }[];
+}
+
 export interface RakurakuApi {
   /**
    * 登録した控えでログインする。expiresAt はログイン状態の期限 (ミリ秒)。
@@ -120,6 +127,8 @@ export interface RakurakuApi {
   scan(request: ScanRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<ScanResult>;
   fetch(request: FetchRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<FetchResult>;
   attachment(request: AttachmentRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<ReceivedFile>;
+  /** 取得済みの伝票の画面を開き直して、項目だけを読む（PDF は取らない） */
+  reread(request: RereadRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<RereadResult>;
   /** 画面の下見（楽楽精算の画面の作りだけを集める） */
   survey(request: SurveyRequest, handlers?: StreamHandlers, signal?: AbortSignal): Promise<SurveyReport>;
 }
@@ -319,6 +328,22 @@ export function createRakurakuApi(options: { fetchImpl?: typeof fetch; baseUrl?:
       if (!gotFields || !out.body || (request.kind === "natsuin" && !out.compose)) {
         throw new RakurakuApiError("STREAM_CUT", "伝票の取得結果を受け取りきれませんでした", true);
       }
+      return out;
+    },
+
+    reread: async (request, handlers = {}, signal) => {
+      const out: RereadResult = { fields: [], failed: [] };
+      await stream(
+        "reread",
+        request,
+        handlers,
+        signal,
+        (event) => {
+          if (event.type === "detail.fields") out.fields.push({ denpyoNo: event.denpyoNo, fields: event.fields });
+          else if (event.type === "detail.failed") out.failed.push({ denpyoNo: event.denpyoNo, code: event.code, reason: event.reason });
+        },
+        () => undefined,
+      );
       return out;
     },
 

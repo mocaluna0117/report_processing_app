@@ -3,6 +3,7 @@ import type {
   FetchRequest,
   KindId,
   ReceivedFile,
+  RereadRequest,
   RouteHow,
   RouteId,
   RouteScope,
@@ -10,7 +11,14 @@ import type {
   ScanTarget,
   SurveyReport,
 } from "@/lib/rakuraku/protocol";
-import { type FetchResult, RakurakuApiError, type RakurakuApi, type ScanResult, type StreamHandlers } from "@/lib/tenmatsu/local/server-api";
+import {
+  type FetchResult,
+  RakurakuApiError,
+  type RakurakuApi,
+  type RereadResult,
+  type ScanResult,
+  type StreamHandlers,
+} from "@/lib/tenmatsu/local/server-api";
 
 /**
  * 台本どおりに答える作り物の「Folio のサーバー」。楽楽精算にも HTTP にも触らない。
@@ -31,6 +39,8 @@ export interface FakeApiScript {
   attachment?: (request: AttachmentRequest) => ReceivedFile | RakurakuApiError;
   /** 画面の下見の結果 */
   survey?: SurveyReport | RakurakuApiError;
+  /** 読み直しの答え（呼ばれた回数は 1 から） */
+  reread?: (request: RereadRequest, count: number) => RereadResult | RakurakuApiError;
   /** 流れてくる進捗の行 */
   logs?: string[];
   /** 一覧を開けた経路（scan / fetch のときに流す） */
@@ -71,6 +81,7 @@ export function createFakeApi(script: FakeApiScript): FakeApi {
   const calls: FakeApi["calls"] = [];
   let logins = 0;
   let scans = 0;
+  let rereads = 0;
   const fetchCounts = new Map<string, number>();
   const emit = (handlers?: StreamHandlers) => {
     for (const line of script.logs ?? []) handlers?.log?.(line);
@@ -104,6 +115,14 @@ export function createFakeApi(script: FakeApiScript): FakeApi {
       calls.push({ method: "scan", request });
       const answer = typeof script.scan === "function" ? script.scan(request, scans) : (script.scan ?? scanOf([]));
       if (answer instanceof Error) throw answer;
+      emit(handlers);
+      return answer;
+    },
+    reread: async (request, handlers) => {
+      rereads += 1;
+      calls.push({ method: "reread", request });
+      const answer = script.reread?.(request, rereads) ?? { fields: [], failed: [] };
+      if (answer instanceof RakurakuApiError) throw answer;
       emit(handlers);
       return answer;
     },

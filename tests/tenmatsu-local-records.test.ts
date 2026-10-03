@@ -44,6 +44,7 @@ describe("書類の種類ごとの記録の設定", () => {
       "payee",
       "where",
       "pj",
+      "amount_ex_tax",
       "final_approved_at",
       "skipped_attachments",
       "missing_attachments",

@@ -91,6 +91,11 @@ export interface RunLogLine {
 /** GET /status の中身 (下の2つ以外の10個は常に揃う) */
 export interface StatusPayload {
   /**
+   * 何の実行か。reread は「保存済みの伝票の項目の読み直し」（PDF は取らない。完了の言い方が違う）。
+   * 無い＝取得。
+   */
+  mode?: "fetch" | "reread";
+  /**
    * 実行中 / 最後に実行した書類の種類。
    * 無い＝この項目に未対応の古いサーバー。
    */
@@ -202,6 +207,11 @@ export interface ListItem {
   amount?: string | null;
   /** 支払先 */
   payee?: string | null;
+  /**
+   * 支払金額(税抜)。伝票画面から読んだ表示のままの文字列。顛末書だけ。
+   * 2026-10-03 より前に取得した記録には無い（顛末書タブの「税抜を読み直す」で埋める）
+   */
+  amount_ex_tax?: string | null;
   /** 物件名 (一覧の「どこで」から取り出した値)。**施主名を含むことがある** */
   property_name?: string | null;
   /** 最終承認日。サーバー側が未実装なのでいまは常に null */

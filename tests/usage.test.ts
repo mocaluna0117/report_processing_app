@@ -283,7 +283,7 @@ describe("作りの見張り", () => {
   });
 
   it("楽楽精算の一覧・取得・添付は、流す返事に usage を渡す", () => {
-    for (const p of ["app/api/rakuraku/scan/route.ts", "app/api/rakuraku/fetch/route.ts", "app/api/rakuraku/attachment/route.ts"]) {
+    for (const p of ["app/api/rakuraku/scan/route.ts", "app/api/rakuraku/fetch/route.ts", "app/api/rakuraku/attachment/route.ts", "app/api/rakuraku/reread/route.ts"]) {
       expect(code(p), p).toContain("usage: { id: signed.id");
     }
   });
