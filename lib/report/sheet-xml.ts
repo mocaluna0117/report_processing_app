@@ -177,3 +177,20 @@ export function ensureCellXf(stylesXml: string, xf: string): { xml: string; inde
   const replaced = `<cellXfs count="${entries.length + 1}">${section[2]}${xf}</cellXfs>`;
   return { xml: stylesXml.replace(section[0], replaced), index: entries.length };
 }
+
+/** 数値を書き込む（共有文字列を使わない。書式 s は残す） */
+export function setNumber(xml: string, ref: string, value: number, what = "シート"): string {
+  const cell = findCell(xml, ref, what);
+  if (!Number.isFinite(value)) throw new ReportTemplateError(`${what}: セル ${ref} に数ではない値を書こうとしました`);
+  return replaceRange(xml, cell, `<c r="${ref}"${styleAttr(cell.attrs)}><v>${value}</v></c>`);
+}
+
+/** 数式と、その結果（数値）を書き込む。再計算しないビューアでも結果が見えるように */
+export function setFormulaNumber(xml: string, ref: string, formula: string, value: number, what = "シート"): string {
+  const cell = findCell(xml, ref, what);
+  return replaceRange(
+    xml,
+    cell,
+    `<c r="${ref}"${styleAttr(cell.attrs)}><f>${escapeXmlText(formula)}</f><v>${Number.isFinite(value) ? value : 0}</v></c>`,
+  );
+}

@@ -15,6 +15,7 @@ import { restoreSharedConnection } from "@/lib/shared/connection";
 import { SHARED_CHIP_ID, openSharedDialog, subscribeSharedDialog } from "@/lib/shared/dialog";
 import { type SharedChipTone, sharedChip, usesSharedFolder } from "@/lib/shared/status";
 import { useSharedConnection } from "@/lib/shared/use-shared-folder";
+import { EXPENSE_REPORT_LABEL, EXPENSE_REPORT_PATH, canUseExpenseReport } from "@/lib/shishutsu/access";
 import { DOC_KINDS } from "@/lib/tenmatsu/kinds";
 
 /**
@@ -95,7 +96,8 @@ export function ModeNav() {
         aria-label="処理の種類"
         className="inline-flex rounded-lg bg-slate-200 p-1 text-sm shadow-inner"
       >
-        {MODES.map((mode) => {
+        {/* ★支出報告書は決まったアカウントだけに出す（守るのはページ側。ここは見た目だけ） */}
+        {[...MODES, ...(canUseExpenseReport(signedIn?.id) ? [{ href: EXPENSE_REPORT_PATH, label: EXPENSE_REPORT_LABEL }] : [])].map((mode) => {
           const active = pathname === mode.href;
           return (
             <Link

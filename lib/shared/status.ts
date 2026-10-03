@@ -230,7 +230,8 @@ export function sharedStatus(input: SharedStatusInput): SharedStatusView {
  * ★使う画面だけが、開いたときに自動で同期する。ヘッダーの表示も、使う画面でだけ目立たせる。
  */
 export function usesSharedFolder(pathname: string): boolean {
-  if (pathname === "/" || pathname === "/after") return true;
+  // 支出報告書は共有フォルダー（Box）の進捗管理表を読む
+  if (pathname === "/" || pathname === "/after" || pathname === "/shishutsu") return true;
   return DOC_KINDS.some((kind) => kind.route === pathname && kind.showStaffSync);
 }
 

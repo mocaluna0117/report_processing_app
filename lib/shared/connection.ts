@@ -130,6 +130,14 @@ export function getSharedConnection(): SharedConnection {
   return snapshot;
 }
 
+/**
+ * いまつながっている共有フォルダーの中を読むためのもの（支出報告書で進捗管理表を選ぶ）。
+ * つながっていなければ null。★読むだけに使う（書くのは同期の仕組みだけ）。
+ */
+export function currentSharedStore(): FolderStore | null {
+  return folder?.store ?? null;
+}
+
 export function subscribeSharedConnection(listener: (state: SharedConnection) => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);

@@ -4,10 +4,17 @@
 // タブと同じ MODES を引くので、画面が増えてもここは直さなくてよい。
 import { usePathname } from "next/navigation";
 import { MODES } from "@/components/mode-nav";
+import { EXPENSE_REPORT_LABEL, EXPENSE_REPORT_PATH } from "@/lib/shishutsu/access";
 
 export function PageTitle() {
   const pathname = usePathname();
-  const mode = MODES.find((m) => m.href === pathname) ?? (pathname === "/account" ? { label: "アカウント" } : undefined);
+  const mode =
+    MODES.find((m) => m.href === pathname) ??
+    (pathname === "/account"
+      ? { label: "アカウント" }
+      : pathname === EXPENSE_REPORT_PATH
+        ? { label: EXPENSE_REPORT_LABEL }
+        : undefined);
   return (
     <span className="ml-3 align-middle text-sm font-normal text-slate-500">
       {/* ログイン画面や知らないURLでは、今までどおりアプリの説明を出す。

@@ -9,6 +9,8 @@ export interface SheetTable {
   name: string;
   /** rows[行][列]。空セルは "" で埋め、行内の列数は最大列に揃える */
   rows: string[][];
+  /** 非表示のシートか（workbook.xml の state="hidden" / "veryHidden"） */
+  hidden?: boolean;
 }
 
 export class XlsxReadError extends Error {}
@@ -69,7 +71,7 @@ export function columnIndex(ref: string): number {
 }
 
 /** シート名 → パート名。rels が読めない古い出力では sheet1.xml にフォールバックする */
-function sheetParts(parts: Record<string, Uint8Array>): { name: string; path: string }[] {
+function sheetParts(parts: Record<string, Uint8Array>): { name: string; path: string; hidden: boolean }[] {
   const workbook = parts["xl/workbook.xml"];
   if (!workbook) throw new XlsxReadError("xlsx の構成が想定と違います (xl/workbook.xml がありません)");
   const relsRaw = parts["xl/_rels/workbook.xml.rels"];
@@ -82,7 +84,7 @@ function sheetParts(parts: Record<string, Uint8Array>): { name: string; path: st
       if (id && target) rels.set(id, target);
     }
   }
-  const out: { name: string; path: string }[] = [];
+  const out: { name: string; path: string; hidden: boolean }[] = [];
   for (const m of decoder.decode(workbook).matchAll(/<(?:\w+:)?sheet\b[^>]*\/?>/g)) {
     const name = unescapeXml(/name="([^"]*)"/.exec(m[0])?.[1] ?? "");
     const rid = /r:id="([^"]+)"/.exec(m[0])?.[1] ?? "";
@@ -94,7 +96,8 @@ function sheetParts(parts: Record<string, Uint8Array>): { name: string; path: st
           ? target
           : `xl/${target.replace(/^\.\//, "")}`
       : `xl/worksheets/sheet${out.length + 1}.xml`;
-    if (parts[path]) out.push({ name, path });
+    const hidden = /\bstate="(?:hidden|veryHidden)"/.test(m[0]);
+    if (parts[path]) out.push({ name, path, hidden });
   }
   return out;
 }
@@ -154,8 +157,9 @@ export function readXlsxSheets(bytes: Uint8Array): SheetTable[] {
     throw new XlsxReadError(`xlsx を展開できません (${e instanceof Error ? e.message : String(e)})`);
   }
   const shared = readSharedStrings(parts);
-  return sheetParts(parts).map(({ name, path }) => ({
+  return sheetParts(parts).map(({ name, path, hidden }) => ({
     name,
     rows: readSheet(decoder.decode(parts[path]), shared),
+    ...(hidden ? { hidden } : {}),
   }));
 }
