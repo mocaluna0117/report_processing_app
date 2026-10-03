@@ -26,6 +26,8 @@ describe("ブラウザの一時フォルダーの片付け", () => {
     expect(isBrowserTemp("playwright-artifacts-abc")).toBe(true);
     expect(isBrowserTemp(".org.chromium.Chromium.abc")).toBe(true);
     expect(isBrowserTemp("rakuraku-abc")).toBe(true);
+    expect(isBrowserTemp(".cache")).toBe(true);
+    expect(isBrowserTemp(".pki")).toBe(true);
     expect(isBrowserTemp("chromium")).toBe(false);
     expect(isBrowserTemp("al2023")).toBe(false);
   });
@@ -34,10 +36,13 @@ describe("ブラウザの一時フォルダーの片付け", () => {
     await put("playwright_chromiumdev_profile-1/Default/Cache/data", 2 * 1024 * 1024);
     await put("playwright-artifacts-1/x");
     await put("rakuraku-1/dl/x");
+    await put(".cache/fontconfig/x", 1024 * 1024);
     await put("chromium", 3 * 1024 * 1024);
+    await put("libvk_swiftshader.so", 1024);
+    await put("unknown.bin", 4 * 1024 * 1024);
     const report = await sweepBrowserTemp(base);
-    expect((await readdir(base)).sort()).toEqual(["chromium"]);
-    expect(report).toMatchObject({ n_tmp_swept: 3, n_tmp_swept_mb: 2, n_tmp_other_n: 1, n_tmp_other_mb: 3 });
+    expect((await readdir(base)).sort()).toEqual(["chromium", "libvk_swiftshader.so", "unknown.bin"]);
+    expect(report).toMatchObject({ n_tmp_swept: 4, n_tmp_swept_mb: 3, n_tmp_bin_mb: 3, n_tmp_other_n: 1, n_tmp_other_mb: 4 });
     expect(typeof report.n_tmp_free_after_mb).toBe("number");
   });
 

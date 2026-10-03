@@ -70,13 +70,19 @@ export async function rereadDetails(run: RereadRun): Promise<{ remembered: Remem
   const resolved = resolveKind(kind, location.route);
 
   progress("collect", `${kind.label}一覧から${run.denpyoNos.length}件を探しています`);
-  const rows = location.empty
-    ? new Map()
+  const found = location.empty
+    ? { rows: new Map<string, { denpyoNo: string; href: string | null; status: string }>(), complete: true, reason: null, total: 0 }
     : await findListRows(page, resolved, run.denpyoNos, {
         timing: run.timing?.list ?? defaultTiming(kind),
         log,
         deadlineAt: run.deadlineAt,
       });
+  const rows = found.rows;
+  // ★見つからなかった理由を分ける（最後まで見て無い／先へ進めなかった）
+  const notFound = found.complete
+    ? `${kind.label}の一覧（${location.route.label}）を最後まで見ましたが、見つかりませんでした` +
+      `（一覧に出る期間の外にある古い伝票か、この経路では見られない伝票かもしれません）`
+    : `${kind.label}の一覧を最後まで読めず、見つけられませんでした（${found.reason ?? "理由不明"}）`;
 
   const intervalMs = run.timing?.requestIntervalMs ?? 1_500;
   let misses = 0;
@@ -84,12 +90,7 @@ export async function rereadDetails(run: RereadRun): Promise<{ remembered: Remem
   for (const no of run.denpyoNos) {
     const row = rows.get(no);
     if (!row) {
-      await send({
-        type: "detail.failed",
-        denpyoNo: no,
-        code: "DETAIL_NOT_FOUND",
-        reason: `${kind.label}の一覧に見つかりませんでした（この経路では見られない伝票かもしれません）`,
-      });
+      await send({ type: "detail.failed", denpyoNo: no, code: "DETAIL_NOT_FOUND", reason: notFound });
       continue;
     }
     if (!row.href) {

@@ -21,7 +21,17 @@ export const BROWSER_TEMP_PATTERNS: readonly RegExp[] = [
   /^playwright-artifacts-/,
   /^\.org\.chromium\.Chromium\./,
   /^rakuraku-/,
+  // ★sparticuz は HOME を /tmp にする。Chromium がホームに書くキャッシュ・設定・証明書の置き場が
+  //   /tmp 直下に溜まっていた（2026-10-03、一時フォルダー以外で 560MB）。いまは作業フォルダーの中へ向けている
+  /^\.cache$/,
+  /^\.config$/,
+  /^\.local$/,
+  /^\.pki$/,
+  /^core(\.\d+)?$/,
 ];
+
+/** Chromium 本体の展開先（@sparticuz/chromium）。消さない。大きさだけ別に数える */
+const BIN_PATTERNS: readonly RegExp[] = [/^chromium$/, /^al2023$/, /^fonts$/, /^swiftshader/, /\.so(\.\d+)*$/, /_icd\.json$/];
 
 export function isBrowserTemp(name: string): boolean {
   return BROWSER_TEMP_PATTERNS.some((p) => p.test(name));
@@ -61,7 +71,9 @@ export type SweepReport = {
   /** 消した一時フォルダーの数と大きさ */
   n_tmp_swept: number;
   n_tmp_swept_mb: number;
-  /** 一時フォルダー以外（Chromium 本体の展開先など）の大きさ。ここが増えていたら別の原因 */
+  /** Chromium 本体の展開先の大きさ（増えないはず） */
+  n_tmp_bin_mb: number;
+  /** どちらでもないものの大きさと数。★ここが増えていたら、まだ別に /tmp を埋めているものがある */
   n_tmp_other_mb: number;
   n_tmp_other_n: number;
   /** 片付けたあとの空き */
@@ -82,10 +94,11 @@ export async function sweepBrowserTemp(
     only?: readonly RegExp[];
   } = {},
 ): Promise<SweepReport> {
-  const report: SweepReport = { n_tmp_swept: 0, n_tmp_swept_mb: 0, n_tmp_other_mb: 0, n_tmp_other_n: 0 };
+  const report: SweepReport = { n_tmp_swept: 0, n_tmp_swept_mb: 0, n_tmp_bin_mb: 0, n_tmp_other_mb: 0, n_tmp_other_n: 0 };
   const now = options.now ?? Date.now();
   let swept = 0;
   let other = 0;
+  let bin = 0;
   let names: string[] = [];
   try {
     names = await readdir(base);
@@ -95,8 +108,12 @@ export async function sweepBrowserTemp(
   for (const name of names) {
     const path = join(base, name);
     if (!isBrowserTemp(name)) {
-      other += await sizeOf(path).catch(() => 0);
-      report.n_tmp_other_n += 1;
+      const size = await sizeOf(path).catch(() => 0);
+      if (BIN_PATTERNS.some((p) => p.test(name))) bin += size;
+      else {
+        other += size;
+        report.n_tmp_other_n += 1;
+      }
       continue;
     }
     if (options.keep?.has(name)) continue;
@@ -116,6 +133,7 @@ export async function sweepBrowserTemp(
   }
   report.n_tmp_swept_mb = mb(swept);
   report.n_tmp_other_mb = mb(other);
+  report.n_tmp_bin_mb = mb(bin);
   try {
     const fs = await statfs(base);
     report.n_tmp_free_after_mb = mb(fs.bavail * fs.bsize);

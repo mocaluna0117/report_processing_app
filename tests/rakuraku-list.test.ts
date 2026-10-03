@@ -281,18 +281,34 @@ describe.skipIf(!browser)("頼まれた伝票をまとめて一覧から探す�
   it("★全部見つかったら、それ以上ページを送らない", async () => {
     const page = await openList({ pages: 4 });
     const found = await findListRows(page, kind, ["TE00009002", "00009200"], { timing: QUICK });
-    expect([...found.keys()]).toEqual(["TE00009002", "00009200"]);
-    expect(found.get("00009200")?.denpyoNo).toBe("TE00009200");
-    expect(found.get("TE00009002")?.href).toContain("workflowDetailView");
+    expect([...found.rows.keys()]).toEqual(["TE00009002", "00009200"]);
+    expect(found.rows.get("00009200")?.denpyoNo).toBe("TE00009200");
+    expect(found.rows.get("TE00009002")?.href).toContain("workflowDetailView");
+    expect(found.complete).toBe(true);
     expect(await pageNo(page)).toBe(2);
     await page.close();
   }, 60_000);
 
   it("★見つからない番号は結果に入れず、最後のページで止まる", async () => {
     const page = await openList({ pages: 3 });
-    const found = await findListRows(page, kind, ["TE00009300", "TE99999999"], { timing: QUICK });
-    expect([...found.keys()]).toEqual(["TE00009300"]);
+    const lines: string[] = [];
+    const found = await findListRows(page, kind, ["TE00009300", "TE99999999"], { timing: QUICK, log: (l) => lines.push(l) });
+    expect([...found.rows.keys()]).toEqual(["TE00009300"]);
+    expect(found).toMatchObject({ complete: true, reason: null });
+    expect(lines.at(-1)).toContain("最後のページまで読みました");
     expect(await pageNo(page)).toBe(3);
+  }, 60_000);
+
+  it("★ページ送りが効かなければ、最後まで読めなかったと理由つきで返す", async () => {
+    const page = await openList({ pages: 3 });
+    await page.evaluate(() => {
+      (window as unknown as { __pageFeedBroken: boolean }).__pageFeedBroken = true;
+    });
+    const lines: string[] = [];
+    const found = await findListRows(page, kind, ["TE00009300"], { timing: QUICK, log: (l) => lines.push(l) });
+    expect(found.complete).toBe(false);
+    expect(found.reason).toContain("2ページ目へ進めませんでした");
+    expect(lines.some((l) => l.includes("一覧を最後まで読めませんでした"))).toBe(true);
     await page.close();
   }, 60_000);
 });

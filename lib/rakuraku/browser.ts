@@ -1,5 +1,5 @@
 import "server-only";
-import { mkdtemp, rm, statfs } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, statfs } from "node:fs/promises";
 import { freemem, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
 import type { Browser } from "playwright-core";
@@ -292,7 +292,22 @@ async function startBrowser(): Promise<Omit<LaunchedBrowser, "diagnostics">> {
       `--crash-dumps-dir=${join(profileDir, "crash")}`,
     ];
     const launchArgs = [...args.filter((a) => !a.startsWith("--disk-cache-size=")), ...cacheArgs];
-    return wrap(await retryOnTextFileBusy(() => chromium.launch({ ...base, executablePath, args: launchArgs })));
+    // ★ホームと一時ファイルの置き場も作業フォルダーの中にする（閉じるときにまとめて消える）。
+    //   sparticuz は HOME を /tmp にするので、そのままだと Chromium のキャッシュや設定が /tmp 直下に溜まり、
+    //   起動を重ねると /tmp が埋まって Chromium が起動直後に落ちていた（2026-10-03）
+    const home = join(profileDir, "home");
+    const tmp = join(profileDir, "tmp");
+    await mkdir(home, { recursive: true });
+    await mkdir(tmp, { recursive: true });
+    const env = {
+      ...process.env,
+      HOME: home,
+      XDG_CACHE_HOME: join(home, ".cache"),
+      XDG_CONFIG_HOME: join(home, ".config"),
+      XDG_DATA_HOME: join(home, ".local", "share"),
+      TMPDIR: tmp,
+    };
+    return wrap(await retryOnTextFileBusy(() => chromium.launch({ ...base, executablePath, args: launchArgs, env })));
   }
 
   const channel =

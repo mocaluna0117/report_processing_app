@@ -436,26 +436,39 @@ export async function scanListForNo(
   return null;
 }
 
+/** findListRows の結果 */
+export interface FoundRows {
+  rows: Map<string, { denpyoNo: string; href: string | null; status: string }>;
+  /** 一覧の最後のページまで見たか（★false なら、見つからなかった伝票は「無い」とは言い切れない） */
+  complete: boolean;
+  /** 最後まで読めなかった理由 */
+  reason: string | null;
+  /** 件数表示の総数（読めなければ null） */
+  total: number | null;
+}
+
 /**
  * いま開いている一覧を送りながら、頼まれた伝票No.ぜんぶの行を探す（読み直し `/reread` 用）。
  *
  * ★一覧を開くのは呼ぶ側。ここは読むだけ。
  * ★伝票No.は数字だけにして比べる。見つからなかった番号は結果に入らない（推測しない）。
  * ★全部見つかったら、それ以上ページを送らない。期限・ページ数の上限でも止める。
+ * ★止まった理由は必ずログに出す（「最後まで見て無かった」と「先へ進めなかった」を混ぜない）。
  */
 export async function findListRows(
   page: Page,
   kind: ResolvedKind,
   wantNos: readonly string[],
   options: { maxPages?: number; timing: ListTiming; log?: Log; deadlineAt?: number },
-): Promise<Map<string, { denpyoNo: string; href: string | null; status: string }>> {
+): Promise<FoundRows> {
+  const log = options.log ?? (() => {});
   const wanted = new Map<string, string>();
   for (const no of wantNos) {
     const digits = normalizeDenpyoDigits(no);
     if (digits) wanted.set(digits, no);
   }
-  const found = new Map<string, { denpyoNo: string; href: string | null; status: string }>();
-  if (wanted.size === 0) return found;
+  const out: FoundRows = { rows: new Map(), complete: false, reason: null, total: null };
+  if (wanted.size === 0) return { ...out, complete: true };
   const limit = Math.min(options.maxPages ?? kind.list.maxPages, kind.list.maxPages);
   const seen = new Set<string>();
   const memo: { how?: NextHow } = {};
@@ -463,28 +476,57 @@ export async function findListRows(
   for (let pageNo = 1; pageNo <= limit; pageNo++) {
     const frame = await contentFrame(page);
     const rows = await readTableRows(frame, kind);
-    if (rows.length === 0) break;
+    if (rows.length === 0) {
+      const pager = pageNo === 1 ? await readPager(frame) : null;
+      if (pager && pager[0] === 0) {
+        out.total = 0;
+        out.complete = true;
+      } else {
+        out.reason = "一覧の表を読めませんでした";
+      }
+      break;
+    }
     const pager = await readPager(frame);
+    if (pager) out.total = pager[0];
     let newRows = 0;
     for (const row of rows) {
       if (seen.has(row.denpyo_no)) continue;
       seen.add(row.denpyo_no);
       newRows++;
       const original = wanted.get(normalizeDenpyoDigits(row.denpyo_no) ?? "");
-      if (original && !found.has(original)) {
-        found.set(original, { denpyoNo: row.denpyo_no, href: row.href ?? null, status: row.status });
+      if (original && !out.rows.has(original)) {
+        out.rows.set(original, { denpyoNo: row.denpyo_no, href: row.href ?? null, status: row.status });
       }
     }
-    options.log?.(`  ${pageNo}ページ目: ${rows.length}行 / 見つかった伝票 累計${found.size}/${wanted.size}件`);
-    if (found.size >= wanted.size) break;
-    if (pager && pager[2] >= pager[0]) break; // 最後のページまで見た
-    if (newRows === 0) break; // ページ送りが効いていない
-    if (options.deadlineAt !== undefined && Date.now() >= options.deadlineAt) {
-      options.log?.("  （時間の上限が近いので、この先のページは読みません）");
+    const where = pager ? `（${pager[0]}件中 ${pager[1]}-${pager[2]}件目）` : "（件数表示なし）";
+    log(`  ${pageNo}ページ目: ${rows.length}行${where} / 見つかった伝票 累計${out.rows.size}/${wanted.size}件`);
+    if (out.rows.size >= wanted.size) {
+      out.complete = true;
       break;
     }
-    if (pageNo >= limit) break;
-    if (!(await advancePage(page, frame, kind, pager, memo, options.timing)).ok) break;
+    if (pager && pager[2] >= pager[0]) {
+      out.complete = true; // 最後のページまで見た
+      break;
+    }
+    if (newRows === 0) {
+      out.reason = "ページ送りをしても内容が変わりませんでした";
+      break;
+    }
+    if (options.deadlineAt !== undefined && Date.now() >= options.deadlineAt) {
+      out.reason = "時間の上限が近いので、この先のページは読みませんでした";
+      break;
+    }
+    if (pageNo >= limit) {
+      out.reason = `ページ数の上限（${limit}ページ）に達しました`;
+      break;
+    }
+    const moved = await advancePage(page, frame, kind, pager, memo, options.timing);
+    if (!moved.ok) {
+      out.reason = `${pageNo + 1}ページ目へ進めませんでした（${moved.reason ?? "理由不明"}）`;
+      break;
+    }
   }
-  return found;
+  if (out.reason) log(`  ! 一覧を最後まで読めませんでした: ${out.reason}`);
+  else if (out.complete && out.rows.size < wanted.size) log("  一覧の最後のページまで読みました");
+  return out;
 }
