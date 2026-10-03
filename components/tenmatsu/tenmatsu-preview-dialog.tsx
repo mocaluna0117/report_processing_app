@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ModalShell } from "@/components/modal-shell";
 import { type ListItem, formatFetchedAt, isPending } from "@/lib/tenmatsu/client";
 import { hasAwaiting } from "@/lib/tenmatsu/pending";
+import { pdfViewerUrl } from "@/lib/pdf-viewer-url";
 
 /**
  * 取得済み顛末書のプレビュー。
@@ -72,7 +73,7 @@ export function TenmatsuPreviewDialog({
     <ModalShell
       label={item.file}
       onClose={onClose}
-      panelClassName="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+      panelClassName="max-h-[95vh] w-full max-w-7xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -121,8 +122,8 @@ export function TenmatsuPreviewDialog({
         <>
           <iframe
             title={item.file}
-            src={url}
-            className="mt-3 h-[70vh] w-full rounded-md border border-slate-200"
+            src={pdfViewerUrl(url)}
+            className="mt-3 h-[80vh] w-full rounded-md border border-slate-200"
           />
           <p className="mt-2 text-xs text-slate-500">
             白いままのときは、ブラウザのPDF表示が無効になっています。PCの保存先フォルダから直接開いてください。

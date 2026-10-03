@@ -390,8 +390,8 @@ export function ReportDialog({
     <ModalShell
       label={`完了報告書 ${row.ownerDisplay}`}
       onClose={onClose}
-      panelClassName={`flex max-h-[90vh] w-full flex-col overflow-hidden rounded-xl bg-white p-6 shadow-xl ${
-        large ? "max-w-7xl" : "max-w-6xl"
+      panelClassName={`flex max-h-[95vh] w-full flex-col overflow-hidden rounded-xl bg-white p-6 shadow-xl ${
+        large ? "max-w-[min(96vw,100rem)]" : "max-w-7xl"
       }`}
     >
         <div className="flex items-start justify-between gap-4">
@@ -413,7 +413,8 @@ export function ReportDialog({
 
         <div
           className={`mt-3 grid min-h-0 flex-1 gap-4 ${
-            large ? "lg:grid-cols-[minmax(0,1fr)_34rem]" : "lg:grid-cols-[minmax(0,1fr)_20rem]"
+            // ★右の見本を広めに（2026-10-04 利用者の指摘: 左の欄が広すぎて PDF が小さく見にくい）
+            large ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,46rem)]" : "lg:grid-cols-[minmax(0,1fr)_minmax(0,32rem)]"
           }`}
         >
           {/* 左: 入力欄 (この中だけを縦にスクロールさせ、右のプレビューは動かさない) */}
@@ -734,7 +735,7 @@ export function ReportDialog({
                     load: async () => built.bytes,
                   }
                 }
-                width={large ? 500 : 280}
+                width={large ? 700 : 480}
                 onState={({ total }) => setPreviewPages(total)}
               />
             </div>

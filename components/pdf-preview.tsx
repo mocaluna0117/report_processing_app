@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ModalShell } from "@/components/modal-shell";
 import { type RenderedPdfPage, renderPdfPages } from "@/lib/pdf/preview";
+import { pdfViewerUrl } from "@/lib/pdf-viewer-url";
 
 /** 何も描けていないときの紙（A4縦の比） */
 const A4_RATIO = "1 / 1.414";
@@ -158,7 +159,7 @@ export function PdfDocumentDialog({
     <ModalShell
       label={title}
       onClose={onClose}
-      panelClassName="flex max-h-[90vh] w-full max-w-5xl flex-col rounded-xl bg-white p-6 shadow-xl"
+      panelClassName="flex max-h-[95vh] w-full max-w-7xl flex-col rounded-xl bg-white p-6 shadow-xl"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -193,7 +194,7 @@ export function PdfDocumentDialog({
         <p className="mt-3 text-sm text-slate-600">PDFを読み込んでいます…</p>
       ) : (
         <>
-          <iframe title={title} src={url} className="mt-3 h-[70vh] w-full rounded-md border border-slate-200" />
+          <iframe title={title} src={pdfViewerUrl(url)} className="mt-3 h-[80vh] w-full rounded-md border border-slate-200" />
           <p className="mt-2 text-xs text-slate-500">
             白いままのときは、ブラウザのPDF表示が無効になっています。ダウンロードして開いてください。
           </p>

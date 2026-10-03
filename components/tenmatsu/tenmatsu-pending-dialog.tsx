@@ -227,7 +227,7 @@ export function TenmatsuPendingDialog({
       //   左右それぞれの列でスクロールする（入れ子のスクロールで迷子にならないように）
       panelClassName={
         canPreview
-          ? "flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white p-6 shadow-xl"
+          ? "flex max-h-[95vh] w-full max-w-7xl flex-col overflow-hidden rounded-xl bg-white p-6 shadow-xl"
           : "max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
       }
     >

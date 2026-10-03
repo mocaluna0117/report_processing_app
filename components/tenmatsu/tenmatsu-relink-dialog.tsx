@@ -5,6 +5,7 @@ import { ModalShell } from "@/components/modal-shell";
 import { type ListItem, formatFetchedAt, formatFileSize } from "@/lib/tenmatsu/client";
 import type { DocKind } from "@/lib/tenmatsu/kinds";
 import type { RelinkCandidate } from "@/lib/tenmatsu/local/relink";
+import { pdfViewerUrl } from "@/lib/pdf-viewer-url";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const formatModified = (ms: number) => {
@@ -106,7 +107,7 @@ export function TenmatsuRelinkDialog({
     <ModalShell
       label={`${item.denpyo_no} のPDFを選び直す`}
       onClose={onClose}
-      panelClassName="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white p-6 shadow-xl"
+      panelClassName="flex max-h-[95vh] w-full max-w-7xl flex-col overflow-hidden rounded-xl bg-white p-6 shadow-xl"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -132,7 +133,7 @@ export function TenmatsuRelinkDialog({
         </p>
       )}
 
-      <div className="mt-3 grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
+      <div className="mt-3 grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
         <div className="min-h-0 overflow-y-auto">
           {candidates === null ? (
             <p className="text-sm text-slate-600">保存先のPDFを調べています…</p>
@@ -189,7 +190,7 @@ export function TenmatsuRelinkDialog({
           ) : previewUrl === null ? (
             <p className="mt-2 text-sm text-slate-500">読み込んでいます…</p>
           ) : (
-            <iframe title={selected} src={previewUrl} className="mt-2 h-[55vh] w-full rounded-md border border-slate-200 bg-white" />
+            <iframe title={selected} src={pdfViewerUrl(previewUrl)} className="mt-2 h-[70vh] w-full rounded-md border border-slate-200 bg-white" />
           )}
         </section>
       </div>
