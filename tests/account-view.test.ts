@@ -188,7 +188,9 @@ describe("右上の人の形のアイコンのメニュー", () => {
   });
 
   it("★アイコンは見出しと同じ段の右端に1つだけ。タブとボタンは見出しの1段下", () => {
-    const layout = read("app/layout.tsx");
+    // 見出しの組み立ては components/site-header.tsx（2026-10-04 に layout から移した）
+    expect(read("app/layout.tsx")).toContain("<SiteHeader />");
+    const layout = read("components/site-header.tsx");
     expect(layout.split("<AccountMenu />").length - 1).toBe(1);
     // 見出し（</h1>）のすぐあとにアイコン、そのあとの段にタブ
     expect(layout.indexOf("<AccountMenu />")).toBeGreaterThan(layout.indexOf("</h1>"));
