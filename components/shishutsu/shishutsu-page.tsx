@@ -29,14 +29,44 @@ const WARN_CLASS = "mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-
 
 /** 選んだ表。共有フォルダーの中のファイルか、PC から選んだファイル */
 type Pick = { kind: "shared"; path: string[] } | { kind: "file"; file: File };
-type Picks = Record<SheetSlot, Pick[]>;
+
+/**
+ * 1つの欄（選んだファイルと、そのファイルのパスワード）。
+ * ★パスワードはファイルごと（表によってかかっていたり、違ったりする。2026-10-03）。保存しない
+ */
+interface Entry {
+  id: number;
+  pick: Pick | null;
+  password: string;
+}
+type Entries = Record<SheetSlot, Entry[]>;
 
 /** 複数のファイルを選べる表（期をまたぐ月など。2026-10-03） */
 const MULTI_SLOTS: ReadonlySet<SheetSlot> = new Set(["after", "inspection"]);
+/** 複数選べる表で、はじめから出しておく欄の数（★1つ目を選ばないと2つ目が出ない、では分かりにくかった） */
+const MULTI_INITIAL = 2;
+
+let nextEntryId = 1;
+const newEntry = (pick: Pick | null = null): Entry => ({ id: nextEntryId++, pick, password: "" });
+const minEntries = (slot: SheetSlot) => (MULTI_SLOTS.has(slot) ? MULTI_INITIAL : 1);
+/** 欄の数を、少なくとも決まった数にそろえる */
+function padEntries(slot: SheetSlot, list: Entry[]): Entry[] {
+  const out = [...list];
+  while (out.length < minEntries(slot)) out.push(newEntry());
+  return out;
+}
+const initialEntries = (): Entries => ({
+  noSite: padEntries("noSite", []),
+  after: padEntries("after", []),
+  inspection: padEntries("inspection", []),
+  end: padEntries("end", []),
+});
 
 const pickKey = (pick: Pick) =>
   pick.kind === "shared" ? `shared:${pick.path.join("/")}` : `file:${pick.file.name}:${pick.file.size}:${pick.file.lastModified}`;
 const pickName = (pick: Pick) => (pick.kind === "shared" ? pathText(pick.path) : `PC から選んだファイル: ${pick.file.name}`);
+/** 注意の文に出す短い名前（ファイル名だけ） */
+const pickShortName = (pick: Pick) => (pick.kind === "shared" ? (pick.path.at(-1) ?? "") : pick.file.name);
 
 const SLOT_LABELS: Record<SheetSlot, string> = {
   noSite: "進捗管理表（現場対応なし）",
@@ -45,7 +75,7 @@ const SLOT_LABELS: Record<SheetSlot, string> = {
   end: "エンド立会管理表",
 };
 
-/** 前回選んだ場所（このブラウザだけの便利のため。読めなくても動く） */
+/** 前回選んだ場所（このブラウザだけの便利のため。読めなくても動く。★パスワードは覚えない） */
 const PICKS_KEY = "folio:shishutsu:picks";
 function loadRememberedPicks(): Partial<Record<SheetSlot, string[]>> {
   try {
@@ -59,11 +89,11 @@ function loadRememberedPicks(): Partial<Record<SheetSlot, string[]>> {
     return {};
   }
 }
-function rememberPicks(picks: Picks): void {
+function rememberPicks(entries: Entries): void {
   try {
     const out: Partial<Record<SheetSlot, string[]>> = {};
-    for (const [slot, list] of Object.entries(picks) as [SheetSlot, Pick[]][]) {
-      out[slot] = list.flatMap((p) => (p.kind === "shared" ? [p.path.join("/")] : []));
+    for (const [slot, list] of Object.entries(entries) as [SheetSlot, Entry[]][]) {
+      out[slot] = list.flatMap((e) => (e.pick?.kind === "shared" ? [e.pick.path.join("/")] : []));
     }
     window.localStorage.setItem(PICKS_KEY, JSON.stringify(out));
   } catch {
@@ -96,8 +126,7 @@ export function ShishutsuPage() {
   const [month, setMonth] = useState(initial.month);
   const [step, setStep] = useState<Step>("start");
   const [hadNoSite, setHadNoSite] = useState<boolean | null>(null);
-  const [picks, setPicks] = useState<Picks>({ noSite: [], after: [], inspection: [], end: [] });
-  const [password, setPassword] = useState("");
+  const [entries, setEntries] = useState<Entries>(initialEntries);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<ExpenseReport | null>(null);
@@ -118,15 +147,20 @@ export function ShishutsuPage() {
         setSharedError(null);
         // 前回選んだもの → 名前の見当、の順で選んでおく（PC から選んだものは上書きしない）
         const remembered = loadRememberedPicks();
-        setPicks((prev) => {
+        setEntries((prev) => {
           const next = { ...prev };
           for (const slot of Object.keys(SLOT_LABELS) as SheetSlot[]) {
-            if (next[slot].some((p) => p.kind === "file")) continue;
+            // 利用者がもう選んだ欄（PC のファイル・共有フォルダーのファイル）は上書きしない
+            if (prev[slot].some((e) => e.pick !== null)) continue;
             const known = (remembered[slot] ?? [])
               .map((path) => files.find((f) => f.path.join("/") === path))
               .filter((f): f is FolderXlsx => f !== undefined);
             const hits = known.length > 0 ? known : [guessFile(files, slot)].filter((f): f is FolderXlsx => f !== null);
-            next[slot] = (MULTI_SLOTS.has(slot) ? hits : hits.slice(0, 1)).map((f): Pick => ({ kind: "shared", path: f.path }));
+            const used = MULTI_SLOTS.has(slot) ? hits : hits.slice(0, 1);
+            // ★欄（とその中のパスワード）は作り直さず、前から順に埋める
+            const filled = prev[slot].map((e, i) => (used[i] ? { ...e, pick: { kind: "shared", path: used[i].path } as Pick } : e));
+            const extra = used.slice(filled.length).map((f) => newEntry({ kind: "shared", path: f.path }));
+            next[slot] = padEntries(slot, [...filled, ...extra]);
           }
           return next;
         });
@@ -178,10 +212,18 @@ export function ShishutsuPage() {
     }
   };
 
-  /** その表の選び方を置き換える（複数を選べない表は先頭の1つだけ） */
-  const choose = (slot: SheetSlot, list: Pick[]) => {
-    const unique = list.filter((p, i) => list.findIndex((q) => pickKey(q) === pickKey(p)) === i);
-    setPicks((prev) => ({ ...prev, [slot]: MULTI_SLOTS.has(slot) ? unique : unique.slice(0, 1) }));
+  /** 1つの欄を変える（ファイル・パスワード） */
+  const updateEntry = (slot: SheetSlot, id: number, patch: Partial<Omit<Entry, "id">>) => {
+    setEntries((prev) => ({ ...prev, [slot]: prev[slot].map((e) => (e.id === id ? { ...e, ...patch } : e)) }));
+    setReport(null);
+  };
+  /** 欄を1つ足す（複数選べる表だけ） */
+  const addEntry = (slot: SheetSlot) => {
+    setEntries((prev) => ({ ...prev, [slot]: [...prev[slot], newEntry()] }));
+  };
+  /** 欄を1つ消す（はじめから出ている数より少なくはしない） */
+  const removeEntry = (slot: SheetSlot, id: number) => {
+    setEntries((prev) => ({ ...prev, [slot]: padEntries(slot, prev[slot].filter((e) => e.id !== id)) }));
     setReport(null);
   };
 
@@ -195,22 +237,32 @@ export function ShishutsuPage() {
   const create = async () => {
     setError(null);
     setReport(null);
-    if (picks.after.length === 0) return setError("アフター進捗管理表を選んでください");
-    if (picks.end.length === 0) return setError("エンド立会管理表を選んでください");
-    if (hadNoSite && picks.noSite.length === 0) return setError("進捗管理表（現場対応なし）を選んでください（無かった月は「無かった」を選んでください）");
+    /** その表で、ファイルを選んである欄 */
+    const chosen = (slot: SheetSlot) => entries[slot].filter((e): e is Entry & { pick: Pick } => e.pick !== null);
+    for (const slot of Object.keys(SLOT_LABELS) as SheetSlot[]) {
+      const keys = chosen(slot).map((e) => pickKey(e.pick));
+      const twice = keys.find((k, i) => keys.indexOf(k) !== i);
+      if (twice) return setError(`${SLOT_LABELS[slot]}で、同じファイルを2つの欄に選んでいます`);
+    }
+    if (chosen("after").length === 0) return setError("アフター進捗管理表を選んでください");
+    if (chosen("end").length === 0) return setError("エンド立会管理表を選んでください");
+    if (hadNoSite && chosen("noSite").length === 0) return setError("進捗管理表（現場対応なし）を選んでください（無かった月は「無かった」を選んでください）");
     if (tenmatsu.kind !== "ok") return setError("顛末書の記録を読めていません（下の「顛末書」の欄を見てください）");
     setBusy(true);
     try {
       let fileNo = 0;
       /** 選んだファイルを全部読む（行にファイルの番号を付ける）。1つも選んでいなければ null */
+      /** どの表のどのファイルかを、注意の文に出す名前 */
+      const labelOf = (slot: SheetSlot, entry: Entry & { pick: Pick }) => `${SLOT_LABELS[slot]}「${pickShortName(entry.pick)}」`;
       const progress = async (slot: "after" | "noSite" | "inspection", source: ProgressRow["source"]) => {
-        const list = picks[slot];
+        const list = chosen(slot);
         if (list.length === 0) return null;
         const rows: ProgressRow[] = [];
-        for (const pick of list) {
-          const label = list.length > 1 ? `${SLOT_LABELS[slot]}（${pickName(pick)}）` : SLOT_LABELS[slot];
+        for (const entry of list) {
+          const label = labelOf(slot, entry);
           const no = fileNo++;
-          const read = readProgressSheet(await openSheets(await readPick(pick), password, label), source, label);
+          // ★パスワードはその欄に入れたもの（ファイルごと）
+          const read = readProgressSheet(await openSheets(await readPick(entry.pick), entry.password, label), source, label);
           rows.push(...read.map((r) => ({ ...r, fileNo: no })));
         }
         return rows;
@@ -218,14 +270,15 @@ export function ShishutsuPage() {
       const after = (await progress("after", "after")) ?? [];
       const noSite = hadNoSite ? ((await progress("noSite", "noSite")) ?? []) : [];
       const inspection = await progress("inspection", "inspection");
-      const end = readEndSheet(await openSheets(await readPick(picks.end[0]), password, SLOT_LABELS.end));
+      const endEntry = chosen("end")[0];
+      const end = readEndSheet(await openSheets(await readPick(endEntry.pick), endEntry.password, labelOf("end", endEntry)));
       const built = buildExpenseReport({ year, month, after, noSite, inspection, end, tenmatsu: tenmatsu.entries });
       const res = await fetch(EXPENSE_TEMPLATE_PATH, { cache: "no-store" });
       if (!res.ok) throw new Error(`支出報告書のひな形を読み込めませんでした（HTTP ${res.status}）`);
       const bytes = buildExpenseXlsx(new Uint8Array(await res.arrayBuffer()), built);
       downloadBytes(bytes, expenseFileName(year, month), XLSX_MIME);
       setReport(built);
-      rememberPicks(picks);
+      rememberPicks(entries);
     } catch (e) {
       setError(e instanceof PasswordNeededError ? e.message : `支出報告書を作れませんでした（${errorText(e)}）`);
     } finally {
@@ -235,6 +288,16 @@ export function ShishutsuPage() {
 
   const years = [initial.year - 1, initial.year, initial.year + 1];
   const sharedReady = connection.state === "connected" && sharedFiles !== null;
+  /** 欄の部品に渡す共通のもの */
+  const entryProps = (slot: SheetSlot) => ({
+    entries: entries[slot],
+    files: sharedFiles,
+    sharedReady,
+    disabled: busy,
+    onUpdate: (id: number, patch: Partial<Omit<Entry, "id">>) => updateEntry(slot, id, patch),
+    onAdd: () => addEntry(slot),
+    onRemove: (id: number) => removeEntry(slot, id),
+  });
 
   return (
     <main className="mt-6 space-y-4">
@@ -300,7 +363,7 @@ export function ShishutsuPage() {
             </button>
           </div>
           {hadNoSite && (
-            <SlotPicker slot="noSite" picks={picks.noSite} files={sharedFiles} sharedReady={sharedReady} onChange={choose} disabled={busy} />
+            <SlotEntries slot="noSite" {...entryProps("noSite")} />
           )}
         </section>
       )}
@@ -326,21 +389,12 @@ export function ShishutsuPage() {
             </p>
           )}
           {sharedError && <p className={ERROR_CLASS}>{sharedError}</p>}
-          <MultiSlotPicker slot="after" picks={picks.after} files={sharedFiles} sharedReady={sharedReady} onChange={choose} disabled={busy} />
-          <MultiSlotPicker slot="inspection" picks={picks.inspection} files={sharedFiles} sharedReady={sharedReady} onChange={choose} disabled={busy} optional />
-          <SlotPicker slot="end" picks={picks.end} files={sharedFiles} sharedReady={sharedReady} onChange={choose} disabled={busy} />
-          <label className="mt-4 block text-sm">
-            <span className="mb-1 block font-medium">パスワード付きの表のパスワード</span>
-            <input
-              type="password"
-              className={`${INPUT_CLASS} w-64`}
-              value={password}
-              autoComplete="off"
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={busy}
-            />
-            <span className="mt-1 block text-xs text-slate-500">年次点検進捗管理表のように、開くときにパスワードを聞かれる表だけに使います。保存しません。</span>
-          </label>
+          <p className="mt-2 text-xs text-slate-500">
+            パスワードはファイルごとに、そのファイルの右の欄へ入れてください。かかっていない表は空のままで構いません（パスワードは保存しません）。
+          </p>
+          <SlotEntries slot="after" {...entryProps("after")} />
+          <SlotEntries slot="inspection" {...entryProps("inspection")} optional />
+          <SlotEntries slot="end" {...entryProps("end")} />
 
           <TenmatsuLine state={tenmatsu} onConnect={connectTenmatsu} onPick={pickTenmatsu} />
 
@@ -359,140 +413,155 @@ export function ShishutsuPage() {
   );
 }
 
-type SlotPickerProps = {
+type SlotEntriesProps = {
   slot: SheetSlot;
-  picks: Pick[];
+  entries: Entry[];
   files: FolderXlsx[] | null;
   sharedReady: boolean;
-  onChange: (slot: SheetSlot, list: Pick[]) => void;
   disabled: boolean;
   optional?: boolean;
+  onUpdate: (id: number, patch: Partial<Omit<Entry, "id">>) => void;
+  onAdd: () => void;
+  onRemove: (id: number) => void;
 };
 
 const XLSX_ACCEPT = ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-/** 1つだけ選ぶ表（現場対応なし・エンド立会） */
-function SlotPicker({ slot, picks, files, sharedReady, onChange, disabled, optional }: SlotPickerProps) {
-  const id = `shishutsu-${slot}`;
-  const pick = picks[0] ?? null;
-  const value = pick?.kind === "shared" ? pick.path.join("/") : pick?.kind === "file" ? "__file" : "";
+/**
+ * 1つの表の欄（ファイル＋パスワード）を並べる。
+ * ★アフター進捗・年次点検は、はじめから2つの欄を出す（期をまたぐ月は2つ目に前の期の表）。足りなければ足せる
+ * ★パスワードは欄ごと（ファイルによってかかっていたり、違ったりする）
+ */
+function SlotEntries({ slot, entries, files, sharedReady, disabled, optional, onUpdate, onAdd, onRemove }: SlotEntriesProps) {
+  const multi = MULTI_SLOTS.has(slot);
+  const label = SLOT_LABELS[slot];
+  const hint = multi
+    ? `期をまたぐ月は、2つ目の欄に前の期の表を選んでください。使わない欄は「（選ばない）」のままで構いません${
+        optional ? "。1つも選ばなければ 1T・2T・３ヶ月の行は入りません" : ""
+      }`
+    : optional
+      ? "無ければ選ばない"
+      : null;
   return (
-    <div className="mt-4">
-      <label htmlFor={id} className="block text-sm font-medium">
-        {SLOT_LABELS[slot]}
-        {optional && <span className="ml-2 text-xs font-normal text-slate-500">（無ければ選ばない）</span>}
-      </label>
-      <div className="mt-1 flex flex-wrap items-center gap-2">
-        <select
-          id={id}
-          className={`${INPUT_CLASS} max-w-full sm:w-[34rem]`}
-          value={value}
-          disabled={disabled || (!sharedReady && pick?.kind !== "file")}
-          onChange={(e) => {
-            const v = e.target.value;
-            if (v === "__file") return;
-            const hit = files?.find((f) => f.path.join("/") === v);
-            onChange(slot, hit ? [{ kind: "shared", path: hit.path }] : []);
-          }}
-        >
-          <option value="">（選ばない）</option>
-          {files?.map((f) => (
-            <option key={f.path.join("/")} value={f.path.join("/")}>
-              {pathText(f.path)}
-            </option>
-          ))}
-          {pick?.kind === "file" && <option value="__file">{pickName(pick)}</option>}
-        </select>
-        <label className={`${SECONDARY_BUTTON_CLASS} cursor-pointer px-3 py-1.5 text-xs`}>
-          PC から選ぶ
-          <input
-            type="file"
-            accept={XLSX_ACCEPT}
-            className="sr-only"
-            disabled={disabled}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) onChange(slot, [{ kind: "file", file }]);
-              e.target.value = "";
-            }}
-          />
-        </label>
+    // ★fieldset は既定で中身より縮まない（スマホ幅で長いファイル名の欄がはみ出した）ので min-w-0
+    <fieldset className="mt-5 min-w-0">
+      <legend className="text-sm font-medium">
+        {label}
+        {hint && <span className="ml-2 text-xs font-normal text-slate-500">（{hint}）</span>}
+      </legend>
+      <div className="mt-1 space-y-2">
+        {entries.map((entry, i) => {
+          // ほかの欄で選んでいる共有フォルダーのファイルは候補から外す（同じファイルを2回選ばない）
+          const taken = new Set(
+            entries.filter((e) => e.id !== entry.id && e.pick).map((e) => pickKey(e.pick as Pick)),
+          );
+          return (
+            <EntryRow
+              key={entry.id}
+              slot={slot}
+              entry={entry}
+              no={multi ? i + 1 : null}
+              files={(files ?? []).filter((f) => !taken.has(pickKey({ kind: "shared", path: f.path })))}
+              sharedReady={sharedReady}
+              disabled={disabled}
+              canRemove={multi && entries.length > MULTI_INITIAL}
+              onUpdate={(patch) => onUpdate(entry.id, patch)}
+              onRemove={() => onRemove(entry.id)}
+            />
+          );
+        })}
       </div>
-    </div>
+      {multi && (
+        <button
+          type="button"
+          className="mt-2 cursor-pointer text-sm font-semibold text-blue-700 underline hover:text-blue-900 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={disabled}
+          onClick={onAdd}
+        >
+          ＋ もう1つ足す
+        </button>
+      )}
+    </fieldset>
   );
 }
 
-/**
- * 複数選べる表（アフター進捗・年次点検）。選んだファイルを並べ、足す・外すができる。
- * ★期をまたぐ月は前の期と今の期の両方を選ぶ（同じ受付が両方にあれば1つにまとめる）
- */
-function MultiSlotPicker({ slot, picks, files, sharedReady, onChange, disabled, optional }: SlotPickerProps) {
-  const id = `shishutsu-${slot}`;
-  const chosen = new Set(picks.map(pickKey));
-  const rest = (files ?? []).filter((f) => !chosen.has(pickKey({ kind: "shared", path: f.path })));
+function EntryRow(props: {
+  slot: SheetSlot;
+  entry: Entry;
+  /** 何番目の欄か（1つしか無い表では null） */
+  no: number | null;
+  files: FolderXlsx[];
+  sharedReady: boolean;
+  disabled: boolean;
+  canRemove: boolean;
+  onUpdate: (patch: Partial<Omit<Entry, "id">>) => void;
+  onRemove: () => void;
+}) {
+  const { slot, entry, no, files, sharedReady, disabled, canRemove, onUpdate, onRemove } = props;
+  const { pick } = entry;
+  const id = `shishutsu-${slot}-${entry.id}`;
+  const name = `${SLOT_LABELS[slot]}${no === null ? "" : `（${no}つ目）`}`;
+  const value = pick?.kind === "shared" ? pick.path.join("/") : pick?.kind === "file" ? "__file" : "";
   return (
-    <div className="mt-4">
-      <p id={`${id}-label`} className="text-sm font-medium">
-        {SLOT_LABELS[slot]}
-        <span className="ml-2 text-xs font-normal text-slate-500">
-          （複数選べます。期をまたぐ月は前の期の表も足してください{optional ? "。1つも選ばなければ 1T・2T・３ヶ月の行は入りません" : ""}）
-        </span>
-      </p>
-      {picks.length === 0 ? (
-        <p className="mt-1 text-sm text-slate-500">まだ選んでいません</p>
-      ) : (
-        <ul className="mt-1 space-y-1" aria-labelledby={`${id}-label`}>
-          {picks.map((pick) => (
-            <li key={pickKey(pick)} className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="min-w-0 break-all rounded border border-slate-200 bg-slate-50 px-2 py-1">{pickName(pick)}</span>
-              <button
-                type="button"
-                className="cursor-pointer text-xs font-semibold text-slate-600 underline hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={disabled}
-                aria-label={`${pickName(pick)} を外す`}
-                onClick={() => onChange(slot, picks.filter((p) => pickKey(p) !== pickKey(pick)))}
-              >
-                外す
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <select
-          id={id}
-          aria-label={`${SLOT_LABELS[slot]}を足す`}
-          className={`${INPUT_CLASS} max-w-full sm:w-[34rem]`}
-          value=""
-          disabled={disabled || !sharedReady || rest.length === 0}
+    <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50/60 p-2">
+      {no !== null && <span className="w-12 shrink-0 text-xs font-medium text-slate-600">{no}つ目</span>}
+      <select
+        id={id}
+        aria-label={name}
+        className={`${INPUT_CLASS} min-w-0 max-w-full flex-1 sm:max-w-[30rem]`}
+        value={value}
+        disabled={disabled || (!sharedReady && pick?.kind !== "file")}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === "__file") return;
+          const hit = files.find((f) => f.path.join("/") === v);
+          onUpdate({ pick: hit ? { kind: "shared", path: hit.path } : null });
+        }}
+      >
+        <option value="">{sharedReady ? "（選ばない）" : "（共有フォルダーにつなぐと選べます）"}</option>
+        {files.map((f) => (
+          <option key={f.path.join("/")} value={f.path.join("/")}>
+            {pathText(f.path)}
+          </option>
+        ))}
+        {pick?.kind === "file" && <option value="__file">{pickName(pick)}</option>}
+      </select>
+      <label className={`${SECONDARY_BUTTON_CLASS} cursor-pointer px-3 py-1.5 text-xs`}>
+        PC から選ぶ
+        <input
+          type="file"
+          accept={XLSX_ACCEPT}
+          className="sr-only"
+          disabled={disabled}
+          aria-label={`${name}を PC から選ぶ`}
           onChange={(e) => {
-            const hit = files?.find((f) => f.path.join("/") === e.target.value);
-            if (hit) onChange(slot, [...picks, { kind: "shared", path: hit.path }]);
+            const file = e.target.files?.[0];
+            if (file) onUpdate({ pick: { kind: "file", file } });
+            e.target.value = "";
           }}
+        />
+      </label>
+      <input
+        type="password"
+        aria-label={`${name}のパスワード`}
+        placeholder="パスワード（かかっていれば）"
+        className={`${INPUT_CLASS} w-52`}
+        value={entry.password}
+        autoComplete="new-password"
+        disabled={disabled}
+        onChange={(e) => onUpdate({ password: e.target.value })}
+      />
+      {canRemove && (
+        <button
+          type="button"
+          className="cursor-pointer text-xs font-semibold text-slate-600 underline hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={disabled}
+          aria-label={`${name}の欄を消す`}
+          onClick={onRemove}
         >
-          <option value="">{sharedReady ? "共有フォルダーから足す…" : "（共有フォルダーにつなぐと選べます）"}</option>
-          {rest.map((f) => (
-            <option key={f.path.join("/")} value={f.path.join("/")}>
-              {pathText(f.path)}
-            </option>
-          ))}
-        </select>
-        <label className={`${SECONDARY_BUTTON_CLASS} cursor-pointer px-3 py-1.5 text-xs`}>
-          PC から足す
-          <input
-            type="file"
-            accept={XLSX_ACCEPT}
-            multiple
-            className="sr-only"
-            disabled={disabled}
-            onChange={(e) => {
-              const added = [...(e.target.files ?? [])].map((file): Pick => ({ kind: "file", file }));
-              if (added.length > 0) onChange(slot, [...picks, ...added]);
-              e.target.value = "";
-            }}
-          />
-        </label>
-      </div>
+          欄を消す
+        </button>
+      )}
     </div>
   );
 }
