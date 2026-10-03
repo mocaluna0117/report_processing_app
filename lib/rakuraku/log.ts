@@ -30,7 +30,15 @@ export interface LogFields extends Partial<Counters> {
   detail?: string;
   /** ブラウザのプロセスを止めたシグナル（SIGKILL など）。★形が合わなければ捨てる */
   exit?: string;
+  /**
+   * /tmp の大きなものの「名前の形」と大きさ（例 `.cache/*:120,core.#:300`）。
+   * ★名前は tmp-sweep.ts の shapeOf で数字・長い英数字を伏せたもの。形が合わなければ捨てる
+   */
+  tmp_top?: string;
 }
+
+/** tmp_top に許す形（伏せた名前・大きさ・区切りだけ） */
+export const TMP_TOP_PATTERN = /^[A-Za-z0-9._#*:,/?-]{0,400}$/;
 
 export function log(stage: Stage, fields: LogFields = {}): void {
   const safe: Record<string, number | string | boolean> = { stage };
@@ -40,6 +48,7 @@ export function log(stage: Stage, fields: LogFields = {}): void {
     else if (key === "ok" && typeof value === "boolean") safe.ok = value;
     else if (key === "detail" && typeof value === "string" && FAILURE_SIGN_PATTERN.test(value)) safe.detail = value;
     else if (key === "exit" && typeof value === "string" && SIGNAL_PATTERN.test(value)) safe.exit = value;
+    else if (key === "tmp_top" && typeof value === "string" && TMP_TOP_PATTERN.test(value)) safe.tmp_top = value;
     else if (typeof value === "number" && (key.startsWith("n_") || key.startsWith("ms_"))) {
       safe[key] = value;
     }

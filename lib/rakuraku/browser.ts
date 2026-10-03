@@ -4,6 +4,7 @@ import { freemem, tmpdir, totalmem } from "node:os";
 import { join } from "node:path";
 import type { Browser } from "playwright-core";
 import { RakurakuError } from "./errors";
+import { log } from "./log";
 import { SlotTimeoutError, createSlots } from "./slots";
 import { type SweepReport, listBrowserTemp, sweepBrowserTemp } from "./tmp-sweep";
 
@@ -89,6 +90,23 @@ function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
 const STALE_TEMP_MS = 10 * 60 * 1000;
 /** 閉じるのを待つ上限。★これを過ぎても一時フォルダーは消す（残すと /tmp が埋まる） */
 const CLOSE_WAIT_MS = 15_000;
+/**
+ * 片付けたあとの /tmp の空きがこれより少なければ、起動しない（2026-10-03 のログで、46MB 以下では
+ * 全部が起動直後に TARGET_CLOSED、それより多いときは全部動いた）。
+ */
+const MIN_TMP_FREE_MB = 100;
+/** このインスタンスを入れ替えると決めたか（1回だけ） */
+let recycling = false;
+
+/**
+ * /tmp が足りないインスタンスを入れ替える。★返事を返し終えてから、このプロセスを終える。
+ * 次の呼び出しは新しいインスタンス（/tmp が空）で動く。同じプロセスでほかのブラウザが動いているときは呼ばない。
+ */
+function recycleInstanceSoon(): void {
+  if (recycling) return;
+  recycling = true;
+  setTimeout(() => process.exit(0), 3_000).unref?.();
+}
 
 /**
  * 同じ実行環境で同時に動かすブラウザの数と、空きを待つ上限（lib/rakuraku/slots.ts）。
@@ -216,6 +234,17 @@ export async function launchBrowser(): Promise<LaunchedBrowser> {
             ? {}
             : { onlyOlderThanMs: STALE_TEMP_MS, keep: ownedTemp },
       );
+      // ★片付けても /tmp が足りなければ、起こしても必ず落ちる。起こさずに、インスタンスを入れ替える
+      const freeAfter = sweep.n_tmp_free_after_mb;
+      if (serverless && freeAfter !== undefined && freeAfter < MIN_TMP_FREE_MB && activeBrowsers === 0) {
+        log("launch", { ...snapshot, ...sweep, ok: false, code: "TMP_FULL" });
+        recycleInstanceSoon();
+        throw new RakurakuError(
+          "BROWSER_LAUNCH_FAILED",
+          "Folio のサーバーの作業場所がいっぱいだったので、サーバーを入れ替えています。10秒ほど待ってから、もう一度押してください",
+          { retryable: true },
+        );
+      }
       const before = serverless ? await listBrowserTemp(tmpdir()) : null;
       const started = await startBrowser();
       created = before ? [...(await listBrowserTemp(tmpdir()))].filter((name) => !before.has(name)) : [];

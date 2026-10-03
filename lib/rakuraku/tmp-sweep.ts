@@ -48,21 +48,45 @@ export async function listBrowserTemp(base: string): Promise<Set<string>> {
 
 /** フォルダーの大きさ（バイト）。数えるのは cap 個まで（大きなフォルダーで待たせない） */
 export async function sizeOf(path: string, cap = 20_000): Promise<number> {
-  let total = 0;
+  return (await usageOf(path, cap)).apparent;
+}
+
+/**
+ * 見かけの大きさ（apparent）と、実際にディスクを使っている量（allocated = ブロック数）。
+ * ★2026-10-03、見かけの合計が /tmp 全体より大きく出た（中身の詰まっていないファイルがあるとみる）ので両方を測る。
+ */
+export async function usageOf(path: string, cap = 20_000): Promise<{ apparent: number; allocated: number }> {
+  let apparent = 0;
+  let allocated = 0;
   let seen = 0;
   const walk = async (p: string): Promise<void> => {
     if (seen++ >= cap) return;
     const info = await lstat(p).catch(() => null);
     if (!info) return;
+    allocated += (info.blocks ?? 0) * 512;
     if (info.isDirectory()) {
       const names = await readdir(p).catch(() => [] as string[]);
       for (const name of names) await walk(join(p, name));
     } else {
-      total += info.size;
+      apparent += info.size;
     }
   };
   await walk(path);
-  return total;
+  return { apparent, allocated };
+}
+
+/**
+ * ログに出してよい「名前の形」。長い英数字は *、数字は # に伏せ、使える文字だけ残す。
+ * ★/tmp の中はシステムやブラウザが付けた名前だけだが、念のため中身の手がかりになる部分は落とす。
+ */
+export function shapeOf(name: string): string {
+  const s = name
+    .normalize("NFKC")
+    .replace(/[A-Za-z0-9]{8,}/g, "*")
+    .replace(/\d+/g, "#")
+    .replace(/[^A-Za-z0-9._#*-]/g, "")
+    .slice(0, 32);
+  return s || "?";
 }
 
 const mb = (bytes: number) => Math.round(bytes / (1024 * 1024));
@@ -78,6 +102,10 @@ export type SweepReport = {
   n_tmp_other_n: number;
   /** 片付けたあとの空き */
   n_tmp_free_after_mb?: number;
+  /** どちらでもないものが実際にディスクを使っている量 */
+  n_tmp_other_alloc_mb?: number;
+  /** どちらでもないものの大きい順（名前の形:実際の MB。フォルダーはいちばん大きい中身の形も） */
+  tmp_top?: string;
 };
 
 /**
@@ -98,7 +126,9 @@ export async function sweepBrowserTemp(
   const now = options.now ?? Date.now();
   let swept = 0;
   let other = 0;
+  let otherAlloc = 0;
   let bin = 0;
+  const top: { label: string; bytes: number }[] = [];
   let names: string[] = [];
   try {
     names = await readdir(base);
@@ -108,11 +138,13 @@ export async function sweepBrowserTemp(
   for (const name of names) {
     const path = join(base, name);
     if (!isBrowserTemp(name)) {
-      const size = await sizeOf(path).catch(() => 0);
-      if (BIN_PATTERNS.some((p) => p.test(name))) bin += size;
+      const usage = await usageOf(path).catch(() => ({ apparent: 0, allocated: 0 }));
+      if (BIN_PATTERNS.some((p) => p.test(name))) bin += usage.apparent;
       else {
-        other += size;
+        other += usage.apparent;
+        otherAlloc += usage.allocated;
         report.n_tmp_other_n += 1;
+        top.push({ label: await labelOf(path, name), bytes: Math.max(usage.allocated, usage.apparent) });
       }
       continue;
     }
@@ -133,7 +165,13 @@ export async function sweepBrowserTemp(
   }
   report.n_tmp_swept_mb = mb(swept);
   report.n_tmp_other_mb = mb(other);
+  report.n_tmp_other_alloc_mb = mb(otherAlloc);
   report.n_tmp_bin_mb = mb(bin);
+  report.tmp_top = top
+    .sort((a, b) => b.bytes - a.bytes)
+    .slice(0, 8)
+    .map((t) => `${t.label}:${mb(t.bytes)}`)
+    .join(",");
   try {
     const fs = await statfs(base);
     report.n_tmp_free_after_mb = mb(fs.bavail * fs.bsize);
@@ -141,4 +179,17 @@ export async function sweepBrowserTemp(
     /* 省く */
   }
   return report;
+}
+
+/** 名前の形。フォルダーなら、いちばん大きい中身の形も付ける（例 `.cache/*`） */
+async function labelOf(path: string, name: string): Promise<string> {
+  const info = await lstat(path).catch(() => null);
+  if (!info?.isDirectory()) return shapeOf(name);
+  let best: { name: string; bytes: number } | null = null;
+  for (const child of await readdir(path).catch(() => [] as string[])) {
+    const u = await usageOf(join(path, child), 5_000).catch(() => ({ apparent: 0, allocated: 0 }));
+    const bytes = Math.max(u.apparent, u.allocated);
+    if (!best || bytes > best.bytes) best = { name: child, bytes };
+  }
+  return best ? `${shapeOf(name)}/${shapeOf(best.name)}` : `${shapeOf(name)}/`;
 }

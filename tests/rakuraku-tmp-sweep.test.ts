@@ -2,7 +2,8 @@ import { mkdtemp, mkdir, readdir, rm, utimes, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { isBrowserTemp, listBrowserTemp, sweepBrowserTemp } from "@/lib/rakuraku/tmp-sweep";
+import { TMP_TOP_PATTERN } from "@/lib/rakuraku/log";
+import { isBrowserTemp, listBrowserTemp, shapeOf, sweepBrowserTemp } from "@/lib/rakuraku/tmp-sweep";
 
 // 2026-10-03: Vercel の /tmp がブラウザの一時フォルダーで埋まり、Chromium が起動直後に落ちていた（TARGET_CLOSED）
 
@@ -63,6 +64,16 @@ describe("ブラウザの一時フォルダーの片付け", () => {
     await sweepBrowserTemp(base, { only: [/^rakuraku-/] });
     expect(await readdir(base)).toEqual(["playwright_chromiumdev_profile-x"]);
     expect([...(await listBrowserTemp(base))]).toEqual(["playwright_chromiumdev_profile-x"]);
+  });
+
+  it("★正体の分からないものは「名前の形」と大きさをログに出せる形で返す（数字・長い英数字は伏せる）", async () => {
+    await put("mystery-AbCdEf123456/inner-12345.dat", 2 * 1024 * 1024);
+    await put("dump.4567", 1024 * 1024);
+    const report = await sweepBrowserTemp(base);
+    expect(report.tmp_top).toBe("mystery-*/inner-#.dat:2,dump.#:1");
+    expect(TMP_TOP_PATTERN.test(report.tmp_top!)).toBe(true);
+    expect(shapeOf("顛末書№1234.pdf")).toBe("No#.pdf");
+    expect(shapeOf("")).toBe("?");
   });
 
   it("場所が無くても投げない", async () => {
