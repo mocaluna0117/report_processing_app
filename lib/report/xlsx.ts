@@ -216,7 +216,7 @@ function patchAppendixSheet(
   out = setInlineString(
     out,
     APPENDIX_CELLS.owner,
-    data.ownerName ? `施主名：${data.ownerName.replace(/　/g, " ")}様` : "施主名：",
+    data.ownerName ? `施主名：${data.ownerName}様` : "施主名：",
     "別紙",
   );
   out = setInlineString(out, APPENDIX_CELLS.title, appendix?.title ?? "", "別紙");

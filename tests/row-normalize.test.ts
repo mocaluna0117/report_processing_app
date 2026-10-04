@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { normalizeStoredRow } from "@/lib/row-normalize";
-import { COLUMNS, PROPERTY_COUNT_COL, PROPERTY_COUNT_MARK, SUMMARY_COL, TREATMENT_COL } from "@/lib/tsv";
+import {
+  COLUMNS,
+  OWNER_COL,
+  PROPERTY_COUNT_COL,
+  PROPERTY_COUNT_MARK,
+  SUMMARY_COL,
+  TREATMENT_COL,
+} from "@/lib/tsv";
 import type { WorkCategoryEntry } from "@/lib/types";
 
 const cells = (summary: string, propertyCount = PROPERTY_COUNT_MARK) =>
@@ -159,5 +166,29 @@ describe("normalizeStoredRow", () => {
   it("pairId など他のフィールドは残す", () => {
     const after = normalizeStoredRow({ ...row({}), pairId: "p-9", engine: "gemini" as const });
     expect(after).toMatchObject({ pairId: "p-9", engine: "gemini" });
+  });
+
+  it("お客様氏名・表示名・カナの全角スペースを半角に直す (法人名はそのまま)", () => {
+    const old = row({ propertyCountMarked: true });
+    const personal = {
+      ...old,
+      ownerDisplay: "山田　太郎",
+      mail: { ownerKana: "ヤマダ　タロウ" },
+      cells: old.cells.map((v, i) => (i === OWNER_COL ? "山田　太郎" : v)),
+    };
+    const after = normalizeStoredRow(personal);
+    expect(after.cells[OWNER_COL]).toBe("山田 太郎");
+    expect(after.ownerDisplay).toBe("山田 太郎");
+    expect(after.mail.ownerKana).toBe("ヤマダ タロウ");
+    expect(normalizeStoredRow(after)).toEqual(after);
+
+    const corporate = {
+      ...old,
+      ownerDisplay: "株式会社　架空建設",
+      cells: old.cells.map((v, i) => (i === OWNER_COL ? "株式会社　架空建設" : v)),
+    };
+    const kept = normalizeStoredRow(corporate);
+    expect(kept.cells[OWNER_COL]).toBe("株式会社　架空建設");
+    expect(kept.ownerDisplay).toBe("株式会社　架空建設");
   });
 });

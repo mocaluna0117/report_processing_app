@@ -167,7 +167,8 @@ describe("storage", () => {
     expect(results[0].merged?.size).toBe(3);
     expect(results[1].merged).toBeNull();
     expect(results[0].cells).toEqual(COLUMNS.map((c) => `v:${c}`));
-    expect(results[0].mail.ownerKana).toBe("ヤマダ　タロウ");
+    // 前は姓名の間を全角で保存していたので、読み込み時に半角へ直す
+    expect(results[0].mail.ownerKana).toBe("ヤマダ タロウ");
   });
 
   it("結果JSONの保存では結合PDFを書かない (セル編集のたびに巨大Blobを書き直さない)", async () => {

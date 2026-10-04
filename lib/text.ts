@@ -17,11 +17,11 @@ export function toDateNoPad(s: string): string {
 }
 
 /**
- * 氏名の姓名区切りを全角スペースにする (Excelの「お客様氏名」列の表記に合わせる)。
- * 結合PDFのファイル名は半角スペース指定なので、そちらには適用しない。
+ * 氏名の姓名区切りを半角スペース1つにする (全角スペース・タブ・続いた空白もまとめる)。
+ * お客様の氏名・カナは、画面・Excel・メール文・完了報告書のどこでも半角スペースで区切る。
  */
-export function toFullWidthSpace(s: string): string {
-  return s.replace(/[ \t\u00a0]+/g, "　");
+export function toHalfWidthSpace(s: string): string {
+  return s.replace(/[ \t\u00a0\u3000]+/g, " ");
 }
 
 /** 「2025/9/26」→「2025/09/26」(メール文用のゼロ埋め表記)。日付形式でなければそのまま返す */

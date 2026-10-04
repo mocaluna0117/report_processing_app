@@ -322,11 +322,11 @@ export function ReportDialog({
     cellField("PJコード", PJ_COL, "2101230101"),
     cellField("引渡日", HANDOVER_COL, "2025/9/26"),
     cellField("物件名", PROPERTY_COL),
-    cellField("施主名", OWNER_COL, "山田　太郎"),
+    cellField("施主名", OWNER_COL, "山田 太郎"),
     {
       label: "施主名 (カナ)",
       value: row.mail.ownerKana,
-      placeholder: "ヤマダ　タロウ",
+      placeholder: "ヤマダ タロウ",
       hint: "空欄なら括弧ごと省いて出力します（メール文と共通です）",
       warnWhenEmpty: true,
       onChange: (value) => onKanaChange(row.pairId, value),

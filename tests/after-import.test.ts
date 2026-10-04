@@ -158,8 +158,8 @@ describe("parseCustomerFile (助っ人クラウド)", () => {
       pj: "1012340101",
       developer: "EU",
       propertyName: "架空台1丁目 A号棟",
-      ownerName: "山田　太郎",
-      ownerKana: "ヤマダ　タロウ",
+      ownerName: "山田 太郎",
+      ownerKana: "ヤマダ タロウ",
       address: "東京都架空区北町1-2-3",
       handoverDate: "2025/09/26",
       emails: [],
@@ -240,7 +240,7 @@ describe("parseCustomerFile (助っ人クラウド)", () => {
       "f.xlsx",
       1,
     );
-    expect(effectiveFields(result.customers[0]).ownerKana).toBe("スズキ　ジロウ");
+    expect(effectiveFields(result.customers[0]).ownerKana).toBe("スズキ ジロウ");
   });
 
   it("空行は取り込まない", () => {
@@ -265,8 +265,8 @@ describe("parseCustomerFile (点検保守台帳)", () => {
       pj: "2101230101",
       developer: "タカマツハウス",
       propertyName: "123.架空区北町1-2-3 A号棟",
-      ownerName: "架空　花子",
-      ownerKana: "カクウ　ハナコ",
+      ownerName: "架空 花子",
+      ownerKana: "カクウ ハナコ",
       address: "東京都架空区北町1-2-3",
       handoverDate: null,
       emails: ["hanako@example.com"],

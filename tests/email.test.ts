@@ -18,7 +18,7 @@ describe("buildMailText", () => {
         "【物件情報】",
         "引渡日：2025/09/26",
         "物件名：999.杉並区高円寺北1-2-4A号棟",
-        "施主名：山田　太郎（ヤマダ　タロウ）様",
+        "施主名：山田 太郎（ヤマダ タロウ）様",
         "住所：東京都杉並区高円寺北1-2-3",
         "連絡先：090-0000-1234",
         "",
@@ -73,12 +73,12 @@ describe("buildMailText", () => {
   });
 
   it("カナが空なら括弧ごと省く", () => {
-    expect(buildMailText({ ...base, ownerKana: "" })).toContain("施主名：山田　太郎様");
+    expect(buildMailText({ ...base, ownerKana: "" })).toContain("施主名：山田 太郎様");
   });
 
-  it("氏名・カナの半角スペースは全角に揃える", () => {
-    const text = buildMailText({ ...base, ownerName: "山田 太郎", ownerKana: "ヤマダ タロウ" });
-    expect(text).toContain("施主名：山田　太郎（ヤマダ　タロウ）様");
+  it("氏名・カナの全角スペースは半角に揃える", () => {
+    const text = buildMailText({ ...base, ownerName: "山田　 太郎", ownerKana: "ヤマダ　タロウ" });
+    expect(text).toContain("施主名：山田 太郎（ヤマダ タロウ）様");
   });
 
   it("施主名が無ければ「様」も付けない", () => {

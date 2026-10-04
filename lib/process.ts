@@ -22,7 +22,7 @@ import {
   selectInquiryExamples,
 } from "@/lib/summarize/examples";
 import { attachSummaries } from "@/lib/summary";
-import { toDateNoPad, toDateZeroPad, toFullWidthSpace, toHalfWidthAlnum } from "@/lib/text";
+import { toDateNoPad, toDateZeroPad, toHalfWidthAlnum, toHalfWidthSpace } from "@/lib/text";
 import { attachTreatments } from "@/lib/treatment";
 import { PROPERTY_COUNT_MARK } from "@/lib/tsv";
 import type { Confidence, Contact, WorkCategoryEntry } from "@/lib/types";
@@ -305,8 +305,8 @@ export async function processPair(
       受付者: entry("木村"),
       事業者: data.developer,
       物件名称: data.propertyName,
-      // お客様氏名は姓名の間を全角スペースにする (結合PDF名は半角スペースのまま)
-      お客様氏名: entry(toFullWidthSpace(data.ownerName.value), data.ownerName.confidence),
+      // お客様氏名は姓名の間を半角スペース1つにする
+      お客様氏名: entry(toHalfWidthSpace(data.ownerName.value), data.ownerName.confidence),
       住所: data.address,
       // 引渡日はゼロ埋め表記 (yyyy/mm/dd)
       引渡日: entry(toDateZeroPad(data.handoverDate.value), data.handoverDate.confidence),

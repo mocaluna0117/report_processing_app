@@ -4,8 +4,8 @@ import {
   toDateNoPad,
   toDateZeroPad,
   toFullWidthKatakana,
-  toFullWidthSpace,
   toHalfWidthAlnum,
+  toHalfWidthSpace,
   trimWide,
 } from "@/lib/text";
 
@@ -46,23 +46,24 @@ describe("toDateZeroPad", () => {
   });
 });
 
-describe("toFullWidthSpace", () => {
-  it("姓名の区切りを全角スペースにする", () => {
-    expect(toFullWidthSpace("山田 太郎")).toBe("山田　太郎");
-    expect(toFullWidthSpace("佐々木 花子")).toBe("佐々木　花子");
+describe("toHalfWidthSpace", () => {
+  it("姓名の区切りの全角スペースを半角にする", () => {
+    expect(toHalfWidthSpace("山田　太郎")).toBe("山田 太郎");
+    expect(toHalfWidthSpace("佐々木　花子")).toBe("佐々木 花子");
   });
 
-  it("連続した空白も1つの全角スペースにまとめる", () => {
-    expect(toFullWidthSpace("山田   太郎")).toBe("山田　太郎");
+  it("続いた空白 (全角・半角まじり) も1つの半角スペースにまとめる", () => {
+    expect(toHalfWidthSpace("山田   太郎")).toBe("山田 太郎");
+    expect(toHalfWidthSpace("山田　 　太郎")).toBe("山田 太郎");
   });
 
   it("空白が無い場合・空文字はそのまま", () => {
-    expect(toFullWidthSpace("山田")).toBe("山田");
-    expect(toFullWidthSpace("")).toBe("");
+    expect(toHalfWidthSpace("山田")).toBe("山田");
+    expect(toHalfWidthSpace("")).toBe("");
   });
 
-  it("既に全角スペースの場合は変えない", () => {
-    expect(toFullWidthSpace("山田　太郎")).toBe("山田　太郎");
+  it("既に半角スペースの場合は変えない", () => {
+    expect(toHalfWidthSpace("山田 太郎")).toBe("山田 太郎");
   });
 });
 

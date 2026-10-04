@@ -105,7 +105,7 @@ export function MailDialog({
           <input
             value={row.mail.ownerKana}
             onChange={(e) => onKanaChange(row.pairId, e.target.value)}
-            placeholder="フカホリ　ヨシコ"
+            placeholder="フカホリ ヨシコ"
             className={`mt-1 w-full rounded border px-2 py-1.5 text-sm ${kanaClass}`}
           />
           {row.mail.kanaAlternatives.length > 0 && (

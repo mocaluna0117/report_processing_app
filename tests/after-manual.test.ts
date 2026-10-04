@@ -96,8 +96,8 @@ describe("下書きからお客様を作る", () => {
     expect(c).toMatchObject({ id: "mn:1", source: "manual", sourceKey: "", importedAt: 100, edits: {} });
     expect(c.imported).toMatchObject({
       pj: "2101230199",
-      ownerName: "架空　花子",
-      ownerKana: "カクウ　ハナコ",
+      ownerName: "架空 花子",
+      ownerKana: "カクウ ハナコ",
       postalCode: "123-4567",
       handoverDate: "2025/09/26",
       emails: ["hanako@example.com"],
@@ -145,7 +145,7 @@ describe("下書きからお客様を作る", () => {
   it("そのまま受付の行を作れる", () => {
     const c = createManualCustomer(draft({ propertyName: "架空台2丁目 B号棟" }), "mn:1", 1);
     const row = createAfterCase({ id: "c-1", customer: c, inquiryText: "", summary: "", engine: null });
-    expect(row).toMatchObject({ customerId: "mn:1", customerSource: "manual", ownerDisplay: "架空　花子" });
+    expect(row).toMatchObject({ customerId: "mn:1", customerSource: "manual", ownerDisplay: "架空 花子" });
   });
 });
 

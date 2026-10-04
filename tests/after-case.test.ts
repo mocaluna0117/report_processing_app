@@ -79,7 +79,7 @@ describe("createAfterCase", () => {
     expect(row.cells[PJ_COL]).toBe("2101230101");
     expect(row.cells[DEVELOPER_COL]).toBe("タカマツハウス");
     expect(row.cells[PROPERTY_COL]).toBe("架空台1丁目 A号棟");
-    expect(row.cells[OWNER_COL]).toBe("山田　太郎");
+    expect(row.cells[OWNER_COL]).toBe("山田 太郎");
     expect(row.cells[ADDRESS_COL]).toBe("東京都架空区北町1-2-3");
     expect(row.cells[SUMMARY_COL]).toBe("浴室の換気扇から異音");
   });
@@ -108,7 +108,7 @@ describe("createAfterCase", () => {
 
   it("メール文用にカナと連絡先を持つ", () => {
     const row = build();
-    expect(row.mail.ownerKana).toBe("ヤマダ　タロウ");
+    expect(row.mail.ownerKana).toBe("ヤマダ タロウ");
     expect(row.mail.kanaConfidence).toBe("ok");
     expect(row.mail.contacts).toHaveLength(2);
   });
@@ -269,7 +269,7 @@ describe("メール文・完了報告書との連携", () => {
       summary: row.cells[SUMMARY_COL],
     });
     expect(text).toContain("引渡日：2025/09/26");
-    expect(text).toContain("施主名：山田　太郎（ヤマダ　タロウ）様");
+    expect(text).toContain("施主名：山田 太郎（ヤマダ タロウ）様");
     expect(text).toContain("連絡先①：090-0000-1234");
     expect(text).toContain("連絡先②：03-0000-5678（奥様）");
   });

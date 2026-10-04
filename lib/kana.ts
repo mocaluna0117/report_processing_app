@@ -1,8 +1,8 @@
-import { toFullWidthSpace } from "@/lib/text";
+import { toHalfWidthSpace } from "@/lib/text";
 
 /** /api/name-reading の応答 */
 export interface NameReadingResponse {
-  /** カタカナの読み (姓と名の間は全角スペース)。取得できなければ空 */
+  /** カタカナの読み (姓と名の間は半角スペース)。取得できなければ空 */
   kana: string;
   /** 他に考えられる読み */
   alternatives: string[];
@@ -18,14 +18,12 @@ export function hiraganaToKatakana(s: string): string {
 }
 
 /**
- * 読みの表記を「カタカナ・姓名間は全角スペース1つ」に揃える。
+ * 読みの表記を「カタカナ・姓名間は半角スペース1つ」に揃える。
  * valid=false はカタカナ以外 (漢字の混入など) が残っている場合。
  */
 export function normalizeKana(raw: string): { kana: string; valid: boolean } {
-  const kana = toFullWidthSpace(hiraganaToKatakana(raw.trim()))
-    .replace(/　+/g, "　")
-    .replace(/^　|　$/g, "");
-  return { kana, valid: kana.length > 0 && /^[ァ-ヶー　]+$/.test(kana) };
+  const kana = toHalfWidthSpace(hiraganaToKatakana(raw)).trim();
+  return { kana, valid: kana.length > 0 && /^[ァ-ヶー ]+$/.test(kana) };
 }
 
 /** Geminiの生出力を整形する (ルートから呼ぶ。純関数なのでテスト可) */

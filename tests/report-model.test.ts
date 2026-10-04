@@ -82,12 +82,13 @@ describe("appendixTitle", () => {
 });
 
 describe("buildOwnerLine", () => {
-  it("カナがあれば括弧で添える (姓名間は全角スペース)", () => {
-    expect(buildOwnerLine("山田 太郎", "ヤマダ タロウ")).toBe("山田　太郎（ヤマダ　タロウ）");
+  it("カナがあれば括弧で添える (姓名間は半角スペース)", () => {
+    expect(buildOwnerLine("山田　太郎", "ヤマダ　タロウ")).toBe("山田 太郎（ヤマダ タロウ）");
+    expect(buildOwnerLine("山田 太郎", "ヤマダ タロウ")).toBe("山田 太郎（ヤマダ タロウ）");
   });
 
   it("カナが無ければ括弧ごと省く。「様」は付けない (Excelの表示形式が付ける)", () => {
-    expect(buildOwnerLine("山田　太郎", "")).toBe("山田　太郎");
+    expect(buildOwnerLine("山田　太郎", "")).toBe("山田 太郎");
     expect(buildOwnerLine("", "ヤマダ")).toBe("");
   });
 });
@@ -102,7 +103,7 @@ describe("buildReportData", () => {
     expect(d.receptionDate).toBe("2026/7/22");
     expect(d.handoverDate).toBe("2025/9/26");
     expect(d.propertyName).toBe("653.架空町7-21-12A号棟");
-    expect(d.ownerLine).toBe("山田　太郎（ヤマダ　タロウ）");
+    expect(d.ownerLine).toBe("山田 太郎（ヤマダ タロウ）");
     expect(d.address).toBe("東京都架空町7-21-11");
     // 連絡先は番号だけ (続柄は完了報告書には載せない)
     expect([d.phone1, d.phone2]).toEqual(["080-1234-5678", "090-2345-6789"]);
@@ -185,7 +186,7 @@ describe("buildReportData", () => {
     );
     expect(d.items).toEqual([]);
     expect(d.main.every((m) => m.text === "")).toBe(true);
-    expect(d.ownerLine).toBe("山田　太郎");
+    expect(d.ownerLine).toBe("山田 太郎");
     expect(d.warnings).toHaveLength(2);
   });
 

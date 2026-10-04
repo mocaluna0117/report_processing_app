@@ -1,5 +1,5 @@
 import { circledNumber } from "@/lib/summarize/format";
-import { toDateZeroPad, toFullWidthSpace } from "@/lib/text";
+import { toDateZeroPad, toHalfWidthSpace } from "@/lib/text";
 import type { Contact } from "@/lib/types";
 
 /**
@@ -32,8 +32,8 @@ function contactLines(all: Contact[]): string[] {
 }
 
 export function buildMailText(input: MailInput): string {
-  const owner = toFullWidthSpace(input.ownerName.trim());
-  const kana = toFullWidthSpace(input.ownerKana.trim());
+  const owner = toHalfWidthSpace(input.ownerName.trim());
+  const kana = toHalfWidthSpace(input.ownerKana.trim());
   const ownerLine = owner ? `${owner}${kana ? `（${kana}）` : ""}様` : "";
 
   return [

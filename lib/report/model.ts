@@ -2,7 +2,7 @@
 import { NO_DEFECT_TEXT, circledNumber, formatPhenomena } from "@/lib/summarize/format";
 import { recordSummary, splitSummary } from "@/lib/summary";
 import { wrapText } from "@/lib/report/wrap";
-import { toFullWidthSpace } from "@/lib/text";
+import { toHalfWidthSpace } from "@/lib/text";
 import {
   ADDRESS_COL,
   HANDOVER_COL,
@@ -195,8 +195,8 @@ export function appendixTitle(timing: string, kind: ReportKind = "inspection"): 
 
 /** 施主名 (漢字) にカナを添えた表記。カナが無ければ括弧ごと省く */
 export function buildOwnerLine(ownerName: string, ownerKana: string): string {
-  const owner = toFullWidthSpace(ownerName.trim());
-  const kana = toFullWidthSpace(ownerKana.trim());
+  const owner = toHalfWidthSpace(ownerName.trim());
+  const kana = toHalfWidthSpace(ownerKana.trim());
   if (!owner) return "";
   return kana ? `${owner}（${kana}）` : owner;
 }
@@ -234,7 +234,7 @@ export function buildReportData(row: ReportSource, options: ReportOptions): Repo
   const cell = (i: number) => (row.cells[i] ?? "").trim();
   const warnings: string[] = [];
 
-  const ownerName = toFullWidthSpace(cell(OWNER_COL));
+  const ownerName = toHalfWidthSpace(cell(OWNER_COL));
   const ownerKana = row.mail.ownerKana.trim();
   const { items, supplements } = splitSummary(recordSummary(row));
   // 6件以上、または折り返し・補足で本紙の5つの枠に入らなければ別紙に回す
@@ -265,7 +265,7 @@ export function buildReportData(row: ReportSource, options: ReportOptions): Repo
         title: appendixTitle(cell(RECEPTION_TYPE_COL), row.kind),
         propertyLine: `物件名：${cell(PROPERTY_COL)}`,
         // 別紙は漢字のみ・姓名間は半角スペース・「様」を直結 (見本と同じ)
-        ownerLine: ownerName ? `施主名：${ownerName.replace(/　/g, " ")}様` : "施主名：",
+        ownerLine: ownerName ? `施主名：${ownerName}様` : "施主名：",
         items: items.map((text, i) => ({
           text: `${circledNumber(i + 1)}${text}`,
           // 補足のある項目だけ、別紙では項目行の下の細い欄に書く (補足1つにつき1つ)

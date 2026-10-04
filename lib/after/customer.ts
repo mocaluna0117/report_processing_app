@@ -1,6 +1,7 @@
 // Customer の読み書き (取り込み値と利用者の修正を重ねる)。純関数のみ。
 import { buildSearchKey, normalizeQuery } from "@/lib/after/normalize";
 import type { Customer, CustomerFields, CustomerIssue } from "@/lib/after/types";
+import { toHalfWidthSpace } from "@/lib/text";
 
 /**
  * 取り込み値に補完を重ねたもの (利用者の修正は含まない)。
@@ -21,17 +22,49 @@ const STORED_DEFAULTS = {
 } as const satisfies Partial<CustomerFields>;
 
 /**
+ * 氏名・カナの姓名区切りを半角スペースに揃える (前は全角スペースで保存していた)。
+ * 法人名の空白は変えない。変わらなければ同じオブジェクトを返す。
+ */
+function withHalfWidthNames<T extends Partial<CustomerFields>>(fields: T, corporate: boolean): T {
+  const name = fields.ownerName;
+  const kana = fields.ownerKana;
+  const nextName = name !== undefined && !corporate ? toHalfWidthSpace(name) : name;
+  const nextKana = kana !== undefined ? toHalfWidthSpace(kana) : kana;
+  if (nextName === name && nextKana === kana) return fields;
+  return {
+    ...fields,
+    ...(nextName !== undefined && { ownerName: nextName }),
+    ...(nextKana !== undefined && { ownerKana: nextKana }),
+  };
+}
+
+/**
  * 保存済みの顧客を今の形に揃える (何度通しても同じ結果)。
- * 足りない項目を空値で埋め、埋めたときだけ検索キーを作り直す。
+ * 足りない項目を空値で埋め、氏名・カナの全角スペースを半角に直し、
+ * 変えたときだけ検索キーを作り直す。
  * ★顧客を読み出すところすべてで通すこと (loadCustomers だけでは漏れる)。
  */
 export function normalizeStoredCustomer(customer: Customer): Customer {
   const keys = Object.keys(STORED_DEFAULTS) as (keyof typeof STORED_DEFAULTS)[];
   const missing = keys.filter((key) => customer.imported[key] === undefined);
-  if (missing.length === 0) return customer;
-  const imported = { ...customer.imported };
-  for (const key of missing) imported[key] = STORED_DEFAULTS[key];
-  const next: Customer = { ...customer, imported };
+  let imported = customer.imported;
+  if (missing.length > 0) {
+    imported = { ...imported };
+    for (const key of missing) imported[key] = STORED_DEFAULTS[key];
+  }
+  imported = withHalfWidthNames(imported, customer.corporate);
+  const supplements =
+    customer.supplements && withHalfWidthNames(customer.supplements, customer.corporate);
+  const edits = withHalfWidthNames(customer.edits, customer.corporate);
+  if (
+    imported === customer.imported &&
+    supplements === customer.supplements &&
+    edits === customer.edits
+  ) {
+    return customer;
+  }
+  const next: Customer = { ...customer, imported, edits };
+  if (supplements) next.supplements = supplements;
   return { ...next, searchKey: buildSearchKey(effectiveFields(next)) };
 }
 

@@ -4,8 +4,8 @@ import { HYPHENS, formatPhone } from "@/lib/phone";
 import {
   toDateZeroPad,
   toFullWidthKatakana,
-  toFullWidthSpace,
   toHalfWidthAlnum,
+  toHalfWidthSpace,
   trimWide,
 } from "@/lib/text";
 import type { CustomerFields } from "@/lib/after/types";
@@ -47,25 +47,31 @@ export interface NameResult {
 }
 
 /**
- * 氏名を整える。個人は姓名の間を全角スペースにし、法人名はそのまま (社名の空白を変えない)。
+ * 氏名を整える。個人は姓名の間を半角スペース1つにし、法人名はそのまま (社名の空白を変えない)。
  * 区切りが無い個人名は分割せず、要確認にして画面で直してもらう。
  */
 export function normalizeOwnerName(raw: string): NameResult {
   const value = trimWide(raw);
   if (!value) return { name: "", corporate: false, issue: "氏名が空です" };
   if (isCorporateName(value)) return { name: value, corporate: true };
-  const name = toFullWidthSpace(value).replace(/　+/g, "　");
-  if (!name.includes("　") && [...name].length >= 4) {
+  const name = toHalfWidthSpace(value);
+  if (!name.includes(" ") && [...name].length >= 4) {
     return { name, corporate: false, issue: "姓名の区切りが無いため要確認です" };
   }
   return { name, corporate: false };
 }
 
-/** 助っ人クラウドは姓と名が別セル (姓の末尾に全角スペースが入っていることが多い) */
+/** 入力欄から離れたときの氏名・カナの整え: 姓名の間を半角スペース1つにする (法人名はそのまま) */
+export function tidyNameInput(value: string): string {
+  const trimmed = trimWide(value);
+  return isCorporateName(trimmed) ? trimmed : toHalfWidthSpace(trimmed);
+}
+
+/** 助っ人クラウドは姓と名が別セル (姓の末尾に全角スペースが入っていることが多い)。間は半角スペース */
 export function joinSeiMei(sei: string, mei: string): string {
   const s = trimWide(sei);
   const m = trimWide(mei);
-  if (s && m) return `${s}　${m}`;
+  if (s && m) return `${s} ${m}`;
   return s || m;
 }
 
@@ -75,8 +81,8 @@ export interface KanaResult {
 }
 
 /**
- * 連名の区切り。「サトウ　ハナコ・サトウ　ジロウ」と「・」で並べるほか、
- * 「サワダ　イサム（タチバナ　ミキコ）」のように2人目を括弧で添える書き方もある。
+ * 連名の区切り。「サトウ ハナコ・サトウ ジロウ」と「・」で並べるほか、
+ * 「サワダ イサム（タチバナ ミキコ）」のように2人目を括弧で添える書き方もある。
  * どちらもカナとしては正しい書き方なので、要確認にはしない。
  * (分割した区切りも残すため丸ごと捕捉する)
  */
@@ -93,7 +99,7 @@ const SEPARATOR_FORMS = new Map([
   [")", "）"],
 ]);
 
-/** カナ読み: 半角カナ・ひらがなをカタカナに寄せ、姓名間は全角スペース1つにする */
+/** カナ読み: 半角カナ・ひらがなをカタカナに寄せ、姓名間は半角スペース1つにする */
 export function normalizeOwnerKana(raw: string, corporate = false): KanaResult {
   const value = trimWide(raw);
   if (!value) return { kana: "" };
@@ -111,7 +117,7 @@ export function normalizeOwnerKana(raw: string, corporate = false): KanaResult {
     names.push(part);
     kana += part.kana;
   }
-  // 中身が無いまま残った区切りを落とす (「サトウ　ハナコ・」「（）」)
+  // 中身が無いまま残った区切りを落とす (「サトウ ハナコ・」「（）」)
   kana = kana
     .replace(/（[\s　]*）/g, "")
     .replace(/・+/g, "・")

@@ -9,43 +9,44 @@ describe("hiraganaToKatakana", () => {
 });
 
 describe("normalizeKana", () => {
-  it("空白を全角1つに揃え、前後の空白を落とす", () => {
-    expect(normalizeKana(" ヤマダ タロウ ")).toEqual({ kana: "ヤマダ　タロウ", valid: true });
-    expect(normalizeKana("ヤマダ　　タロウ")).toEqual({ kana: "ヤマダ　タロウ", valid: true });
+  it("空白を半角1つに揃え、前後の空白を落とす", () => {
+    expect(normalizeKana("　ヤマダ　タロウ ")).toEqual({ kana: "ヤマダ タロウ", valid: true });
+    expect(normalizeKana("ヤマダ　　タロウ")).toEqual({ kana: "ヤマダ タロウ", valid: true });
+    expect(normalizeKana("ヤマダ タロウ")).toEqual({ kana: "ヤマダ タロウ", valid: true });
   });
 
   it("ひらがなで返ってきてもカタカナにする", () => {
-    expect(normalizeKana("やまだ たろう")).toEqual({ kana: "ヤマダ　タロウ", valid: true });
+    expect(normalizeKana("やまだ たろう")).toEqual({ kana: "ヤマダ タロウ", valid: true });
   });
 
   it("長音・小書き文字を含むカタカナは有効", () => {
-    expect(normalizeKana("チョウ　イカク").valid).toBe(true);
-    expect(normalizeKana("サトウ　リョウ").valid).toBe(true);
+    expect(normalizeKana("チョウ イカク").valid).toBe(true);
+    expect(normalizeKana("サトウ リョウ").valid).toBe(true);
   });
 
   it("漢字や英字が混ざれば無効", () => {
-    expect(normalizeKana("山田　タロウ").valid).toBe(false);
+    expect(normalizeKana("山田 タロウ").valid).toBe(false);
     expect(normalizeKana("").valid).toBe(false);
   });
 });
 
 describe("normalizeNameReading", () => {
-  it("高信頼の読みはそのまま", () => {
+  it("高信頼の読みはそのまま (姓名の間は半角スペースに揃える)", () => {
     expect(
       normalizeNameReading({ kana: "ヤマダ　タロウ", alternatives: [], confidence: "high" }),
-    ).toEqual({ kana: "ヤマダ　タロウ", alternatives: [], confidence: "high" });
+    ).toEqual({ kana: "ヤマダ タロウ", alternatives: [], confidence: "high" });
   });
 
   it("候補があれば low に落とし、重複と本命と同じものは除く", () => {
     expect(
       normalizeNameReading({
-        kana: "タカハシ　ヨシコ",
-        alternatives: ["タカハシ　カコ", "タカハシ　ヨシコ", "たかはし けいこ", "タカハシ　カコ"],
+        kana: "タカハシ ヨシコ",
+        alternatives: ["タカハシ カコ", "タカハシ ヨシコ", "たかはし けいこ", "タカハシ カコ"],
         confidence: "high",
       }),
     ).toEqual({
-      kana: "タカハシ　ヨシコ",
-      alternatives: ["タカハシ　カコ", "タカハシ　ケイコ"],
+      kana: "タカハシ ヨシコ",
+      alternatives: ["タカハシ カコ", "タカハシ ケイコ"],
       confidence: "low",
     });
   });

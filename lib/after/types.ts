@@ -15,9 +15,9 @@ export interface CustomerFields {
   pj: string | null;
   developer: string | null;
   propertyName: string;
-  /** 姓　名 (全角スペース区切り)。法人名はそのまま */
+  /** 姓 名 (半角スペース区切り)。法人名はそのまま */
   ownerName: string;
-  /** カタカナ・全角スペース区切り */
+  /** カタカナ・半角スペース区切り */
   ownerKana: string;
   /** 123-4567 (半角・ハイフン付き)。読めない・無いときは空文字 */
   postalCode: string;

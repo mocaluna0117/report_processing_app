@@ -146,9 +146,10 @@ describe("cleanPropertyName", () => {
 });
 
 describe("normalizeOwnerName", () => {
-  it("個人名は姓名の間を全角スペースにする", () => {
-    expect(normalizeOwnerName("山田 太郎").name).toBe("山田　太郎");
-    expect(normalizeOwnerName("　山田　太郎　").name).toBe("山田　太郎");
+  it("個人名は姓名の間を半角スペース1つにする", () => {
+    expect(normalizeOwnerName("山田　太郎").name).toBe("山田 太郎");
+    expect(normalizeOwnerName("　山田　 太郎　").name).toBe("山田 太郎");
+    expect(normalizeOwnerName("山田 太郎").name).toBe("山田 太郎");
   });
 
   it("区切りの無い個人名は分割せず要確認にする", () => {
@@ -171,7 +172,7 @@ describe("normalizeOwnerName", () => {
 
 describe("joinSeiMei", () => {
   it("姓の末尾の全角スペースを落として結合する", () => {
-    expect(joinSeiMei("山田　", "太郎")).toBe("山田　太郎");
+    expect(joinSeiMei("山田　", "太郎")).toBe("山田 太郎");
     expect(joinSeiMei("山田", "")).toBe("山田");
     expect(joinSeiMei("", "太郎")).toBe("太郎");
     expect(joinSeiMei("", "")).toBe("");
@@ -180,12 +181,13 @@ describe("joinSeiMei", () => {
 
 describe("normalizeOwnerKana", () => {
   it("ひらがな・半角カナをカタカナにする", () => {
-    expect(normalizeOwnerKana("やまだ　たろう").kana).toBe("ヤマダ　タロウ");
-    expect(normalizeOwnerKana("ﾔﾏﾀﾞ ﾀﾛｳ").kana).toBe("ヤマダ　タロウ");
+    expect(normalizeOwnerKana("やまだ　たろう").kana).toBe("ヤマダ タロウ");
+    expect(normalizeOwnerKana("ﾔﾏﾀﾞ ﾀﾛｳ").kana).toBe("ヤマダ タロウ");
   });
 
-  it("半角スペースは全角にそろえる", () => {
-    expect(normalizeOwnerKana("ヤマダ タロウ").kana).toBe("ヤマダ　タロウ");
+  it("全角スペースは半角にそろえる", () => {
+    expect(normalizeOwnerKana("ヤマダ　タロウ").kana).toBe("ヤマダ タロウ");
+    expect(normalizeOwnerKana("ヤマダ　 タロウ").kana).toBe("ヤマダ タロウ");
   });
 
   it("空欄はそのまま (要確認にはしない)", () => {
@@ -198,44 +200,44 @@ describe("normalizeOwnerKana", () => {
 
   it("連名 (「・」区切り) は正しい書き方として扱う", () => {
     const result = normalizeOwnerKana("サトウ　ハナコ・サトウ　ジロウ");
-    expect(result.kana).toBe("サトウ　ハナコ・サトウ　ジロウ");
+    expect(result.kana).toBe("サトウ ハナコ・サトウ ジロウ");
     expect(result.issue).toBeUndefined();
   });
 
   it("連名の区切りが読点・半角中黒でも「・」に揃える", () => {
-    expect(normalizeOwnerKana("サトウ　ハナコ、サトウ　ジロウ").kana).toBe(
-      "サトウ　ハナコ・サトウ　ジロウ",
+    expect(normalizeOwnerKana("サトウ ハナコ、サトウ ジロウ").kana).toBe(
+      "サトウ ハナコ・サトウ ジロウ",
     );
     expect(normalizeOwnerKana("ｻﾄｳ ﾊﾅｺ･ｻﾄｳ ｼﾞﾛｳ")).toEqual({
-      kana: "サトウ　ハナコ・サトウ　ジロウ",
+      kana: "サトウ ハナコ・サトウ ジロウ",
     });
   });
 
   it("連名でも片方にカタカナ以外が混ざれば要確認", () => {
-    expect(normalizeOwnerKana("サトウ　ハナコ・サトウ　次郎").issue).toBeTruthy();
+    expect(normalizeOwnerKana("サトウ ハナコ・サトウ 次郎").issue).toBeTruthy();
   });
 
   it("2人目を括弧で添える連名も正しい書き方として扱う", () => {
-    // 氏名が「澤田　敢（橘　幹子）」のように括弧付きのとき、カナも同じ形で入る
-    const result = normalizeOwnerKana("サワダ　イサム（タチバナ　ミキコ）");
-    expect(result.kana).toBe("サワダ　イサム（タチバナ　ミキコ）");
+    // 氏名が「澤田 敢（橘 幹子）」のように括弧付きのとき、カナも同じ形で入る
+    const result = normalizeOwnerKana("サワダ イサム（タチバナ ミキコ）");
+    expect(result.kana).toBe("サワダ イサム（タチバナ ミキコ）");
     expect(result.issue).toBeUndefined();
-    expect(normalizeOwnerKana("キタオカ　ケイイチ（ケイコ）").issue).toBeUndefined();
+    expect(normalizeOwnerKana("キタオカ ケイイチ（ケイコ）").issue).toBeUndefined();
   });
 
   it("括弧は全角にそろえる", () => {
-    expect(normalizeOwnerKana("サワダ　イサム(タチバナ　ミキコ)").kana).toBe(
-      "サワダ　イサム（タチバナ　ミキコ）",
+    expect(normalizeOwnerKana("サワダ イサム(タチバナ ミキコ)").kana).toBe(
+      "サワダ イサム（タチバナ ミキコ）",
     );
   });
 
   it("括弧の中にカタカナ以外が混ざれば要確認", () => {
-    expect(normalizeOwnerKana("サワダ　イサム（橘　幹子）").issue).toBeTruthy();
+    expect(normalizeOwnerKana("サワダ イサム（橘 幹子）").issue).toBeTruthy();
   });
 
   it("中身の無い区切りは落とす", () => {
-    expect(normalizeOwnerKana("サトウ　ハナコ（）").kana).toBe("サトウ　ハナコ");
-    expect(normalizeOwnerKana("サトウ　ハナコ・").kana).toBe("サトウ　ハナコ");
+    expect(normalizeOwnerKana("サトウ ハナコ（）").kana).toBe("サトウ ハナコ");
+    expect(normalizeOwnerKana("サトウ ハナコ・").kana).toBe("サトウ ハナコ");
   });
 });
 

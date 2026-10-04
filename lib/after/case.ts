@@ -5,7 +5,7 @@ import type { AfterCase, Customer } from "@/lib/after/types";
 import { buildCells, entry } from "@/lib/cells";
 import { formatDateNoPadJst, formatLastUpdatedJst } from "@/lib/jst-date";
 import { AFTER_REPORT_OPTIONS } from "@/lib/report/model";
-import { toFullWidthSpace } from "@/lib/text";
+import { toHalfWidthSpace } from "@/lib/text";
 import { PROPERTY_COUNT_MARK } from "@/lib/tsv";
 import type { Confidence } from "@/lib/types";
 
@@ -36,7 +36,10 @@ export function createAfterCase(input: CreateAfterCaseInput): AfterCase {
     warnings.push("顧客データに引渡日が無いため空欄です (メール文では手入力してください)");
   }
 
-  const ownerName = fields.ownerName;
+  // 姓名の間は半角スペース1つ。法人名は空白をそのままにする (社名の表記を変えない)
+  const ownerName = input.customer.corporate
+    ? fields.ownerName
+    : toHalfWidthSpace(fields.ownerName);
   const { cells, confidences } = buildCells({
     // 物件数は記録1件の印 (行に展開するときは先頭の行だけに残る)
     物件数: entry(PROPERTY_COUNT_MARK),
@@ -47,11 +50,7 @@ export function createAfterCase(input: CreateAfterCaseInput): AfterCase {
     受付者: entry(DEFAULT_RECEPTIONIST),
     事業者: entry(fields.developer ?? "", fields.developer ? "ok" : "warn"),
     物件名称: entry(fields.propertyName),
-    // 法人名は空白をそのままにする (社名の表記を変えない)
-    お客様氏名: entry(
-      input.customer.corporate ? ownerName : toFullWidthSpace(ownerName),
-      ownerName ? "ok" : "fail",
-    ),
+    お客様氏名: entry(ownerName, ownerName ? "ok" : "fail"),
     住所: entry(fields.address),
     引渡日: entry(fields.handoverDate ?? "", fields.handoverDate ? "ok" : "warn"),
     // 監督・営業はお客様の情報に入っていれば入れる (無ければ空欄のまま。
@@ -84,7 +83,7 @@ export function createAfterCase(input: CreateAfterCaseInput): AfterCase {
     categoryEngine: "none",
     report: AFTER_REPORT_OPTIONS,
     mail: {
-      ownerKana: fields.ownerKana,
+      ownerKana: toHalfWidthSpace(fields.ownerKana),
       kanaConfidence: fields.ownerKana ? "ok" : "fail",
       kanaAlternatives: [],
       contacts: fields.contacts,

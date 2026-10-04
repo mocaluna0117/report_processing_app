@@ -8,7 +8,13 @@ import {
   openIssues,
 } from "@/lib/after/customer";
 import type { Customer, CustomerFields } from "@/lib/after/types";
-import { isEmail, parsePhoneCell, tidyDateInput, tidyPostalInput } from "@/lib/after/normalize";
+import {
+  isEmail,
+  parsePhoneCell,
+  tidyDateInput,
+  tidyNameInput,
+  tidyPostalInput,
+} from "@/lib/after/normalize";
 
 export type CustomerTextField =
   | "pj"
@@ -37,8 +43,13 @@ export const CUSTOMER_TEXT_FIELDS: readonly {
   { key: "pj", label: "PJ", placeholder: "2101230101", nullable: true },
   { key: "developer", label: "事業者", placeholder: "大和ハウス工業", nullable: true },
   { key: "propertyName", label: "物件名称" },
-  { key: "ownerName", label: "お客様氏名", placeholder: "山田　太郎" },
-  { key: "ownerKana", label: "お客様氏名 (カナ)", placeholder: "ヤマダ　タロウ" },
+  { key: "ownerName", label: "お客様氏名", placeholder: "山田 太郎", normalize: tidyNameInput },
+  {
+    key: "ownerKana",
+    label: "お客様氏名 (カナ)",
+    placeholder: "ヤマダ タロウ",
+    normalize: tidyNameInput,
+  },
   // 7桁として読めたときだけ 123-4567 に整える。読めない値はそのまま残す
   { key: "postalCode", label: "郵便番号", placeholder: "123-4567", normalize: tidyPostalInput },
   { key: "address", label: "住所" },

@@ -84,7 +84,7 @@ describe("buildReportXlsx", () => {
     expect(cell(input, "C4")).toBe(
       '<c r="C4" s="16" t="inlineStr"><is><t xml:space="preserve">2101230101</t></is></c>',
     );
-    expect(cell(input, "C6")).toContain("山田　太郎（ヤマダ　タロウ）");
+    expect(cell(input, "C6")).toContain("山田 太郎（ヤマダ タロウ）");
     expect(cell(input, "C13")).toContain("木村美恵子");
     expect(cell(input, "C9")).toContain("080-1234-5678");
     expect(cell(input, "C10")).toContain("090-2345-6789");
@@ -103,7 +103,7 @@ describe("buildReportXlsx", () => {
     const { main } = build(["壁のひび"]);
     const d7 = cell(main, "D7");
     expect(d7).toContain('<f>IF(入力シート!C6="","",入力シート!C6)</f>');
-    expect(d7).toContain("<v>山田　太郎（ヤマダ　タロウ）</v>");
+    expect(d7).toContain("<v>山田 太郎（ヤマダ タロウ）</v>");
     expect(d7).toContain('t="str"');
     // 「様」は表示形式が付けるので値には含めない
     expect(d7).not.toContain("様</v>");
